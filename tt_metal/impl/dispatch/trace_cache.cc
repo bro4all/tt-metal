@@ -606,7 +606,7 @@ void WorkerBufferManager::commit_preallocations(
 // If this call fails, call it again w/ a lower reuse threshold
 std::list<std::list<AllocNode>::iterator>::iterator WorkerBufferManager::find_eviction_candidates(
     std::int32_t window, std::uint32_t size_needed, std::int32_t trace_idx, const std::vector<TraceNode>& trace) {
-    constexpr float best_score = std::numeric_limits<float>::infinity();
+    float best_score = std::numeric_limits<float>::infinity();
     std::list<std::list<AllocNode>::iterator>::iterator match = this->lru_.end();
 
     fprintf(stderr, "Trying to find eviction candidate for size %d\n", size_needed);
@@ -630,6 +630,7 @@ std::list<std::list<AllocNode>::iterator>::iterator WorkerBufferManager::find_ev
         }
 
         if (found_one && score < best_score) {
+            best_score = score;
             match = lru_it;
         }
     }
