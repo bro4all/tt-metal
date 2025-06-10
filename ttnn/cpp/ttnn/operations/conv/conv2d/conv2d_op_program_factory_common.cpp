@@ -27,7 +27,8 @@ std::vector<CBInfo> get_cb_info(
     DataType output_datatype,
     std::array<uint32_t, 2> conv_input_shard_shape,
     bool enable_bias,
-    bool is_1d_depthwise_conv) {
+    bool is_1d_depthwise_conv,
+    std::optional<ReuseDataOptConfig> reuse_data_opt_config = std::nullopt) {
     const uint32_t num_cbs = static_cast<uint32_t>(Conv2dCb::COUNT);
     std::vector<CBInfo> cb_info;
     cb_info.reserve(num_cbs);
@@ -58,6 +59,19 @@ std::vector<CBInfo> get_cb_info(
 
     // Block dims
     const uint32_t act_block_num_tiles = block_config.act_block_h_ntiles * block_config.act_block_w_ntiles;
+
+    uint32_t act_cb_num_tiles = act_block_num_tiles;
+    if (reuse_data_opt_config.has_value() && reuse_data_opt_config.value().enabled) {
+        uint32_t in_channels = weights_shape[1];
+        uint32_t reuse_buffer_length = reuse_data_opt_config.value().reuse_loops * in_channels * kernel_size[1] *
+                                       2;  // f16 TODO(sjovic): use data format here
+        uint32_t reuse_buffer_length_tiles = reuse_buffer_length / input_tile_size;
+        if (reuse_buffer_length % input_tile_size != 0) {
+            reuse_buffer_length_tiles++;
+        }
+        act_cb_num_tiles = reuse_data_opt_config.value().act_cb_num_tiles + reuse_buffer_length_tiles;
+    }
+
     const uint32_t weight_matrix_height_ntiles = weights_shape[2] / tt::constants::TILE_HEIGHT;
     const uint32_t weight_matrix_width_ntiles = weights_shape[3] / tt::constants::TILE_WIDTH;
 
@@ -86,7 +100,7 @@ std::vector<CBInfo> get_cb_info(
             per_core_out_matrix_width_ntiles *
             (is_1d_depthwise_conv ? block_config.act_block_h_ntiles : block_config.act_block_w_ntiles);
         if (sharding_scheme == TensorMemoryLayout::HEIGHT_SHARDED) {
-            if (num_blocks_act_h > 1) {
+            if (num_blocks_act_h > 1 && !reuse_data_opt_config.value().enabled) {
                 // Fully buffered weights
                 weight_block_num_tiles *= kernel_size[0];
             } else if (conv_config.enable_weights_double_buffer) {
@@ -113,17 +127,20 @@ std::vector<CBInfo> get_cb_info(
 
     {
         // ACT and ACT_SECOND_READER CB
-        uint32_t act_cb_num_tiles = act_block_num_tiles;
         uint32_t act_block_split_num_tiles = 0;
         if (sharding_scheme == TensorMemoryLayout::HEIGHT_SHARDED && conv_config.enable_split_reader) {
-            uint32_t act_block_h_nsubblocks = block_config.act_block_h_ntiles / block_config.out_subblock_h_ntiles;
-            uint32_t act_block_h_nsubblocks_split_last = act_block_h_nsubblocks / 2;
-            uint32_t act_block_h_nsubblocks_split = act_block_h_nsubblocks - act_block_h_nsubblocks_split_last;
+            if (reuse_data_opt_config.has_value() && reuse_data_opt_config.value().enabled) {
+                act_block_split_num_tiles = act_cb_num_tiles;
+            } else {
+                uint32_t act_block_h_nsubblocks = block_config.act_block_h_ntiles / block_config.out_subblock_h_ntiles;
+                uint32_t act_block_h_nsubblocks_split_last = act_block_h_nsubblocks / 2;
+                uint32_t act_block_h_nsubblocks_split = act_block_h_nsubblocks - act_block_h_nsubblocks_split_last;
 
-            act_cb_num_tiles =
-                act_block_h_nsubblocks_split * block_config.out_subblock_h_ntiles * block_config.act_block_w_ntiles;
-            act_block_split_num_tiles = act_block_h_nsubblocks_split_last * block_config.out_subblock_h_ntiles *
-                                        block_config.act_block_w_ntiles;
+                act_cb_num_tiles =
+                    act_block_h_nsubblocks_split * block_config.out_subblock_h_ntiles * block_config.act_block_w_ntiles;
+                act_block_split_num_tiles = act_block_h_nsubblocks_split_last * block_config.out_subblock_h_ntiles *
+                                            block_config.act_block_w_ntiles;
+            }
         }
         if (conv_config.enable_act_double_buffer) {
             act_cb_num_tiles *= 2;

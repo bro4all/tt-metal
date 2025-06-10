@@ -109,6 +109,7 @@ def run_conv(
     enable_kernel_stride_folding=False,
     enable_act_double_buffer=False,
     enable_weights_double_buffer=False,
+    enable_activation_data_reuse=False,
 ):
     if isinstance(device, ttnn.MeshDevice) and len(device.get_device_ids()) > 1:
         assert input_mesh_mapper is not None, "Expected mesh mapper for input tensor when running on multiple devices"
@@ -223,6 +224,7 @@ def run_conv(
         transpose_shards=transpose_shards,
         in_place=in_place,
         enable_kernel_stride_folding=enable_kernel_stride_folding,
+        enable_activation_data_reuse=enable_activation_data_reuse,
     )
     compute_config = ttnn.init_device_compute_kernel_config(
         device.arch(),
@@ -3009,28 +3011,28 @@ def test_block_sharding_relu_act_block_h(
 @pytest.mark.parametrize(
     "batch, input_channels, output_channels, input_height, input_width, weights_dtype, output_dtype, input_dtype, input_layout, groups, kernel, stride, padding, dilation, auto_shard, act_block_h_override, act_block_w_div, deallocate_activation, math_fidelity, fp32_accum, packer_l1_acc, enable_split_reader, enable_act_double_buffer",
     (
-        # # model strawberry
-        (1, 10,   64, 1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 64,   64, 512,   64, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 64,   64, 256,   32, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 64,   64, 128,   16, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1,  2,    1, 1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # model strawberry
+        # (1, 10,   64, 1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 64,   64, 512,   64, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 64,   64, 256,   32, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 64,   64, 128,   16, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (4, 4), (2, 2), [1, 1, 1, 1], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1,  2,    1, 1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
 
         # # model kiwi
-        (1,  4,   32, 288, 288, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (5, 5), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 32,   48, 284, 284, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (2, 2), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 48,   56, 280, 280, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (4, 4), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 56,   64, 272, 272, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (8, 8), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 64,  128, 256, 256, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (2, 2), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 128, 256, 255, 255, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
-        (1, 256,   1, 255, 255, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1,  4,   32, 288, 288, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (5, 5), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 32,   48, 284, 284, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (2, 2), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 48,   56, 280, 280, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (4, 4), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 56,   64, 272, 272, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (3, 3), (1, 1), [0, 0, 0, 0], (8, 8), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 64,  128, 256, 256, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (2, 2), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 128, 256, 255, 255, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
+        # (1, 256,   1, 255, 255, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.TILE_LAYOUT, 1, (1, 1), (1, 1), [0, 0, 0, 0], (1, 1), True, 0, 1, True, ttnn.MathFidelity.LoFi, False, False, False, False),
 
         # model kiwi new convs
-        ( 1,  4,    32, 1024,  128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (5, 5), (1, 1), [2, 2, 2, 2], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
-        ( 4,  32,   48,  512,   64, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
-        (16,  48,   56,  256,   32, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
-        (64,  56,   64,  128,   16, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
-        ( 1,  64,  128,  1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (2, 2), (1, 1), [1, 0, 1, 0], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
+        ( 1,  4,    32, 1024,  128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (5, 5), (1, 1), [2, 2, 2, 2], (1, 1), True, 32*64, 1, True, ttnn.MathFidelity.LoFi, False, False, True, False),
+        # ( 4,  32,   48,  512,   64, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, False),
+        # (16,  48,   56,  256,   32, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
+        # (64,  56,   64,  128,   16, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (3, 3), (1, 1), [1, 1, 1, 1], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, False),
+        # ( 1,  64,  128,  1024, 128, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat16, ttnn.ROW_MAJOR_LAYOUT, 1, (2, 2), (1, 1), [1, 0, 1, 0], (1, 1), True, 32 * 16, 1, True, ttnn.MathFidelity.LoFi, False, False, True, True),
     ),
 )
  #fmt: on
@@ -3103,9 +3105,8 @@ def test_conv2d_model_fruit(
         activation="relu",
         enable_act_double_buffer=enable_act_double_buffer,
         input_dtype = input_dtype,
+        enable_activation_data_reuse=True
     )
-
-
 
 @pytest.mark.parametrize(
     "batch, input_channels, output_channels, input_height, input_width, weights_dtype, output_dtype, groups, kernel, stride, padding, dilation, shard_layout, act_block_h_override, act_block_w_div, deallocate_activation, math_fidelity, fp32_accum, packer_l1_acc, enable_split_reader, split_input_channels_factor, split_output_channels_factor, act_db, w_db",

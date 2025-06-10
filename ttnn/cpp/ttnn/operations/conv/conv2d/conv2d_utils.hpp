@@ -108,7 +108,8 @@ OptimizedConvBlockConfig determine_per_core_conv_block_config(
     uint32_t window_h,
     uint32_t window_w,
     bool fp32_accum,
-    bool split_reader_enabled);
+    bool split_reader_enabled,
+    bool enable_activation_data_reuse);
 
 std::tuple<OptimizedConvParallelizationConfig, OptimizedConvBlockConfig, MemoryConfig> get_conv_configs(
     const Conv2dConfig& conv_config,

@@ -88,6 +88,8 @@ struct Conv2dConfig {
     // - Weight tensor (OC, IC, kernel[0], kernel[1]) is reshaped and permuted to (1, 1, IC * kernel[0] * kernel[1], OC)
     // Currently only applied when strides match kernel dimensions
     bool enable_kernel_stride_folding = false;
+
+    bool enable_activation_data_reuse = false;  // TODO: Remove this when the optimization is stable
     // ===============================================================
 
     static constexpr auto attribute_names = std::make_tuple(
@@ -108,7 +110,8 @@ struct Conv2dConfig {
         "enable_split_reader",
         "enable_subblock_padding",
         "in_place",
-        "enable_kernel_stride_folding");
+        "enable_kernel_stride_folding",
+        "enable_activation_data_reuse");
     auto attribute_values() const {
         return std::make_tuple(
             std::cref(this->weights_dtype),
@@ -128,7 +131,8 @@ struct Conv2dConfig {
             std::cref(this->enable_split_reader),
             std::cref(this->enable_subblock_padding),
             std::cref(this->in_place),
-            std::cref(this->enable_kernel_stride_folding));
+            std::cref(this->enable_kernel_stride_folding),
+            std::cref(this->enable_activation_data_reuse));
     }
 };
 
@@ -184,7 +188,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding);
+    bool enable_subblock_padding,
+    bool enable_activation_data_reuse);
 
 // new micro op
 struct OptimizedConvNew {
@@ -203,6 +208,7 @@ struct OptimizedConvNew {
     bool enable_weights_double_buffer;
     bool enable_split_reader;
     bool enable_subblock_padding;
+    bool enable_activation_data_reuse;
     uint32_t pre_op_l1_allocation_size_bytes;
     OptimizedConvNew(
         const sliding_window::SlidingWindowConfig& sliding_window_config,
@@ -220,7 +226,8 @@ struct OptimizedConvNew {
         bool enable_act_double_buffer,
         bool enable_weights_double_buffer,
         bool enable_split_reader,
-        bool enable_subblock_padding) :
+        bool enable_subblock_padding,
+        bool enable_activation_data_reuse) :
         output_channels(output_channels),
         groups(groups),
         sliding_window_config(sliding_window_config),
@@ -236,7 +243,8 @@ struct OptimizedConvNew {
         enable_act_double_buffer(enable_act_double_buffer),
         enable_weights_double_buffer(enable_weights_double_buffer),
         enable_split_reader(enable_split_reader),
-        enable_subblock_padding(enable_subblock_padding) {}
+        enable_subblock_padding(enable_subblock_padding),
+        enable_activation_data_reuse(enable_activation_data_reuse) {}
 
     void validate(
         const std::vector<Tensor>& input_tensors,
@@ -267,7 +275,8 @@ struct OptimizedConvNew {
         "enable_act_double_buffer",
         "enable_weights_double_buffer",
         "enable_split_reader",
-        "enable_subblock_padding");
+        "enable_subblock_padding",
+        "enable_activation_data_reuse");
     auto attribute_values() const {
         return std::make_tuple(
             std::cref(this->parallelization_config),
@@ -284,7 +293,8 @@ struct OptimizedConvNew {
             std::cref(this->enable_act_double_buffer),
             std::cref(this->enable_weights_double_buffer),
             std::cref(this->enable_split_reader),
-            std::cref(this->enable_subblock_padding));
+            std::cref(this->enable_subblock_padding),
+            std::cref(this->enable_activation_data_reuse));
     }
 };
 
@@ -306,7 +316,8 @@ Tensor optimized_conv_new(
     bool enable_act_double_buffer = false,
     bool enable_weights_double_buffer = false,
     bool enable_split_reader = false,
-    bool enable_subblock_padding = false);
+    bool enable_subblock_padding = false,
+    bool enable_activation_data_reuse = false);
 
 // Only enable packer l1 accumulation when there are in0_num_blocks_w > 2, otherwise
 // unnecessary overhead for reconfigs are added. Last iteration of l1 accumulation
@@ -333,7 +344,8 @@ conv_op_l1_usage calculate_L1_usage(
     tt::tt_metal::DataType input_datatype,
     tt::tt_metal::DataType output_datatype,
     bool enable_bias,
-    bool is_1d_depthwise_conv);
+    bool is_1d_depthwise_conv,
+    uint32_t image_width);
 
 }  // namespace conv2d
 
@@ -349,6 +361,7 @@ std::pair<std::vector<uint32_t>, std::vector<uint32_t>> compute_opt_conv_activat
     const ttnn::Shape& conv_activation_shape,
     const ttnn::operations::sliding_window::SlidingWindowConfig& sliding_window_config,
     uint32_t num_cores_nhw,
-    uint32_t act_block_h_ntiles);
+    uint32_t act_block_h_ntiles,
+    bool enable_activation_data_reuse);
 
 }  // namespace optimized_conv_op_utils

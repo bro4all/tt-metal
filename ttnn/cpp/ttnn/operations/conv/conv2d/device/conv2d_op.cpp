@@ -32,7 +32,8 @@ std::pair<std::vector<uint32_t>, std::vector<uint32_t>> compute_opt_conv_activat
     const ttnn::Shape& conv_activation_shape,
     const ttnn::operations::sliding_window::SlidingWindowConfig& sliding_window_config,
     uint32_t num_cores_nhw,
-    uint32_t act_block_h_ntiles) {
+    uint32_t act_block_h_ntiles,
+    bool enable_activation_data_reuse = false) {
     uint32_t filter_h = (uint32_t)sliding_window_config.window_hw.first;   // filter_h
     uint32_t filter_w = (uint32_t)sliding_window_config.window_hw.second;  // filter_W
     auto output_shape = sliding_window_config.get_output_shape();
@@ -45,7 +46,9 @@ std::pair<std::vector<uint32_t>, std::vector<uint32_t>> compute_opt_conv_activat
     uint32_t act_block_h_datums = act_block_h_ntiles * TILE_HEIGHT;
     uint32_t num_rows_padded = tt::round_up(num_rows, num_cores_nhw * act_block_h_datums);
     uint32_t num_cols = conv_activation_shape[3] * filter_h * filter_w;
-    uint32_t num_cols_padded = tt::round_up(conv_activation_shape[3] * filter_w, TILE_WIDTH) * filter_h;
+    uint32_t num_cols_padded = enable_activation_data_reuse
+                                   ? tt::round_up(conv_activation_shape[3] * filter_w * filter_h, TILE_WIDTH)
+                                   : tt::round_up(conv_activation_shape[3] * filter_w, TILE_WIDTH) * filter_h;
     return {{1, num_rows_padded, num_cols_padded}, {1, num_rows, num_cols}};
 }
 
@@ -72,7 +75,8 @@ Tensor optimized_conv_new(
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding) {
+    bool enable_subblock_padding,
+    bool enable_activation_data_reuse) {
     TT_FATAL(b.layout() == Layout::TILE,
              "Weights should be in TILE layout.");  // Weights should already be formatted
     const auto& ashape = input_tensor_shape;
@@ -109,7 +113,8 @@ Tensor optimized_conv_new(
         enable_act_double_buffer,
         enable_weights_double_buffer,
         enable_split_reader,
-        enable_subblock_padding);
+        enable_subblock_padding,
+        enable_activation_data_reuse);
     IDevice* device = a.device();
 
     optimized_conv_op.pre_op_l1_allocation_size_bytes =
@@ -261,7 +266,8 @@ operation::ProgramWithCallbacks OptimizedConvNew::create_program(
         enable_act_double_buffer,
         enable_weights_double_buffer,
         enable_split_reader,
-        enable_subblock_padding);
+        enable_subblock_padding,
+        enable_activation_data_reuse);
 
     const uint32_t post_op_l1_allocation_size =
         device->allocator()->get_statistics(tt::tt_metal::BufferType::L1).total_allocated_bytes;
@@ -281,7 +287,8 @@ operation::ProgramWithCallbacks OptimizedConvNew::create_program(
             .output_layout = (untilize_out ? Layout::ROW_MAJOR : Layout::TILE),
             .enable_act_double_buffer = enable_act_double_buffer,
             .enable_weights_double_buffer = enable_weights_double_buffer,
-            .enable_split_reader = enable_split_reader},
+            .enable_split_reader = enable_split_reader,
+            .enable_activation_data_reuse = enable_activation_data_reuse},
         input_tensor_a.dtype(),
         this->dtype,
         has_bias,
@@ -291,7 +298,8 @@ operation::ProgramWithCallbacks OptimizedConvNew::create_program(
             output_channels,
             kernel_dims[1],
             sliding_window_config.get_output_shape()[2],
-            has_bias));
+            has_bias),
+        sliding_window_config.get_output_shape()[2]);
 
     TT_FATAL(
         actual_cb_size == l1_usage.CB_allocation_size,
