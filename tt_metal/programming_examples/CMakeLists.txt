@@ -23,6 +23,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/shard_data_rm)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/vecadd_sharding)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/vecadd_multi_core)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/NoC_tile_transfer)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test-unary-llk)
+
 
 add_custom_target(
     programming_examples
