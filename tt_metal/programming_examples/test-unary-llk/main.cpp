@@ -20,15 +20,25 @@ using namespace tt::constants;
 using namespace tt;
 using namespace tt::tt_metal;
 
+struct DFormat_Float32 {
+    using Host = float;
+    static constexpr tt::DataFormat Device = tt::DataFormat::Float32;
+};
+
+struct DFormat_Bfloat16 {
+    using Host = bfloat16;
+    static constexpr tt::DataFormat Device = tt::DataFormat::Float16_b;
+};
+
+template <typename DFormat>
 class UnaryLLKKernel {
 private:
-    IDevice* device;
-    CommandQueue* cq;
     Program program;
     CoreCoord core;
 
     // Buffers
-    std::shared_ptr<Buffer> input_buffer;
+    std::shared_ptr<Buffer> input0_buffer;
+    std::shared_ptr<Buffer> input1_buffer;
     std::shared_ptr<Buffer> output_buffer;
 
     // Kernels
@@ -42,33 +52,29 @@ private:
     uint32_t elements_per_tile;
 
     // Circular buffer indices
-    uint32_t input_cb_index;
+    uint32_t input0_cb_index;
+    uint32_t input1_cb_index;
     uint32_t output_cb_index;
 
 public:
     UnaryLLKKernel(uint32_t num_tiles) :
         num_tiles(num_tiles),
-        tile_size(TILE_WIDTH * TILE_HEIGHT * sizeof(bfloat16)),
+        tile_size(TILE_WIDTH * TILE_HEIGHT * sizeof(typename DFormat::Host)),
         elements_per_tile(TILE_WIDTH * TILE_HEIGHT),
         core({0, 0}),
-        input_cb_index(CBIndex::c_0),
-        output_cb_index(CBIndex::c_16),
-        device(nullptr),
-        cq(nullptr) {}
+        input0_cb_index(CBIndex::c_0),
+        input1_cb_index(CBIndex::c_1),
+        output_cb_index(CBIndex::c_2) {}
 
     ~UnaryLLKKernel() {
-        if (device) {
-            CloseDevice(device);
-        }
+
     }
 
-    void Setup() {
+    void Setup(IDevice* device) {
         // Initialize device
-        constexpr int device_id = 0;
-        device = CreateDevice(device_id);
 
         // Get command queue
-        cq = &device->command_queue();
+        CommandQueue* cq = &device->command_queue();
 
         // Program setup
         program = CreateProgram();
@@ -76,27 +82,33 @@ public:
         // Create DRAM buffers
         tt_metal::InterleavedBufferConfig input_buffer_config{
             .device = device,
-            .size = num_tiles * elements_per_tile * sizeof(bfloat16),
+            .size = num_tiles * elements_per_tile * sizeof(typename DFormat::Host),
             .page_size = tile_size,
             .buffer_type = tt_metal::BufferType::DRAM};
 
         tt_metal::InterleavedBufferConfig output_buffer_config{
             .device = device,
-            .size = num_tiles * elements_per_tile * sizeof(bfloat16),
+            .size = num_tiles * elements_per_tile * sizeof(typename DFormat::Host),
             .page_size = tile_size,
             .buffer_type = tt_metal::BufferType::DRAM};
 
-        input_buffer = CreateBuffer(input_buffer_config);
+        input0_buffer = CreateBuffer(input_buffer_config);
+        input1_buffer = CreateBuffer(input_buffer_config);
         output_buffer = CreateBuffer(output_buffer_config);
 
         // Create circular buffers
         constexpr uint32_t num_cb_tiles = 2;  // Double buffering
-        const tt::DataFormat cb_data_format = tt::DataFormat::Float16_b;
+        const tt::DataFormat cb_data_format = DFormat::Device;
 
-        CircularBufferConfig input_cb_config =
-            CircularBufferConfig(num_cb_tiles * tile_size, {{input_cb_index, cb_data_format}})
-                .set_page_size(input_cb_index, tile_size);
-        auto input_cb = CreateCircularBuffer(program, core, input_cb_config);
+        CircularBufferConfig input0_cb_config =
+            CircularBufferConfig(num_cb_tiles * tile_size, {{input0_cb_index, cb_data_format}})
+                .set_page_size(input0_cb_index, tile_size);
+        auto input0_cb = CreateCircularBuffer(program, core, input0_cb_config);
+
+        CircularBufferConfig input1_cb_config =
+            CircularBufferConfig(num_cb_tiles * tile_size, {{input1_cb_index, cb_data_format}})
+                .set_page_size(input1_cb_index, tile_size);
+        auto input1_cb = CreateCircularBuffer(program, core, input1_cb_config);
 
         CircularBufferConfig output_cb_config =
             CircularBufferConfig(num_cb_tiles * tile_size, {{output_cb_index, cb_data_format}})
@@ -104,9 +116,9 @@ public:
         auto output_cb = CreateCircularBuffer(program, core, output_cb_config);
 
         // Kernel compile-time arguments
-        std::vector<uint32_t> reader_compile_args = {num_tiles, input_cb_index};
+        std::vector<uint32_t> reader_compile_args = {num_tiles, input0_cb_index, input1_cb_index};
         std::vector<uint32_t> writer_compile_args = {num_tiles, output_cb_index};
-        std::vector<uint32_t> compute_compile_args = {num_tiles, input_cb_index, output_cb_index};
+        std::vector<uint32_t> compute_compile_args = {num_tiles, input0_cb_index, input1_cb_index, output_cb_index};
 
         // Create kernels
         reader_kernel = CreateKernel(
@@ -134,17 +146,27 @@ public:
             ComputeConfig{.math_fidelity = MathFidelity::HiFi4, .compile_args = compute_compile_args});
     }
 
-    void Execute(std::vector<bfloat16>& input_data, std::vector<bfloat16>& output_data) {
+    void Execute(
+        IDevice* device,
+        std::vector<typename DFormat::Host>& input0_data,
+        std::vector<typename DFormat::Host> input1_data,
+        std::vector<typename DFormat::Host>& output_data) {
+        // Get command queue
+        CommandQueue* cq = &device->command_queue();
+
         // Set runtime arguments
-        SetRuntimeArgs(program, reader_kernel, core, {input_buffer->address()});
+        SetRuntimeArgs(program, reader_kernel, core, {input0_buffer->address(), input1_buffer->address()});
         SetRuntimeArgs(program, writer_kernel, core, {output_buffer->address()});
         // No runtime args needed for compute kernel
 
         // Upload input data
-        EnqueueWriteBuffer(*cq, input_buffer, input_data.data(), false);
+        EnqueueWriteBuffer(*cq, input0_buffer, input0_data.data(), false);
+        EnqueueWriteBuffer(*cq, input1_buffer, input1_data.data(), false);
 
         // Execute program
+
         EnqueueProgram(*cq, program, false);
+        Finish(*cq);
 
         // Read output data
         EnqueueReadBuffer(*cq, output_buffer, output_data.data(), true);
@@ -153,7 +175,7 @@ public:
 
 int main() {
     // Test parameters
-    constexpr uint32_t num_tiles = 4;  // Number of tiles to process
+    constexpr uint32_t num_tiles = 1;  // Number of tiles to process
     constexpr uint32_t elements_per_tile = TILE_WIDTH * TILE_HEIGHT;
 
     // Create random input data
@@ -161,47 +183,77 @@ int main() {
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
 
-    std::vector<bfloat16> input_data(num_tiles * elements_per_tile);
-    for (auto& val : input_data) {
-        val = bfloat16(dis(gen));
+    std::vector<float> input0_data_f32(num_tiles * elements_per_tile);
+    std::vector<float> input1_data_f32(num_tiles * elements_per_tile);
+
+    std::vector<bfloat16> input0_data_bf16(num_tiles * elements_per_tile);
+    std::vector<bfloat16> input1_data_bf16(num_tiles * elements_per_tile);
+
+    for (size_t i = 0; i < num_tiles * elements_per_tile; i++) {
+        float power_f32 = 9.f;
+        float exponent_f32 = 2.f;
+
+        input0_data_bf16[i] = bfloat16(power_f32);
+        input1_data_bf16[i] = bfloat16(exponent_f32);
+
+        input0_data_f32[i] = power_f32;
+        input1_data_f32[i] = exponent_f32;
     }
 
     // Create output data vector
-    std::vector<bfloat16> output_data(num_tiles * elements_per_tile);
+    std::vector<bfloat16> output_data_bf16(num_tiles * elements_per_tile);
+    std::vector<float> output_data_f32(num_tiles * elements_per_tile);
+
+    constexpr int device_id = 0;
 
     // Create and setup kernel
-    UnaryLLKKernel kernel(num_tiles);
-    kernel.Setup();
 
     // Execute kernel
-    kernel.Execute(input_data, output_data);
+    {
+        UnaryLLKKernel<DFormat_Float32> kernel_f32(num_tiles);
+        IDevice* device = CreateDevice(device_id);
+        kernel_f32.Setup(device);
+        kernel_f32.Execute(device, input0_data_f32, input1_data_f32, output_data_f32);
+        CloseDevice(device);
+    }
+
+    {
+        UnaryLLKKernel<DFormat_Bfloat16> kernel_bf16(num_tiles);
+
+        IDevice* device = CreateDevice(device_id);
+        kernel_bf16.Setup(device);
+        kernel_bf16.Execute(device, input0_data_bf16, input1_data_bf16, output_data_bf16);
+        CloseDevice(device);
+    }
 
     // Print results
-    fmt::print("Test Unary LLK Example Results:\n");
+    fmt::print("Test Binary LLK Example Results:\n");
     fmt::print("Number of tiles processed: {}\n", num_tiles);
     fmt::print("Elements per tile: {}\n", elements_per_tile);
 
+    size_t elements_to_print = 1;
+
     // Print first few elements for verification
-    fmt::print("\nFirst 10 elements:\n");
-    for (int i = 0; i < 10 && i < input_data.size(); i++) {
+    fmt::print("\nFirst {} elements:\n", elements_to_print);
+    for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
         fmt::print(
-            "Input[{}]: {:.4f} -> Output[{}]: {:.4f}\n", i, input_data[i].to_float(), i, output_data[i].to_float());
+            "[float32] Input[{}]: {:.4f}, {:4f} -> Output[{}]: {:.4f}\n",
+            i,
+            input0_data_f32[i],
+            input1_data_f32[i],
+            i,
+            output_data_f32[i]);
     }
 
-    // Verify that output matches input (identity operation)
-    bool passed = true;
-    for (size_t i = 0; i < input_data.size(); i++) {
-        if (std::abs(input_data[i].to_float() - output_data[i].to_float()) > 1e-6) {
-            passed = false;
-            break;
-        }
+    for (int i = 0; i < elements_to_print && i < input0_data_bf16.size(); i++) {
+        fmt::print(
+            "[bfloat16] Input[{}]: {:.4f}, {:4f} -> Output[{}]: {:.4f}\n",
+            i,
+            input0_data_bf16[i].to_float(),
+            input1_data_bf16[i].to_float(),
+            i,
+            output_data_bf16[i].to_float());
     }
 
-    if (passed) {
-        fmt::print("\nTest PASSED: Identity operation successful!\n");
-    } else {
-        fmt::print("\nTest FAILED: Output does not match input!\n");
-    }
-
-    return passed ? 0 : 1;
+    return 0;
 }

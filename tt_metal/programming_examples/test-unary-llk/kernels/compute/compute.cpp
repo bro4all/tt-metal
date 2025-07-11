@@ -4,24 +4,27 @@
 
 #include <cstdint>
 #include "compute_kernel_api/tile_move_copy.h"
+#include "compute_kernel_api/eltwise_binary.h"
+#include "compute_kernel_api/eltwise_binary_sfpu.h"
 #include "compute_kernel_api/eltwise_unary/eltwise_unary.h"
 #include "compute_kernel_api/eltwise_unary/identity.h"
+#include "debug/dprint_tensix.h"
 
 namespace NAMESPACE {
 void MAIN {
     // Get compile-time arguments
     constexpr uint32_t Wt = get_compile_time_arg_val(0);
-    constexpr uint32_t input_cb = get_compile_time_arg_val(1);
-    constexpr uint32_t output_cb = get_compile_time_arg_val(2);
-
-    // Initialize the compute kernel
-    init_sfpu(input_cb, output_cb);
-
-    // Initialize the identity kernel
-    identity_tile_init();
+    constexpr uint32_t input0_cb = get_compile_time_arg_val(1);
+    constexpr uint32_t input1_cb = get_compile_time_arg_val(2);
+    constexpr uint32_t output_cb = get_compile_time_arg_val(3);
 
     constexpr uint32_t TILE0 = 0;
+    constexpr uint32_t TILE1 = 1;
     constexpr uint32_t FIRST_TILE = 0;
+
+    // Initialize the compute kernel
+    binary_op_init_common(TILE0, TILE1, TILE0);
+    power_binary_tile_init();
 
     // Process each tile
     for (uint32_t tile_idx = 0; tile_idx < Wt; tile_idx++) {
@@ -29,11 +32,19 @@ void MAIN {
         tile_regs_acquire();
 
         // Wait for input tile to be available
-        cb_wait_front(input_cb, 1);
+        cb_wait_front(input0_cb, 1);
+        cb_wait_front(input1_cb, 1);
 
         // Copy tile from circular buffer to registers
-        copy_tile(input_cb, FIRST_TILE, TILE0);
-        identity_tile(TILE0);
+        copy_tile_to_dst_init_short(input0_cb);
+        copy_tile(input0_cb, FIRST_TILE, TILE0);
+
+        copy_tile_to_dst_init_short(input1_cb);
+        copy_tile(input1_cb, FIRST_TILE, TILE1);
+
+        power_binary_tile(TILE0, TILE1);
+
+        dprint_tensix_dest_reg(TILE0);
 
         // Apply identity operation (in this case, no-op since we're just copying)
         // For identity, we can simply skip any SFPU operation
@@ -49,7 +60,8 @@ void MAIN {
         pack_tile(TILE0, output_cb, FIRST_TILE);
 
         // Pop the input tile and push the output tile
-        cb_pop_front(input_cb, 1);
+        cb_pop_front(input0_cb, 1);
+        cb_pop_front(input1_cb, 1);
 
         // Mark output tile as ready
         cb_push_back(output_cb, 1);
