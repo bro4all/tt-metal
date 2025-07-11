@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <random>
@@ -66,9 +67,7 @@ public:
         input1_cb_index(CBIndex::c_1),
         output_cb_index(CBIndex::c_2) {}
 
-    ~UnaryLLKKernel() {
-
-    }
+    ~UnaryLLKKernel() {}
 
     void Setup(IDevice* device) {
         // Initialize device
@@ -123,7 +122,7 @@ public:
         // Create kernels
         reader_kernel = CreateKernel(
             program,
-            "tt_metal/programming_examples/test-unary-llk/kernels/dataflow/reader.cpp",
+            "tt_metal/programming_examples/test-binary-llk/kernels/dataflow/reader.cpp",
             core,
             DataMovementConfig{
                 .processor = DataMovementProcessor::RISCV_1,
@@ -132,7 +131,7 @@ public:
 
         writer_kernel = CreateKernel(
             program,
-            "tt_metal/programming_examples/test-unary-llk/kernels/dataflow/writer.cpp",
+            "tt_metal/programming_examples/test-binary-llk/kernels/dataflow/writer.cpp",
             core,
             DataMovementConfig{
                 .processor = DataMovementProcessor::RISCV_0,
@@ -141,7 +140,7 @@ public:
 
         compute_kernel = CreateKernel(
             program,
-            "tt_metal/programming_examples/test-unary-llk/kernels/compute/compute.cpp",
+            "tt_metal/programming_examples/test-binary-llk/kernels/compute/compute.cpp",
             core,
             ComputeConfig{.math_fidelity = MathFidelity::HiFi4, .compile_args = compute_compile_args});
     }
@@ -189,15 +188,26 @@ int main() {
     std::vector<bfloat16> input0_data_bf16(num_tiles * elements_per_tile);
     std::vector<bfloat16> input1_data_bf16(num_tiles * elements_per_tile);
 
+    std::vector<float> data0 = {-2.f, -1.f, 0.f, 1.f, 2.f};
+    std::vector<float> data1 = {-2.f, -1.f, 0.f, 1.f, 2.f};
+
     for (size_t i = 0; i < num_tiles * elements_per_tile; i++) {
-        float power_f32 = 9.f;
-        float exponent_f32 = 2.f;
+        float val0_f32 = 9.f;
+        float val1_f32 = 2.f;
 
-        input0_data_bf16[i] = bfloat16(power_f32);
-        input1_data_bf16[i] = bfloat16(exponent_f32);
+        if (i < data0.size()) {
+            val0_f32 = data0[i];
+        }
 
-        input0_data_f32[i] = power_f32;
-        input1_data_f32[i] = exponent_f32;
+        if (i < data1.size()) {
+            val1_f32 = data1[i];
+        }
+
+        input0_data_bf16[i] = bfloat16(val0_f32);
+        input1_data_bf16[i] = bfloat16(val1_f32);
+
+        input0_data_f32[i] = val0_f32;
+        input1_data_f32[i] = val1_f32;
     }
 
     // Create output data vector
@@ -231,13 +241,13 @@ int main() {
     fmt::print("Number of tiles processed: {}\n", num_tiles);
     fmt::print("Elements per tile: {}\n", elements_per_tile);
 
-    size_t elements_to_print = 1;
+    size_t elements_to_print = 5;
 
     // Print first few elements for verification
     fmt::print("\nFirst {} elements:\n", elements_to_print);
     for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
         fmt::print(
-            "[float32] Input[{}]: {:.4f}, {:4f} -> Output[{}]: {:.4f}\n",
+            "[float32] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}\n",
             i,
             input0_data_f32[i],
             input1_data_f32[i],
@@ -247,12 +257,24 @@ int main() {
 
     for (int i = 0; i < elements_to_print && i < input0_data_bf16.size(); i++) {
         fmt::print(
-            "[bfloat16] Input[{}]: {:.4f}, {:4f} -> Output[{}]: {:.4f}\n",
+            "[bfloat16] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}\n",
             i,
             input0_data_bf16[i].to_float(),
             input1_data_bf16[i].to_float(),
             i,
             output_data_bf16[i].to_float());
+    }
+
+    for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
+        float truth = sinf(input0_data_f32[i]);
+        fmt::print(
+            "[float32 reference] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}, bf16 = {:6f}\n",
+            i,
+            input0_data_f32[i],
+            input1_data_f32[i],
+            i,
+            truth,
+            bfloat16(truth).to_float());
     }
 
     return 0;
