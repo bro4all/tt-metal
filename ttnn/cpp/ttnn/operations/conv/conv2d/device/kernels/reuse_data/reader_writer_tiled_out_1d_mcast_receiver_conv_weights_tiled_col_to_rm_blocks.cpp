@@ -41,6 +41,7 @@ void kernel_main() {
     constexpr uint32_t weights_size_h = get_compile_time_arg_val(27);
     constexpr uint32_t reuse_loops = get_compile_time_arg_val(28);
     constexpr uint32_t act_cb_tiles = get_compile_time_arg_val(29);
+    constexpr uint32_t w_tiles = get_compile_time_arg_val(30);
 
     uint32_t i = 0;
     uint32_t noop = get_arg_val<uint32_t>(i++);
@@ -122,13 +123,12 @@ void kernel_main() {
                         window_outer_offset,
                         weight_size_w,
                         weights_size_h,
-                        7>(
+                        w_tiles>(
                         packed_reader_indices_ptr,
                         reader_offset,
                         l1_write_addr_act,
                         reader_idx,
                         loop == 0,
-                        cb_start_addr,
                         loop == 0,
                         cb_id_act_second_reader);
                     noc_async_read_barrier();

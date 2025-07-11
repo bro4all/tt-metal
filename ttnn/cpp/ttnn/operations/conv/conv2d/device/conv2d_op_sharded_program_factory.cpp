@@ -307,6 +307,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         act_block_h_nsubblocks_split_last * out_subblock_h_ntiles * act_block_w_ntiles;
 
     uint32_t act_block_h_split = act_block_h_nsubblocks_split * out_subblock_h_ntiles;
+    uint32_t act_block_h_split_last = act_block_h_nsubblocks_split_last * out_subblock_h_ntiles;
 
     // weight block info
     uint32_t weight_block_w_datums = weight_matrix_width / num_blocks_weight_w;
@@ -614,12 +615,15 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         uint32_t image_width_tiles = image_width / tt::constants::TILE_HEIGHT;
         uint32_t opt_act_cb_num_tiles = image_width_tiles * act_block_w_ntiles / conv_act_c_blocks;
         uint32_t opt_reuse_loops = std::ceil(static_cast<float>(act_block_h_split) / image_width_tiles);
+        uint32_t opt_reuse_loops_last = std::ceil(static_cast<float>(act_block_h_split_last) / image_width_tiles);
+
         uint32_t opt_reuse_diff = (filter_w * conv_act_c_read_bytes) / 16;
 
         reuse_data_opt_config.enabled = true;
         reuse_data_opt_config.image_width_tiles = image_width_tiles;
         reuse_data_opt_config.act_cb_num_tiles = opt_act_cb_num_tiles;
         reuse_data_opt_config.reuse_loops = opt_reuse_loops;
+        reuse_data_opt_config.reuse_loops_last = opt_reuse_loops_last;
         reuse_data_opt_config.reuse_diff = opt_reuse_diff;
     }
 
@@ -789,6 +793,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     if (enable_activation_data_reuse) {
         reader_compile_time_args.push_back(reuse_data_opt_config.reuse_loops);
         reader_compile_time_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+        reader_compile_time_args.push_back(act_block_w_ntiles);
     }
 
     std::map<std::string, std::string> reader_defines;
@@ -870,8 +875,9 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         };
         if (enable_activation_data_reuse) {
             split_reader_args.push_back(filter_h);
-            split_reader_args.push_back(reuse_data_opt_config.reuse_loops);
+            split_reader_args.push_back(reuse_data_opt_config.reuse_loops_last);
             split_reader_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+            split_reader_args.push_back(act_block_w_ntiles);
         }
 
         writer_compile_time_args.insert(

@@ -62,6 +62,7 @@ struct ReuseDataOptConfig {
     uint32_t act_cb_num_tiles;
     uint32_t image_width_tiles;
     uint32_t reuse_loops;
+    uint32_t reuse_loops_last;
     uint32_t reuse_diff;
 };
 

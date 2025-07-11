@@ -59,15 +59,19 @@ inline void tilize_in(
     uint32_t out_diff,
     uint32_t element_diff,
     uint32_t image_width_in_tiles) {
-    cb_reserve_back(out_cb_id, in_block_w * in1_num_subblocks * in_subblock_h * 2);
+    uint32_t cb_tiles = in_block_w * in_subblock_h * (in1_num_subblocks + in2_num_subblocks);
+    cb_reserve_back(out_cb_id, cb_tiles);
 
-    uint32_t pointer1 = 0;
-    uint32_t counter;
+    uint32_t pointer1 = 0, initial_pointer = 0;
+    uint32_t counter = 0;
 
     PACK((pointer1 = get_local_cb_interface(out_cb_id).fifo_wr_ptr));
+    PACK((initial_pointer = pointer1));
     uint32_t pointer2 = pointer1 + out_diff;
 
-    for (uint32_t in_subblock = 0; in_subblock < in1_num_subblocks; ++in_subblock) {
+    uint32_t num_subblocks = in1_num_subblocks > in2_num_subblocks ? in1_num_subblocks : in2_num_subblocks;
+
+    for (uint32_t in_subblock = 0; in_subblock < num_subblocks; ++in_subblock) {
         for (uint32_t h = 0; h < in_subblock_h; ++h) {
             // TODO(sjovic): move out these divisions somehow
             if (counter >= image_width_in_tiles && counter % image_width_in_tiles == 0) {
@@ -86,26 +90,31 @@ inline void tilize_in(
             PACK((update_local_cb_tile_wr_ptr(out_cb_id, 0)));
             PACK((pointer1 += element_diff));
 
-            tilize_init(in1_cb_id, in_block_w, out_cb_id);
-            cb_wait_front(in1_cb_id, in_block_w);
-            tilize_block(in1_cb_id, in_block_w, out_cb_id);
-            cb_pop_front(in1_cb_id, in_block_w);
-            tilize_uninit(in1_cb_id, out_cb_id);
+            if (in_subblock < in1_num_subblocks) {
+                tilize_init(in1_cb_id, in_block_w, out_cb_id);
+                cb_wait_front(in1_cb_id, in_block_w);
+                tilize_block(in1_cb_id, in_block_w, out_cb_id);
+                cb_pop_front(in1_cb_id, in_block_w);
+                tilize_uninit(in1_cb_id, out_cb_id);
+            }
 
             // out cb pointer magic BRISC
             PACK((update_local_cb_wr_ptr(out_cb_id, pointer2)));
             PACK((update_local_cb_tile_wr_ptr(out_cb_id, 0)));
             PACK((pointer2 += element_diff));
 
-            tilize_init(in2_cb_id, in_block_w, out_cb_id);
-            cb_wait_front(in2_cb_id, in_block_w);
-            tilize_block(in2_cb_id, in_block_w, out_cb_id);
-            cb_pop_front(in2_cb_id, in_block_w);
-            tilize_uninit(in2_cb_id, out_cb_id);
+            if (in_subblock < in2_num_subblocks) {
+                tilize_init(in2_cb_id, in_block_w, out_cb_id);
+                cb_wait_front(in2_cb_id, in_block_w);
+                tilize_block(in2_cb_id, in_block_w, out_cb_id);
+                cb_pop_front(in2_cb_id, in_block_w);
+                tilize_uninit(in2_cb_id, out_cb_id);
+            }
         }
     }
 
-    cb_push_back(out_cb_id, in_block_w * in1_num_subblocks * in_subblock_h * 2);
+    PACK((update_local_cb_wr_ptr(out_cb_id, initial_pointer)));  // reset write pointer to the beginning
+    cb_push_back(out_cb_id, cb_tiles);
 
 }  // tilize_in()
 
@@ -130,7 +139,7 @@ inline void reblock_and_untilize(
             }
             tile_regs_commit();
             tile_regs_wait();
-            pack_untilize_dst<out_subblock_w, out_block_w>(out_cb_id, 1, n);
+            pack_untilize_dest<out_subblock_w, out_block_w>(out_cb_id, 1, n);
             tile_regs_release();
             block_offset += out_subblock_num_tiles;
         }
@@ -206,7 +215,7 @@ void MAIN {
     SFPU_OP_INIT_ACTIVATION
 #endif
     uint32_t start_cb_addr_1 = get_local_cb_interface(in0_cb_id).fifo_rd_ptr;
-    // TODO: generalize for data formats
+    // TODO(sjovic): generalize for data formats
     uint32_t out_diff = (1088 * in0_block_w * in0_num_subblocks_read * in0_subblock_h) / 16;
     uint32_t element_diff = (1088 * in0_block_w) / 16;
 
@@ -397,7 +406,7 @@ void MAIN {
 #endif
 
                         uint32_t start_dst_index = 0;
-                        matmul_pack_tile(start_dst_index, curr_matmul_out_cb, out_subblock_num_tiles);
+                        pack_tile_block(start_dst_index, curr_matmul_out_cb, out_subblock_num_tiles);
 
                         tile_regs_release();
                         cb_push_back(curr_matmul_out_cb, out_subblock_num_tiles);
@@ -471,7 +480,7 @@ void MAIN {
             // if last block we pack the final result with relu enabled
             PACK((llk_pack_relu_config(ReluType::ZERO_RELU)));
 #endif
-            pack_reconfig_data_format(matmul_partials_cb, out_cb_id);
+            pack_reconfig_data_format(matmul_partials_cb, untilize_mode_out_cb_id);
 #ifdef PACKER_L1_ACC
             pack_reconfig_l1_acc(0);
 #endif
@@ -520,7 +529,7 @@ void MAIN {
             }
 #endif
             if constexpr (untilize_out) {
-#if defined PACKER_L1_ACC and not defined FUSE_BIAS
+#if defined PACKER_L1_ACC
                 pack_reconfig_data_format(matmul_partials_cb, out_cb_id);
                 pack_reconfig_l1_acc(0);
 #endif
@@ -532,7 +541,7 @@ void MAIN {
 #endif
 
 #ifdef PACKER_UNTILIZE
-                pack_untilize_dst_init_short<out_subblock_w, out_block_w>(out_cb_id);
+                pack_untilize_dest_init<out_subblock_w, out_block_w>(out_cb_id);
                 copy_tile_to_dst_init_short(matmul_partials_cb);
                 for (uint32_t in0_subblock_i = 0; in0_subblock_i < in0_num_subblocks; ++in0_subblock_i) {
                     reblock_and_untilize<out_subblock_w, out_block_w>(

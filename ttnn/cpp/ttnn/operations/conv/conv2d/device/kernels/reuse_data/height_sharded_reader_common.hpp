@@ -43,7 +43,6 @@ FORCE_INLINE void read_sticks(
     uint32_t& l1_write_addr_act,
     uint32_t& reader_idx,
     bool first_write,
-    uint32_t cb_start_addr,
     uint32_t first_in_block_h,
     uint32_t out_cb_id) {
     // uint16_t num_elems = packed_reader_indices_ptr[reader_idx] & 0xffff;
@@ -78,6 +77,11 @@ FORCE_INLINE void read_sticks(
                 cb_push_back(out_cb_id, w_tiles);
             }
         }
+
+        // TODO(sjovic): use constant for 32
+        // if (counter % 32 != 0) {
+        //     cb_push_back(out_cb_id, w_tiles);
+        // }
     } else {
         for (uint16_t ind = start_ind; ind <= end_ind; ind += stride_w) {
             uint32_t act_l1_offset = reader_offset + (ind * conv_act_c_read_bytes);

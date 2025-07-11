@@ -49,6 +49,7 @@ void kernel_main() {
     constexpr uint32_t weights_size_h = get_compile_time_arg_val(27);
     constexpr uint32_t reuse_loops = get_compile_time_arg_val(28);
     constexpr uint32_t act_cb_tiles = get_compile_time_arg_val(29);
+    constexpr uint32_t w_tiles = get_compile_time_arg_val(30);
 
     uint32_t i = 0;
     const uint32_t weight_addr_dram_base = get_arg_val<uint32_t>(i++);
@@ -170,13 +171,12 @@ void kernel_main() {
                         window_outer_offset,
                         weight_size_w,
                         weights_size_h,
-                        7>(
+                        w_tiles>(
                         packed_reader_indices_ptr,
                         reader_offset,
                         l1_write_addr_act,
                         reader_idx,
                         loop == 0,
-                        cb_start_addr,
                         loop == 0,
                         cb_id_act_second_reader);
                     noc_async_read_barrier();
@@ -313,7 +313,7 @@ void kernel_main() {
 #endif
         if constexpr (split_reader) {
             // Increment reader index for the next number of segments (number of segments for other reader)
-            reader_idx = +static_cast<uint32_t>(packed_reader_indices_ptr[reader_idx] & 0xffff) + 1;
+            reader_idx += static_cast<uint32_t>(packed_reader_indices_ptr[reader_idx] & 0xffff) + 1;
         }
     }  // out_num_blocks_h
 }

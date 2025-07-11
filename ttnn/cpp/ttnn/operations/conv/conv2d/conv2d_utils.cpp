@@ -1011,6 +1011,10 @@ conv_op_l1_usage conv2d::calculate_L1_usage(
     if (conv_config.enable_activation_data_reuse) {
         uint32_t image_width_tiles = image_width / tt::constants::TILE_HEIGHT;
         uint32_t opt_act_cb_num_tiles = image_width_tiles * block_config.act_block_w_ntiles;
+        // TODO(sjovic): fix this for unet 3 - for unet example
+        //         uint32_t opt_reuse_loops = std::ceil(static_cast<float>(std::ceil(block_config.act_block_h_ntiles /
+        //         2)) / image_width_tiles);
+
         uint32_t opt_reuse_loops =
             std::ceil(static_cast<float>(block_config.act_block_h_ntiles / 2) / image_width_tiles);
 
@@ -1018,6 +1022,8 @@ conv_op_l1_usage conv2d::calculate_L1_usage(
         reuse_config.act_cb_num_tiles = opt_act_cb_num_tiles;
         reuse_config.image_width_tiles = image_width_tiles;
         reuse_config.reuse_loops = opt_reuse_loops;
+        // TODO(sjovic): here we might need more space
+        reuse_config.reuse_loops_last = opt_reuse_loops;
         reuse_config.reuse_diff = 0;
     }
 

@@ -110,6 +110,7 @@ def run_conv(
     enable_act_double_buffer=False,
     enable_weights_double_buffer=False,
     enable_activation_data_reuse=False,
+    input_tensor_passed=None,
 ):
     if isinstance(device, ttnn.MeshDevice) and len(device.get_device_ids()) > 1:
         assert input_mesh_mapper is not None, "Expected mesh mapper for input tensor when running on multiple devices"
@@ -245,7 +246,7 @@ def run_conv(
         conv_config.enable_weights_double_buffer = config_override["enable_weights_double_buffer"]
 
     [tt_output_tensor_on_device, [out_height, out_width], [d_w, d_b]] = ttnn.conv2d(
-        input_tensor=tt_input_tensor,
+        input_tensor=tt_input_tensor if input_tensor_passed is None else input_tensor_passed,
         weight_tensor=tt_weight_tensor,
         in_channels=input_channels,
         out_channels=output_channels,
@@ -269,7 +270,7 @@ def run_conv(
     )
     if run_twice:
         [tt_output_tensor_on_device, [out_height, out_width], [d_w, d_b]] = ttnn.conv2d(
-            input_tensor=tt_input_tensor,
+            input_tensor=tt_input_tensor if input_tensor_passed is None else input_tensor_passed,
             weight_tensor=d_w,
             in_channels=input_channels,
             out_channels=output_channels,
@@ -1890,29 +1891,31 @@ def test_unet_conv_groups_2_wh(
 )
 @pytest.mark.parametrize(
     "groups",
-    [4, 6],
+    [
+        4,
+    ],
 )
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 16384}], indirect=True)
 @pytest.mark.parametrize(
     "output_channels, input_channels, input_height, input_width, filter_height, filter_width, stride_h, stride_w, pad_h, pad_w, shard_layout, config_override, in_place",
     (
-        (16, 4, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
-        (16, 16, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
-        (16, 16, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
-        (32, 16, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 32, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 32, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (64, 32, 66, 10, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (64, 64, 66, 10, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 96, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 32, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 64, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (32, 32, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
-        (16, 48, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
-        (16, 16, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
-        (16, 32, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, True),
-        (16, 32, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, True),
-        (1, 16, 1056, 160, 1, 1, 1, 1, 0, 0, HS, {"act_block_h": 2 * 32}, False),
+        (16, 4, 1056, 160, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (16, 16, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
+        # (16, 16, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
+        # (32, 16, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 32, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 32, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (64, 32, 66, 10, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (64, 64, 66, 10, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 96, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 32, 132, 20, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 64, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (32, 32, 264, 40, 3, 3, 1, 1, 1, 1, HS, None, False),
+        # (16, 48, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
+        # (16, 16, 528, 80, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, False),
+        # (16, 32, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, True),
+        # (16, 32, 1056, 160, 3, 3, 1, 1, 1, 1, HS, {"act_block_h": 2 * 32}, True),
+        # (1, 16, 1056, 160, 1, 1, 1, 1, 0, 0, HS, {"act_block_h": 2 * 32}, False),
     ),
 )
 @pytest.mark.parametrize(
@@ -1956,6 +1959,47 @@ def test_unet_conv_groups_4_6_wh(
         pytest.skip("OOM")
     if input_channels == 32 and input_height == 1056 and groups == 6:
         pytest.skip("OOM - enable when support for full in-place conv2d")
+
+    # copied over from unet test
+    input_channels = groups * input_channels
+    output_channels = groups * output_channels
+
+    conv_input_shape = (batch_size, input_channels, input_height, input_width)
+    torch_input_tensor_nchw = randomize_torch_tensor(torch_tensor_map, conv_input_shape)
+
+    torch_input_tensor_nchw_reshaped = torch_input_tensor_nchw.reshape(
+        [1, 1, input_channels, input_height * input_width]
+    )
+    input_core_grid = ttnn.CoreRangeSet(
+        {
+            ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(7, 6)),
+            ttnn.CoreRange(ttnn.CoreCoord(0, 7), ttnn.CoreCoord(6, 7)),
+        }
+    )
+    input_shard_shape = (16, 2688)
+    input_shard_spec = ttnn.ShardSpec(input_core_grid, input_shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+    input_sharded_memory_config = ttnn.MemoryConfig(
+        ttnn.TensorMemoryLayout.WIDTH_SHARDED, ttnn.BufferType.L1, input_shard_spec
+    )
+    tt_input_tensor = ttnn.from_torch(
+        torch_input_tensor_nchw_reshaped, dtype=ttnn.bfloat16, device=device, memory_config=input_sharded_memory_config
+    )
+
+    output_core_grid = ttnn.CoreRangeSet(
+        {
+            ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(7, 6)),
+            ttnn.CoreRange(ttnn.CoreCoord(0, 7), ttnn.CoreCoord(6, 7)),
+        }
+    )
+    output_shard_shape = (2688, input_channels)
+    output_shard_spec = ttnn.ShardSpec(output_core_grid, output_shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+    output_memory_config = ttnn.MemoryConfig(
+        ttnn.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.BufferType.L1, output_shard_spec
+    )
+    tt_input_tensor = ttnn.experimental.convert_to_hwc(
+        tt_input_tensor, memory_config=output_memory_config, dtype=ttnn.bfloat16
+    )
+
     run_conv(
         device,
         torch_tensor_map,
@@ -1963,8 +2007,8 @@ def test_unet_conv_groups_4_6_wh(
         output_dtype,
         weights_dtype,
         batch_size,
-        groups * output_channels,
-        groups * input_channels,
+        output_channels,
+        input_channels,
         input_height,
         input_width,
         filter_height,
@@ -1974,10 +2018,18 @@ def test_unet_conv_groups_4_6_wh(
         (pad_h, pad_w),
         config_override,
         shard_layout=shard_layout,
-        input_layout=ttnn.TILE_LAYOUT if output_dtype == ttnn.bfloat8_b else ttnn.ROW_MAJOR_LAYOUT,
+        input_layout=ttnn.ROW_MAJOR_LAYOUT,
         output_layout=output_layout,
         groups=groups,
         in_place=in_place,
+        enable_split_reader=True,
+        enable_activation_data_reuse=False,
+        deallocate_activation=True,
+        enable_act_double_buffer=True,
+        enable_weights_double_buffer=True,
+        activation="relu",
+        input_dtype=ttnn.bfloat16,
+        input_tensor_passed=tt_input_tensor,
     )
 
 

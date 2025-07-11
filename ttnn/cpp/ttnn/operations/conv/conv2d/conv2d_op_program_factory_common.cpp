@@ -62,7 +62,7 @@ std::vector<CBInfo> get_cb_info(
 
     uint32_t act_cb_num_tiles = act_block_num_tiles;
     if (reuse_data_opt_config.has_value() && reuse_data_opt_config.value().enabled) {
-        uint32_t in_channels = weights_shape[1];
+        uint32_t in_channels = weights_shape[2] / (kernel_size[0] * kernel_size[1]);
         uint32_t reuse_buffer_length = reuse_data_opt_config.value().reuse_loops * in_channels * kernel_size[1] *
                                        2;  // f16 TODO(sjovic): use data format here
         uint32_t reuse_buffer_length_tiles = reuse_buffer_length / input_tile_size;
