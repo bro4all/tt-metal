@@ -188,8 +188,8 @@ int main() {
     std::vector<bfloat16> input0_data_bf16(num_tiles * elements_per_tile);
     std::vector<bfloat16> input1_data_bf16(num_tiles * elements_per_tile);
 
-    std::vector<float> data0 = {-2.f, -1.f, 0.f, 1.f, 2.f};
-    std::vector<float> data1 = {-2.f, -1.f, 0.f, 1.f, 2.f};
+    std::vector<float> data0 = {9.f, 100000.f, 5.f};
+    std::vector<float> data1 = {2.f, 1.7984f, 3.f};
 
     for (size_t i = 0; i < num_tiles * elements_per_tile; i++) {
         float val0_f32 = 9.f;
@@ -241,7 +241,7 @@ int main() {
     fmt::print("Number of tiles processed: {}\n", num_tiles);
     fmt::print("Elements per tile: {}\n", elements_per_tile);
 
-    size_t elements_to_print = 5;
+    size_t elements_to_print = data0.size();
 
     // Print first few elements for verification
     fmt::print("\nFirst {} elements:\n", elements_to_print);
@@ -254,6 +254,7 @@ int main() {
             i,
             output_data_f32[i]);
     }
+    fmt::print("-----");
 
     for (int i = 0; i < elements_to_print && i < input0_data_bf16.size(); i++) {
         fmt::print(
@@ -264,9 +265,10 @@ int main() {
             i,
             output_data_bf16[i].to_float());
     }
+    fmt::print("-----");
 
     for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
-        float truth = sinf(input0_data_f32[i]);
+        float truth = powf(input0_data_f32[i], input1_data_f32[i]);
         fmt::print(
             "[float32 reference] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}, bf16 = {:6f}\n",
             i,

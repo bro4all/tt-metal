@@ -24,11 +24,11 @@ void MAIN {
     constexpr uint32_t FIRST_TILE = 0;
 
     // Initialize the compute kernel
-    // binary_op_init_common(TILE0, TILE1, TILE0);
-    // power_binary_tile_init();
+    binary_op_init_common(TILE0, TILE1, TILE0);
+    power_binary_tile_init();
 
-    unary_op_init_common(input0_cb, output_cb);
-    sin_tile_init();
+    // unary_op_init_common(input0_cb, output_cb);
+    // sin_tile_init();
 
     // Process each tile
     for (uint32_t tile_idx = 0; tile_idx < Wt; tile_idx++) {
@@ -46,8 +46,8 @@ void MAIN {
         copy_tile_to_dst_init_short(input1_cb);
         copy_tile(input1_cb, FIRST_TILE, TILE1);
 
-        // power_binary_tile(TILE0, TILE1);
-        sin_tile(TILE0);
+        power_binary_tile(TILE0, TILE1);
+        // sin_tile(TILE0);
 
         dprint_tensix_dest_reg(TILE0);
 
