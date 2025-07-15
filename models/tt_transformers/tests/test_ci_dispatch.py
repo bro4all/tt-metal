@@ -19,6 +19,7 @@ from models.utility_functions import skip_for_grayskull
         "/mnt/MLPerf/tt_dnn-models/llama/Meta-Llama-3.1-8B-Instruct/",
         "/mnt/MLPerf/tt_dnn-models/llama/Llama3.2-11B-Vision-Instruct/",
         "/mnt/MLPerf/tt_dnn-models/Mistral/hub/models--mistralai--Mistral-7B-Instruct-v0.3/snapshots/e0bc86c23ce5aae1db576c8cca6f06f1f73af2db",
+        "/mnt/MLPerf/huggingface/hub/models--microsoft--Phi-3-mini-128k-instruct/snapshots/072cb7562cb8c4adf682a8e186aaafa49469eb5d",
     ],
     ids=[
         "ttt-llama3.2-1B",
@@ -26,6 +27,7 @@ from models.utility_functions import skip_for_grayskull
         "ttt-llama3.1-8B",
         "ttt-llama3.2-11B",
         "ttt-mistral-7B-v0.3",
+        "ttt-phi-3-mini-128k-instruct",
     ],
 )
 def test_ci_dispatch(model_weights):
@@ -41,6 +43,11 @@ def test_ci_dispatch(model_weights):
             del os.environ["LLAMA_DIR"]
         os.environ["HF_MODEL"] = model_weights
         os.environ["TT_CACHE_PATH"] = "/mnt/MLPerf/tt_dnn-models/Mistral/TT_CACHE/Mistral-7B-Instruct-v0.3"
+    elif "phi-3-mini" in model_weights.lower():
+        if os.getenv("LLAMA_DIR"):
+            del os.environ["LLAMA_DIR"]
+        os.environ["HF_MODEL"] = model_weights
+        os.environ["TT_CACHE_PATH"] = "/mnt/MLPerf/tt_dnn-models/TT_CACHE/Phi-3-mini-128k-instruct"
 
     # Pass the exit code of pytest to proper keep track of failures during runtime
     exit_code = pytest.main(
