@@ -38,22 +38,23 @@ constexpr uint32_t ring_size = get_compile_time_arg_val(11);
 constexpr uint32_t num_batches = get_compile_time_arg_val(12);
 constexpr uint32_t num_tiles_to_write_per_packet = get_compile_time_arg_val(13);
 constexpr bool direction = get_compile_time_arg_val(14);
+constexpr uint32_t chunks_per_sync = get_compile_time_arg_val(15);
 
-constexpr bool is_2d_fabric = get_compile_time_arg_val(15);
-constexpr bool terminate_from_kernel = get_compile_time_arg_val(16);
-constexpr bool is_termination_master = get_compile_time_arg_val(17);
-constexpr uint8_t fabric_mux_x = get_compile_time_arg_val(18);
-constexpr uint8_t fabric_mux_y = get_compile_time_arg_val(19);
-constexpr uint8_t fabric_mux_num_buffers_per_channel = get_compile_time_arg_val(20);
-constexpr size_t fabric_mux_channel_buffer_size_bytes = get_compile_time_arg_val(21);
-constexpr size_t fabric_mux_channel_base_address = get_compile_time_arg_val(22);
-constexpr size_t fabric_mux_connection_info_address = get_compile_time_arg_val(23);
-constexpr size_t fabric_mux_connection_handshake_address = get_compile_time_arg_val(24);
-constexpr size_t fabric_mux_flow_control_address = get_compile_time_arg_val(25);
-constexpr size_t fabric_mux_buffer_index_address = get_compile_time_arg_val(26);
-constexpr size_t fabric_mux_status_address = get_compile_time_arg_val(27);
-constexpr uint8_t fabric_mux_channel_id = get_compile_time_arg_val(28);
-constexpr size_t fabric_mux_termination_signal_address = get_compile_time_arg_val(29);
+constexpr bool is_2d_fabric = get_compile_time_arg_val(16);
+constexpr bool terminate_from_kernel = get_compile_time_arg_val(17);
+constexpr bool is_termination_master = get_compile_time_arg_val(18);
+constexpr uint8_t fabric_mux_x = get_compile_time_arg_val(19);
+constexpr uint8_t fabric_mux_y = get_compile_time_arg_val(20);
+constexpr uint8_t fabric_mux_num_buffers_per_channel = get_compile_time_arg_val(21);
+constexpr size_t fabric_mux_channel_buffer_size_bytes = get_compile_time_arg_val(22);
+constexpr size_t fabric_mux_channel_base_address = get_compile_time_arg_val(23);
+constexpr size_t fabric_mux_connection_info_address = get_compile_time_arg_val(24);
+constexpr size_t fabric_mux_connection_handshake_address = get_compile_time_arg_val(25);
+constexpr size_t fabric_mux_flow_control_address = get_compile_time_arg_val(26);
+constexpr size_t fabric_mux_buffer_index_address = get_compile_time_arg_val(27);
+constexpr size_t fabric_mux_status_address = get_compile_time_arg_val(28);
+constexpr uint8_t fabric_mux_channel_id = get_compile_time_arg_val(29);
+constexpr size_t fabric_mux_termination_signal_address = get_compile_time_arg_val(30);
 
 void kernel_main() {
     ///////////////////////////////////////////////////
@@ -134,6 +135,7 @@ void kernel_main() {
 
     tt::tt_fabric::fabric_client_connect(mux_connection_handle);
 
+    uint32_t chunk_count = 0;
     for (uint32_t b = 0; b < num_batches; b++) {
         int slice_idx = direction ? my_chip_id - 1 : my_chip_id + 1;
 
@@ -167,6 +169,7 @@ void kernel_main() {
                     tiles_read += backwards_offset;
                 }
 
+                chunk_count = 0;
                 while (tiles_read < tiles_to_read) {
                     uint32_t tiles_remaining_to_read = tiles_to_read - tiles_read;
 
@@ -264,18 +267,32 @@ void kernel_main() {
                         }
                         tiles_read += tiles_to_read_in_other_direction;
                     }
+
+                    chunk_count++;
+                    if (chunk_count % chunks_per_sync == 0) {
+                        // 2. unicast output ready semaphore
+                        uint64_t out_ready_sem_noc_addr_in_pkt =
+                            safe_get_noc_addr(out_ready_sem_noc0_x, out_ready_sem_noc0_y, out_ready_sem, 0);
+                        pkt_hdr_seminc->to_noc_unicast_atomic_inc(tt::tt_fabric::NocUnicastAtomicIncCommandHeader{
+                            out_ready_sem_noc_addr_in_pkt,
+                            static_cast<uint16_t>(1),  // increment 1
+                            32});
+                        pkt_hdr_seminc->to_chip_unicast(1);
+                        tt::tt_fabric::fabric_atomic_inc(mux_connection_handle, pkt_hdr_seminc);
+                    }
                 }
 
-                // 2. unicast output ready semaphore
-                uint64_t out_ready_sem_noc_addr_in_pkt =
-                    safe_get_noc_addr(out_ready_sem_noc0_x, out_ready_sem_noc0_y, out_ready_sem, 0);
-                pkt_hdr_seminc->to_noc_unicast_atomic_inc(tt::tt_fabric::NocUnicastAtomicIncCommandHeader{
-                    out_ready_sem_noc_addr_in_pkt,
-                    static_cast<uint16_t>(1),  // increment 1
-                    32});
-                // Write the unicast packet (forward)
-                pkt_hdr_seminc->to_chip_unicast(1);
-                tt::tt_fabric::fabric_atomic_inc(mux_connection_handle, pkt_hdr_seminc);
+                if (chunk_count % chunks_per_sync != 0) {
+                    // 2. unicast output ready semaphore
+                    uint64_t out_ready_sem_noc_addr_in_pkt =
+                        safe_get_noc_addr(out_ready_sem_noc0_x, out_ready_sem_noc0_y, out_ready_sem, 0);
+                    pkt_hdr_seminc->to_noc_unicast_atomic_inc(tt::tt_fabric::NocUnicastAtomicIncCommandHeader{
+                        out_ready_sem_noc_addr_in_pkt,
+                        static_cast<uint16_t>(1),  // increment 1
+                        32});
+                    pkt_hdr_seminc->to_chip_unicast(1);
+                    tt::tt_fabric::fabric_atomic_inc(mux_connection_handle, pkt_hdr_seminc);
+                }
                 noc_async_writes_flushed();
             } else {
                 // Otherwise, on the last slice, write it to output buffer
