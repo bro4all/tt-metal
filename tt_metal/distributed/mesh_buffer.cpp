@@ -116,6 +116,8 @@ std::shared_ptr<MeshBuffer> MeshBuffer::create(
 
 void MeshBuffer::initialize_device_buffers() {
     auto init_device_buffer_at_address = [this](const MeshCoordinate& coord) {
+        log_debug(LogDistributed, "Initializing device buffer at address {} for coordinate {}", address_, coord);
+
         std::shared_ptr<Buffer> buffer = Buffer::create(
             device()->get_device(coord),
             address_,
@@ -129,7 +131,11 @@ void MeshBuffer::initialize_device_buffers() {
     };
 
     for (auto& [coord, device_buffer] : buffers_) {
-        device_buffer = init_device_buffer_at_address(coord);
+        if (auto mesh_device = mesh_device_.lock(); mesh_device != nullptr) {
+            if (mesh_device->is_local(coord)) {
+                device_buffer = init_device_buffer_at_address(coord);
+            }
+        }
     }
 }
 
