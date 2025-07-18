@@ -211,7 +211,7 @@ private:
             }
             case 4: {
                 switch (arch) {
-                    case tt::ARCH::WORMHOLE_B0: return MeshDeviceType::N300_2x2;
+                    case tt::ARCH::WORMHOLE_B0: return MeshDeviceType::T3000;
                     default: return std::nullopt;
                 }
             }
