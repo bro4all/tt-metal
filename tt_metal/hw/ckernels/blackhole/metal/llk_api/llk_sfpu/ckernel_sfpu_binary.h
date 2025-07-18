@@ -231,64 +231,8 @@ sfpi_inline sfpi::vFloat test_conditional_bug0(sfpi::vFloat base, sfpi::vFloat p
     return independent;
 }
 
+// POW = 2.0, karma should be 2.f as well
 sfpi_inline sfpi::vFloat test_conditional_bug(sfpi::vFloat base, sfpi::vFloat pow) {
-    // POW = 2.0, karma should be 2.f as well
-    // TTI_SFPCONFIG(0, 11, 1); // loading -1 to LREG11 where sfpi expects it
-
-    sfpi::vInt independent = reinterpret<sfpi::vInt>(pow);
-    v_if(pow < 2.f) { independent = sfpi::vInt(0xDEADBEEF); }
-    v_endif;
-
-    // sfpi::vInt result = 100;
-
-    // #pragma GCC unroll 100
-    // for (int i = 0; i < 100; i++) {
-    //     v_if(result < 0) { result = 0; }
-    //     v_endif;
-    // }
-
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
-    __builtin_rvtt_sfpnop();
     __builtin_rvtt_sfpnop();
     __builtin_rvtt_sfpnop();
     __builtin_rvtt_sfpnop();
@@ -476,64 +420,7 @@ sfpi_inline sfpi::vFloat test_conditional_bug(sfpi::vFloat base, sfpi::vFloat po
     __builtin_rvtt_sfpnop();
     __builtin_rvtt_sfpnop();
 
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    // v_if(result < 0) { result = 0; }
-    // v_endif;
-
-    return reinterpret<sfpi::vFloat>(independent);
+    return pow;
 }
 
 sfpi_inline sfpi::vFloat process_alt0(sfpi::vFloat in) { return 0.5f * (3.0f * (in * 0.333333f) + 5.f * (in * 0.2f)); }
@@ -784,6 +671,7 @@ sfpi_inline sfpi::vFloat test_conditional_bug3(sfpi::vFloat base, sfpi::vFloat p
 template <bool APPROXIMATION_MODE, BinaryOp BINOP, int ITERATIONS = 8>
 inline void calculate_sfpu_binary(const uint dst_offset) {
     if constexpr (BINOP == BinaryOp::POW) {
+        TTI_SFPCONFIG(0, 11, 1);
         for (int d = 0; d < ITERATIONS; d++) {
             constexpr uint dst_tile_size = 32;
             sfpi::vFloat in0 = sfpi::dst_reg[0];
@@ -804,6 +692,7 @@ inline void calculate_sfpu_binary(const uint dst_offset) {
 template <bool APPROXIMATION_MODE /*unused*/, BinaryOp BINOP>
 inline void sfpu_binary_init() {
     if constexpr (BINOP == BinaryOp::POW) {
+        TTI_SFPCONFIG(0, 11, 1);
         sfpi::vConstFloatPrgm0 = 2.f;
         sfpi::vConstFloatPrgm1 = 1.442695f;
         // sfpi::vConstFloatPrgm2 = -127.0f;
