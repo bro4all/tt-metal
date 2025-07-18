@@ -49,10 +49,30 @@ TEST(BigMeshDualRankTestT3K, SystemMeshValidation) {
     });
 }
 
-TEST(BigMeshDualRankTestT3K, MeshDevice2x4Validation) {
-    auto mesh_device = MeshDevice::create(MeshDeviceConfig(MeshShape(2,4)), DEFAULT_L1_SMALL_SIZE, DEFAULT_TRACE_REGION_SIZE, 1, tt::tt_metal::DispatchCoreType::WORKER);
-    EXPECT_EQ(mesh_device->shape(), MeshShape(2,4));
+// Parameterized test fixture for mesh device validation
+class BigMeshDualRankTestT3KFixture : public ::testing::Test, public ::testing::WithParamInterface<MeshShape> {};
+
+TEST_P(BigMeshDualRankTestT3KFixture, MeshDeviceValidation) {
+    MeshShape mesh_shape = GetParam();
+    auto mesh_device = MeshDevice::create(MeshDeviceConfig(mesh_shape), DEFAULT_L1_SMALL_SIZE, DEFAULT_TRACE_REGION_SIZE, 1, tt::tt_metal::DispatchCoreType::WORKER);
+    EXPECT_EQ(mesh_device->shape(), mesh_shape);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    MeshDeviceTests,
+    BigMeshDualRankTestT3KFixture,
+    ::testing::Values(
+        MeshShape(2, 4),
+        /* Issue #25355: Cannot create a MeshDevice with only one rank active.
+        MeshShape(1, 1),
+        MeshShape(1, 2),
+        MeshShape(2, 1),
+        MeshShape(2, 2),
+        */
+        MeshShape(1, 8),
+        MeshShape(8, 1)
+    )
+);
 
 TEST(BigMeshDualRankTestT3K, SystemMeshShape) {
     const auto& system_mesh = SystemMesh::instance();
@@ -72,6 +92,35 @@ TEST(BigMeshDualRankTestT3K, SystemMeshShape) {
         EXPECT_NO_THROW(system_mesh.get_physical_device_id(MeshCoordinate(1, 2)));
         EXPECT_NO_THROW(system_mesh.get_physical_device_id(MeshCoordinate(1, 3)));
     }
+}
+
+TEST(BigMeshDualRankTestT3K, DistributedHostBuffer) {
+    auto mesh_device = MeshDevice::create(MeshDeviceConfig(MeshShape(2, 4)));
+    auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
+
+    DistributedHostBuffer host_buffer = DistributedHostBuffer::create(mesh_device->get_view());
+    auto rank = control_plane.get_local_host_rank_id_binding();
+    const auto EXPECTED_RANK_VALUE = (rank == HostRankId{0}) ? 0 : 1;
+
+    host_buffer.emplace_shard(MeshCoordinate(0, 0), []() { return HostBuffer(std::vector<int>{0, 0, 0}); });
+    host_buffer.emplace_shard(MeshCoordinate(0, 1), []() { return HostBuffer(std::vector<int>{0, 0, 0}); });
+    host_buffer.emplace_shard(MeshCoordinate(1, 0), []() { return HostBuffer(std::vector<int>{0, 0, 0}); });
+    host_buffer.emplace_shard(MeshCoordinate(1, 1), []() { return HostBuffer(std::vector<int>{0, 0, 0}); });
+
+    host_buffer.emplace_shard(MeshCoordinate(0, 2), []() { return HostBuffer(std::vector<int>{1, 1, 1}); });
+    host_buffer.emplace_shard(MeshCoordinate(0, 3), []() { return HostBuffer(std::vector<int>{1, 1, 1}); });
+    host_buffer.emplace_shard(MeshCoordinate(1, 2), []() { return HostBuffer(std::vector<int>{1, 1, 1}); });
+    host_buffer.emplace_shard(MeshCoordinate(1, 3), []() { return HostBuffer(std::vector<int>{1, 1, 1}); });
+
+    auto validate_local_shards = [EXPECTED_RANK_VALUE](const HostBuffer& buffer) {
+        fmt::print("Rank {}: {}\n", EXPECTED_RANK_VALUE, std::vector<int>(buffer.view_as<int>().begin(), buffer.view_as<int>().end()));
+        auto span = buffer.view_as<int>();
+        for (const auto& value : span) {
+            EXPECT_EQ(value, EXPECTED_RANK_VALUE);
+        }
+    };
+
+    host_buffer.apply(validate_local_shards);
 }
 
 }  // namespace tt::tt_metal::distributed
