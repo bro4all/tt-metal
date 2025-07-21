@@ -64,6 +64,21 @@ class ModelOptimisations:
             act_block_w_div=1,
             act_block_h_override=32,
         )
+
+        self.conv_configs["ABH_32_NO_ADB_BS_TP2"] = ttnn.Conv2dConfig(
+            weights_dtype=self.conv_ws_dtype,
+            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            deallocate_activation=True,
+            enable_weights_double_buffer=True,
+            reallocate_halo_output=True,
+            enable_act_double_buffer=False,
+            enable_split_reader=False,
+            enable_subblock_padding=False,
+            reshard_if_not_optimal=True,
+            act_block_w_div=1,
+            act_block_h_override=32,
+        )
+
         self.conv_configs["ABH_64_NO_ADB_BS"] = ttnn.Conv2dConfig(
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
@@ -139,6 +154,20 @@ class ModelOptimisations:
             enable_split_reader=False,
             enable_subblock_padding=False,
             reshard_if_not_optimal=True,
+            act_block_w_div=1,
+            act_block_h_override=64,
+        )
+
+        self.conv_configs["ABH_64_NO_ADB_BS_BF16_TP2"] = ttnn.Conv2dConfig(
+            weights_dtype=self.conv_w_dtype,
+            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            deallocate_activation=True,
+            reallocate_halo_output=False,
+            enable_act_double_buffer=False,
+            enable_split_reader=False,
+            enable_subblock_padding=False,
+            reshard_if_not_optimal=True,
+            enable_weights_double_buffer=True,
             act_block_w_div=1,
             act_block_h_override=64,
         )
@@ -961,11 +990,19 @@ class ModelOptimisations:
 
             # UP BLOCK 0
             elif ("up_blocks.0.resnets.0.conv1" == conv_path) or ("up_blocks.0.resnets.1.conv1" == conv_path):
-                return self.conv_configs["ABH_32_NO_ADB_BS"]
+                # first
+                if parallelism_strategy == SdxlParallelism.NoParallelism:
+                    return self.conv_configs["ABH_32_NO_ADB_BS"]
+                else:
+                    return self.conv_configs["ABH_32_NO_ADB_BS_TP2"]
             elif "up_blocks.0.upsamplers.0" == conv_path:
                 return self.conv_configs["ABH_64_NO_ADB_WDB_BS"]
             elif ("up_blocks.0.resnets" in conv_path) and ("conv2" in conv_path):
-                return self.conv_configs["ABH_64_NO_ADB_BS_BF16"]  # Note: pcc drop if bf16 is removed
+                # second
+                if parallelism_strategy == SdxlParallelism.NoParallelism:
+                    return self.conv_configs["ABH_64_NO_ADB_BS_BF16"]
+                else:
+                    return self.conv_configs["ABH_64_NO_ADB_BS_BF16_TP2"]
             elif "up_blocks.0.resnets.2.conv1" == conv_path:
                 return self.conv_configs["ABH_512_NO_ADB_WS"]
 
