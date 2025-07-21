@@ -24,7 +24,7 @@ from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import SdxlPar
         ((1, 640, 32, 32), (1, 1280), 2, 0, True, 1, "down_blocks", 0.999),  # pcc bad
         ((1, 1280, 32, 32), (1, 1280), 2, 1, False, 1, "down_blocks", 0.997),  # pcc bad
         ((1, 960, 128, 128), (1, 1280), 2, 0, True, 2, "up_blocks", 0.998),
-        # ((1, 640, 128, 128), (1, 1280), 2, 1, True, 2, "up_blocks", 0.998),
+        ((1, 640, 128, 128), (1, 1280), 2, 1, True, 2, "up_blocks", 0.997),
         # ((1, 2560, 32, 32), (1, 1280), 0, 0, True, 1, "up_blocks", 0.996),
         # ((1, 1920, 32, 32), (1, 1280), 0, 2, True, 1, "up_blocks", 0.995),
         # ((1, 1920, 64, 64), (1, 1280), 1, 0, True, 1, "up_blocks", 0.999),

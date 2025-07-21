@@ -988,13 +988,15 @@ class ModelOptimisations:
                 else:
                     return self.conv_configs["ABH_64_ADB_WDB_BS_TP"]
             elif ("up_blocks.2.resnets" in conv_path) and ("conv2" in conv_path):
-                print("Here this 2")
                 if parallelism_strategy == SdxlParallelism.NoParallelism:
                     return self.conv_configs["ABH_128_ADB_WDB_BS"]
                 else:
                     return self.conv_configs["ABH_128_ADB_WDB_BS_TP2"]
             elif ("up_blocks.2.resnets.1.conv1" == conv_path) or ("up_blocks.2.resnets.2.conv1" == conv_path):
-                return self.conv_configs["ABH_128_ADB_WDB_BS"]
+                if parallelism_strategy == SdxlParallelism.NoParallelism:
+                    return self.conv_configs["ABH_128_ADB_WDB_BS"]
+                else:
+                    return self.conv_configs["ABH_128_ADB_WDB_BS_TP2"]
 
             elif "conv_out" == conv_path:
                 return self.conv_configs["ABH_128_NO_ADB_HS"]
