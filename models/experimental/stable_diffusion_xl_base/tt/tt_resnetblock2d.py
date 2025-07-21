@@ -244,6 +244,7 @@ class TtResnetBlock2D(nn.Module):
                 groups=self.groups,
             )
         else:
+            print("Conv1 config is: ", self.conv1_config)
             [hidden_states, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
                 input_tensor=hidden_states,
                 weight_tensor=self.tt_conv1_weights,
@@ -339,6 +340,7 @@ class TtResnetBlock2D(nn.Module):
 
         hidden_states = ttnn.silu(hidden_states)
 
+        print("Conv2 config is: ", self.conv2_config)
         [hidden_states, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv2_weights,

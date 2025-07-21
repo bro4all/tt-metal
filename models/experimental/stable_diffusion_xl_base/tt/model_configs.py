@@ -142,16 +142,16 @@ class ModelOptimisations:
         )
         self.conv_configs["ABH_128_ADB_WDB_BS"] = ttnn.Conv2dConfig(
             weights_dtype=self.conv_ws_dtype,
-            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
             deallocate_activation=True,
             reallocate_halo_output=False,
-            enable_act_double_buffer=True,
-            enable_weights_double_buffer=True,
-            enable_split_reader=False,
+            enable_act_double_buffer=False,
+            enable_weights_double_buffer=False,
+            enable_split_reader=True,
             enable_subblock_padding=False,
             reshard_if_not_optimal=True,
             act_block_w_div=1,
-            act_block_h_override=128,
+            act_block_h_override=32 * 2,
         )
         self.conv_configs["ABH_128_NO_ADB_BS"] = ttnn.Conv2dConfig(
             weights_dtype=self.conv_ws_dtype,
