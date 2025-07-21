@@ -375,6 +375,20 @@ class ModelOptimisations:
             act_block_h_override=512,
         )
 
+        self.conv_configs["ABH_512_NO_ADB_WS_TP2"] = ttnn.Conv2dConfig(
+            weights_dtype=self.conv_ws_dtype,
+            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            deallocate_activation=True,
+            reallocate_halo_output=True,
+            enable_act_double_buffer=True,
+            enable_weights_double_buffer=True,
+            enable_split_reader=False,
+            enable_subblock_padding=False,
+            reshard_if_not_optimal=True,
+            act_block_w_div=1,
+            act_block_h_override=1 * 32,
+        )
+
         # DEFAULT CONF
         self.conv_configs["DEFAULT"] = ttnn.Conv2dConfig(
             weights_dtype=conv_w_dtype,
@@ -1004,7 +1018,10 @@ class ModelOptimisations:
                 else:
                     return self.conv_configs["ABH_64_NO_ADB_BS_BF16_TP2"]
             elif "up_blocks.0.resnets.2.conv1" == conv_path:
-                return self.conv_configs["ABH_512_NO_ADB_WS"]
+                if parallelism_strategy == SdxlParallelism.NoParallelism:
+                    return self.conv_configs["ABH_512_NO_ADB_WS"]
+                else:
+                    return self.conv_configs["ABH_512_NO_ADB_WS_TP2"]
 
             # UP BLOCK 1
             elif "up_blocks.1.resnets.0.conv1" == conv_path:
