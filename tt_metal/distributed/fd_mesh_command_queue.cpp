@@ -55,11 +55,6 @@ namespace tt::tt_metal::distributed {
 
 namespace {
 
-template<typename Func>
-void if_local(MeshDevice* mesh_device, const MeshCoordinate& coord, Func&& func) {
-    if (mesh_device->is_local(coord)) { func(); }
-}
-
 template<typename Container, typename Func>
 void for_each_local(MeshDevice* mesh_device, const Container& container, Func&& func) {
     for (auto it = container.begin(); it != container.end(); ++it) {
@@ -68,11 +63,6 @@ void for_each_local(MeshDevice* mesh_device, const Container& container, Func&& 
             func(coord);
         }
     }
-}
-
-template<typename Func>
-void if_local_address(MeshDevice* mesh_device, const DeviceMemoryAddress& addr, Func&& func) {
-    if_local(mesh_device, addr.device_coord, std::forward<Func>(func));
 }
 
 MeshCoordinate get_local_start_coord(MeshDevice* mesh_device, const MeshCoordinateRange& range) {
@@ -788,20 +778,21 @@ void FDMeshCommandQueue::read_completion_queue_event(MeshReadEventDescriptor& re
 }
 
 void FDMeshCommandQueue::read_l1_data_from_completion_queue(MeshCoreDataReadDescriptor& read_l1_data_descriptor) {
-    if (this->mesh_device_->is_local(read_l1_data_descriptor.device_coord)) {
-        IDevice* device = mesh_device_->get_device(read_l1_data_descriptor.device_coord);
-        const chip_id_t mmio_device_id =
-            tt::tt_metal::MetalContext::instance().get_cluster().get_associated_mmio_device(device->id());
-        const uint16_t channel =
-            tt::tt_metal::MetalContext::instance().get_cluster().get_assigned_channel_for_device(device->id());
-        device_dispatch::read_core_data_from_completion_queue(
-            read_l1_data_descriptor.single_core_descriptor,
-            mmio_device_id,
-            channel,
-            id_,
-            device->sysmem_manager(),
-            exit_condition_);
+    if (!this->mesh_device_->is_local(read_l1_data_descriptor.device_coord)) {
+        return;
     }
+    IDevice* device = mesh_device_->get_device(read_l1_data_descriptor.device_coord);
+    const chip_id_t mmio_device_id =
+        tt::tt_metal::MetalContext::instance().get_cluster().get_associated_mmio_device(device->id());
+    const uint16_t channel =
+        tt::tt_metal::MetalContext::instance().get_cluster().get_assigned_channel_for_device(device->id());
+    device_dispatch::read_core_data_from_completion_queue(
+        read_l1_data_descriptor.single_core_descriptor,
+        mmio_device_id,
+        channel,
+        id_,
+        device->sysmem_manager(),
+        exit_condition_);
 }
 
 void FDMeshCommandQueue::reset_worker_state(
@@ -931,26 +922,27 @@ void FDMeshCommandQueue::capture_go_signal_trace_on_unused_subgrids(
     MeshCoordinateRange full_grid(mesh_device_->shape());
     MeshCoordinateRangeSet unused_grids = subtract(full_grid, active_grid);
     for (const auto& unused_grid : unused_grids.ranges()) {
-        if_local(mesh_device_, unused_grid.start_coord(), [&] {
-            auto& sysmem_manager_for_trace = mesh_device_->get_device(unused_grid.start_coord())->sysmem_manager();
-            uint32_t sysmem_manager_offset = sysmem_manager_for_trace.get_issue_queue_write_ptr(id_);
-            write_go_signal(
-                id_,
-                mesh_device_,
-                sub_device_id,
-                sysmem_manager_for_trace,
-                expected_num_workers_completed,
-                this->virtual_program_dispatch_core(),
-                mcast_go_signals,
-                unicast_go_signals,
-                dispatch_md);
-            auto mesh_trace_md = MeshTraceStagingMetadata{
-                unused_grid,
-                unused_grid.start_coord(),
-                sysmem_manager_offset,
-                sysmem_manager_for_trace.get_issue_queue_write_ptr(id_) - sysmem_manager_offset};
-            ordered_mesh_trace_md_.push_back(mesh_trace_md);
-        });
+        if (!mesh_device_->is_local(unused_grid.start_coord())) {
+            continue;
+        }
+        auto& sysmem_manager_for_trace = mesh_device_->get_device(unused_grid.start_coord())->sysmem_manager();
+        uint32_t sysmem_manager_offset = sysmem_manager_for_trace.get_issue_queue_write_ptr(id_);
+        write_go_signal(
+            id_,
+            mesh_device_,
+            sub_device_id,
+            sysmem_manager_for_trace,
+            expected_num_workers_completed,
+            this->virtual_program_dispatch_core(),
+            mcast_go_signals,
+            unicast_go_signals,
+            dispatch_md);
+        auto mesh_trace_md = MeshTraceStagingMetadata{
+            unused_grid,
+            unused_grid.start_coord(),
+            sysmem_manager_offset,
+            sysmem_manager_for_trace.get_issue_queue_write_ptr(id_) - sysmem_manager_offset};
+        ordered_mesh_trace_md_.push_back(mesh_trace_md);
     }
 }
 
