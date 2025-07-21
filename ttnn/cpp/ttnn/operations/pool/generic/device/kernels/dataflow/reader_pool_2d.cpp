@@ -95,14 +95,16 @@ FORCE_INLINE void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_r
         uint32_t processed_rows = 0;
         uint32_t chunk = 0;
         cb_reserve_back(in_cb_id, 1);
-        // reade each row of the window contiguously
+        auto process_in_cb = [&]() __attribute__((always_inline)) {
+            noc_async_read_barrier();
+            cb_push_back(in_cb_id, 1);
+            cb_reserve_back(in_cb_id, 1);
+            in_l1_write_addr = get_write_ptr(in_cb_id);
+        };
         for (uint32_t h = 0; h < window_h; ++h) {
             auto check_row_count = [&]() __attribute__((always_inline)) {
                 if ((processed_rows % max_rows_for_reduction) == 0 || processed_rows == total_elems_to_reduce) {
-                    noc_async_read_barrier();
-                    cb_push_back(in_cb_id, 1);
-                    cb_reserve_back(in_cb_id, 1);
-                    in_l1_write_addr = get_write_ptr(in_cb_id);
+                    process_in_cb();
                     // If next is last chunk, fill whole buffer with the init_value. note for max pool we do
                     // not need to fill the CB for the partial chunk since as long as we have N>1 chunks we
                     // are guaranteed that the junk data remaining from chunk N-1 will fill the entire CB and
@@ -127,7 +129,9 @@ FORCE_INLINE void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_r
                 noc_async_read_one_packet(get_noc_addr(read_offset), in_l1_write_addr, read_bytes * window_w);
                 in_l1_write_addr += in_write_inc * window_w;
                 processed_rows += window_w;
-                check_row_count();
+                if constexpr (is_large_kernel) {
+                    check_row_count();
+                }
             };
             auto read_elemental_row = [&]() __attribute__((always_inline)) {
                 for (uint32_t w = 0; w < window_w; ++w) {
@@ -137,7 +141,9 @@ FORCE_INLINE void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_r
                     noc_async_read_one_packet(get_noc_addr(read_offset), in_l1_write_addr, read_bytes);
                     in_l1_write_addr += in_write_inc;
                     processed_rows++;
-                    check_row_count();
+                    if constexpr (is_large_kernel) {
+                        check_row_count();
+                    }
                 }
             };
             if constexpr (wide_reduction) {
@@ -155,6 +161,9 @@ FORCE_INLINE void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_r
                     read_contiguous_row();
                 }
             }
+        }
+        if constexpr (!is_large_kernel) {
+            process_in_cb();
         }
     }
 }
