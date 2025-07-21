@@ -558,6 +558,14 @@ void noc_async_read_one_packet_set_state(std::uint64_t src_noc_addr, std::uint32
     WAYPOINT("NASD");
 }
 
+void noc_async_read_one_packet_update_state(std::uint64_t src_noc_addr, uint8_t noc = noc_index) {
+    NOC_CMD_BUF_WRITE_REG(
+        noc,
+        read_cmd_buf,
+        NOC_TARG_ADDR_COORDINATE,
+        (uint32_t)(src_noc_addr >> NOC_ADDR_COORD_SHIFT) & NOC_COORDINATE_MASK);
+}
+
 // TODO: write docs
 // this issues only a single packet with size <= NOC_MAX_BURST_SIZE (ie maximum packet size)
 template <bool inc_num_issued = true>
@@ -885,6 +893,21 @@ FORCE_INLINE void noc_async_write_one_packet_set_state(
     NOC_CMD_BUF_WRITE_REG(noc, write_cmd_buf, NOC_AT_LEN_BE, size);
 }
 
+FORCE_INLINE void noc_async_write_one_packet_update_state(std::uint64_t dst_noc_addr, uint8_t noc = noc_index) {
+    NOC_CMD_BUF_WRITE_REG(
+        noc,
+        write_cmd_buf,
+        NOC_RET_ADDR_COORDINATE,
+        (uint32_t)(dst_noc_addr >> NOC_ADDR_COORD_SHIFT) & NOC_COORDINATE_MASK);
+}
+
+FORCE_INLINE void noc_prep_proto(std::uint64_t dst_noc_addr) {
+    NOC_CMD_BUF_WRITE_REG(
+        noc_index,
+        write_cmd_buf,
+        NOC_RET_ADDR_COORDINATE,
+        (uint32_t)(dst_noc_addr >> NOC_ADDR_COORD_SHIFT) & NOC_COORDINATE_MASK);
+}
 // TODO: write docs
 // this issues only a single packet with cmd buf state with size <= NOC_MAX_BURST_SIZE (ie maximum packet size)
 template <bool non_posted = true>

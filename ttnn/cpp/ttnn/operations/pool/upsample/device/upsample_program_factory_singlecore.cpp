@@ -41,7 +41,7 @@ operation::ProgramWithCallbacks upsample_single_core(
     // circulat buffer for input
     uint32_t next_cb_index = CBIndex::c_0;
     uint32_t src0_cb_index = next_cb_index++;
-    uint32_t num_input_units = 2;
+    uint32_t num_input_units = 16;
     uint32_t aligned_input_unit_size = tt::round_up(input_unit_size, hal::get_dram_alignment());
 
     tt::tt_metal::create_cb(
