@@ -149,6 +149,8 @@ def run_all_gather_impl(
         [ttnn.create_global_semaphore(mesh_device, ccl_sub_device_crs, 0)] for _ in range(num_iters)
     ]
 
+    output_shape[dim] *= num_devices
+
     logger.info(f"Output shape: {output_shape}")
     logger.info(f"dim: {dim}")
     logger.info(f"input_shard_shape: {input_shard_shape}")
@@ -233,6 +235,8 @@ def run_all_gather_impl(
             ),
         )
 
+        logger.info(f"Input tensor shape: {input_tensor_mesh.shape}")
+
         input_tensor_mesh_list.append(input_tensor_mesh)
 
     tt_out_tensor_list = []
@@ -265,15 +269,17 @@ def run_all_gather_impl(
                 )
 
             else:
+                logger.info(f"input_tensor_mesh_list[i].shape: {input_tensor_mesh_list[i].shape}")
                 tt_out_tensor = ttnn.experimental.all_gather_async(
                     input_tensor_mesh_list[i],
-                    dim,
+                    dim=dim,
                     multi_device_global_semaphore=ccl_semaphore_handles[i],
                     num_links=num_links,
                     memory_config=output_mem_config,
                     topology=all_gather_topology,
                     subdevice_id=worker_sub_device_id,
                 )
+                logger.info(f"tt_out_tensor.shape: {tt_out_tensor.shape}")
             tt_out_tensor_list.append(tt_out_tensor)
 
         logger.info(f"Waiting for op")
@@ -281,6 +287,8 @@ def run_all_gather_impl(
         logger.info(f"Done op")
 
     passed = True
+    last = 0
+    last_failed = None
     for tensor_index in range(len(tt_out_tensor_list)):
         tt_out_tensor = tt_out_tensor_list[tensor_index]
         output_tensor = output_tensor_goldens_list[tensor_index]
@@ -291,10 +299,14 @@ def run_all_gather_impl(
             if input_dtype == ttnn.bfloat16:
                 eq, output = comp_equal(tt_output_tensor, output_tensor)
             else:
+                logger.info("torch shape: " + str(output_tensor.shape))
+                logger.info("tt_output_tensor shape: " + str(tt_output_tensor.shape))
                 eq, output = comp_pcc(tt_output_tensor, output_tensor)
             if not eq:
-                logger.error(f"output mismatch for tensor {i}")
+                logger.error(f"output mismatch for tensor {i}, {output}")
                 passed = False
+                last = i
+                last_failed = output
 
     assert (
         mesh_device.num_program_cache_entries() == 1 or mesh_device.num_program_cache_entries() == num_iters
@@ -302,18 +314,89 @@ def run_all_gather_impl(
     mesh_device.reset_sub_device_stall_group()
     mesh_device.clear_loaded_sub_device_manager()
     if not passed:
-        assert eq, f"{i} FAILED: {output}"
+        assert passed, f"LAST FAILED was tensor {last}: {last_failed}"
+
+
+B = 1
 
 
 # Enumerate the post-commit cases explicitly
 @skip_for_grayskull("Requires eth connected devices to run")
+@pytest.mark.parametrize("dim", [3])
+@pytest.mark.parametrize(
+    "num_devices, num_links, output_shape, layout",
+    [
+        # (4, 1, [1, 1, 64, 512], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 32, 32768], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 2048, 16384], ttnn.TILE_LAYOUT),
+        # (8, 1, [1, 1, 32, 1280], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 1, 2048], ttnn.TILE_LAYOUT), #-- hangs on dim 2
+        # (4, 1, [1, 1, 1, 1], ttnn.TILE_LAYOUT), # pcc -- tile padding
+        # (4, 1, [1, 1, 1, 8], ttnn.TILE_LAYOUT), # pcc -- tile padding
+        # (4, 1, [1, 1, 1, 16], ttnn.TILE_LAYOUT), # pcc -- tile padding
+        # (4, 1, [B, 32, 2048, 8], ttnn.TILE_LAYOUT), # hangs on dim 3
+        # (4, 1, [B, 32, 2048, 16], ttnn.TILE_LAYOUT), # hangs on dim 3
+        # (4, 1, [B, 32, 2048, 64], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 8, 8], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 16, 16], ttnn.TILE_LAYOUT),
+        (4, 1, [1, 1, 32, 32], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 1, 4096], ttnn.TILE_LAYOUT),
+        # (4, 1, [1, 1, 1, 32], ttnn.TILE_LAYOUT),
+        # (4, 1, [B, 32, 4096, 16], ttnn.TILE_LAYOUT), # hangs on dim 3
+        (4, 1, [B, 32, 4096, 32], ttnn.TILE_LAYOUT),  #
+        (4, 1, [B, 32, 4096, 64], ttnn.TILE_LAYOUT),
+    ],
+)
+@pytest.mark.parametrize(
+    "input_dtype",
+    [
+        # ttnn.bfloat16,
+        ttnn.bfloat8_b,
+    ],
+)
+@pytest.mark.parametrize(
+    "mem_config",
+    [
+        ttnn.MemoryConfig(buffer_type=ttnn.BufferType.DRAM),
+    ],
+)
+@pytest.mark.parametrize("num_iters", [10])
+@pytest.mark.parametrize("device_params", [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}], indirect=True)
+def test_all_gather_atul(
+    t3k_mesh_device,
+    # pcie_mesh_device,
+    num_devices,
+    output_shape,
+    dim,
+    num_links,
+    input_dtype,
+    layout,
+    mem_config,
+    num_iters,
+    function_level_defaults,
+):
+    input_shape = output_shape.copy()
+    run_all_gather_impl(
+        t3k_mesh_device,
+        num_devices,
+        input_shape,
+        dim,
+        num_links,
+        input_dtype,
+        layout,
+        function_level_defaults,
+        all_gather_topology=ttnn.Topology.Linear,
+        num_iters=num_iters,
+        rand_tensor=True,
+        mem_config=mem_config,
+    )
+
+
+@skip_for_grayskull("Requires eth connected devices to run")
 @pytest.mark.parametrize(
     "num_devices, num_links, output_shape, dim, layout",
     [
-        # (4, 1, [1, 1, 64, 512], 3, ttnn.TILE_LAYOUT),
-        # (4, 1, [1, 1, 32, 32768], 3, ttnn.TILE_LAYOUT),
-        # (4, 1, [1, 1, 2048, 16384], 3, ttnn.TILE_LAYOUT),
-        (4, 1, [1, 1, 32, 1280], 3, ttnn.TILE_LAYOUT),
+        (8, 1, [1, 1, 32, 1280], 3, ttnn.TILE_LAYOUT),
     ],
 )
 @pytest.mark.parametrize(
