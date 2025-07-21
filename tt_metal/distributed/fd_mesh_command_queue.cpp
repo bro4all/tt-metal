@@ -79,6 +79,15 @@ namespace tt::tt_metal::distributed {
         void if_local_address(MeshDevice* mesh_device, const DeviceMemoryAddress& addr, Func&& func) {
             if_local(mesh_device, addr.device_coord, std::forward<Func>(func));
         }
+
+        MeshCoordinate get_local_start_coord(MeshDevice* mesh_device, const MeshCoordinateRange& range) {
+            for (auto coord : range) {
+                if (mesh_device->is_local(coord)) {
+                    return coord;
+                }
+            }
+            TT_THROW("No local device found for range");
+        }
     }
     
 
@@ -908,7 +917,8 @@ void FDMeshCommandQueue::capture_program_trace_on_subgrid(
 #else
     // Optimized Path (generic use-cases): Program dispatch commands across the entire sub-grid are identical.
     // Capture once.
-    auto& sysmem_manager_for_trace = mesh_device_->get_device(sub_grid.start_coord())->sysmem_manager();
+    auto local_start_coord = get_local_start_coord(mesh_device_, sub_grid);
+    auto& sysmem_manager_for_trace = mesh_device_->get_device(local_start_coord)->sysmem_manager();
     uint32_t sysmem_manager_offset = sysmem_manager_for_trace.get_issue_queue_write_ptr(id_);
 
     program_dispatch::write_program_command_sequence(
