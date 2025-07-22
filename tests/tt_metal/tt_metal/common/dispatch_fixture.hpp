@@ -68,6 +68,13 @@ public:
     bool IsSlowDispatch() { return this->slow_dispatch_; }
     tt::ARCH GetArch() const { return this->arch_; }
 
+    // Clear device maps to prevent teardown from trying to close corrupted devices
+    // This is useful when external tools (like watcher_dump) may have corrupted device state
+    void ClearDeviceMaps() {
+        this->devices_.clear();
+        this->id_to_device_.clear();
+    }
+
 protected:
     tt::ARCH arch_;
     std::vector<tt::tt_metal::IDevice*> devices_;

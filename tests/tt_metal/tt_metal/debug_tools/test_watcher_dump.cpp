@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <libgen.h>
 #include <stdexcept>
+#include <sys/wait.h>
 #include <filesystem>
 #include "debug_tools_fixture.hpp"
 #include <fmt/base.h>
@@ -315,13 +316,6 @@ TEST_F(DPrintFixture, WatcherDumpPrintHanging) {
     std::string watcher_dump_path = find_watcher_dump(std::string(BUILD_ROOT_DIR) + "/tools");
     std::string watcher_log_path = get_tt_metal_home() + "/generated/watcher/watcher.log";
 
-    // Save current directory and change to TT_METAL_HOME
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) == nullptr) {
-        throw std::runtime_error("Failed to get current directory");
-    }
-    std::string original_cwd = cwd;
-
     setenv("TT_METAL_WATCHER_KEEP_ERRORS", "1", 1);
 
     if (this->slow_dispatch_) {
@@ -331,28 +325,59 @@ TEST_F(DPrintFixture, WatcherDumpPrintHanging) {
         CMAKE_UNIQUE_NAMESPACE::RunTest(fixture, device);},
         this->devices_[0]);
 
-
-
     //Run watcher_dump tool as in the bash script: ./build/tools/watcher_dump -d=0 -w -c
-    // std::string watcher_dump_cmd = "timeout 5s " + watcher_dump_path + " -d=0 -w -c";
-    // int ret = std::system(watcher_dump_cmd.c_str());
-    // ASSERT_EQ(ret, 0) << "watcher_dump tool failed to run: " << watcher_dump_cmd;
+    // Run watcher_dump in a completely separate process to avoid device conflicts
+    pid_t pid = fork();
 
-    // std::ifstream watcher_log(watcher_log_path);
-    // ASSERT_TRUE(watcher_log.is_open()) << "Failed to open watcher log: " << watcher_log_path;
-    // std::string line;
-    // bool found = false;
-    // const std::string expected_str = "tests/tt_metal/tt_metal/test_kernels/misc/print_hang.cpp";
-    // while (std::getline(watcher_log, line)) {
-    //     if (line.find(expected_str) != std::string::npos) {
-    //         found = true;
-    //         break;
-    //     }
-    // }
-    // watcher_log.close();
-    // ASSERT_TRUE(found) << "Error: couldn't find expected string in watcher log after dump: " << expected_str;
+    if (pid == 0) {  // Child process
+        // Prepare arguments
+        const char* args[] = {
+            watcher_dump_path.c_str(),
+            "-d=0",
+            "-w",
+            "-c",
+            nullptr
+        };
 
-    // std::filesystem::remove(watcher_log_path);
+        // Execute the command - this replaces the entire child process
+        execv(watcher_dump_path.c_str(), const_cast<char* const*>(args));
+
+        // If execv fails
+        perror("execv failed");
+        exit(1);
+    } else if (pid > 0) {  // Parent process
+        int status;
+        pid_t result = waitpid(pid, &status, 0);
+
+        ASSERT_TRUE(result > 0) << "Failed to wait for child process";
+        ASSERT_TRUE(WIFEXITED(status)) << "Child process did not exit normally";
+        ASSERT_EQ(WEXITSTATUS(status), 0) << "Child process exited with non-zero status";
+    } else {
+        FAIL() << "Fork failed";
+    }
+
+    printf("we managed to get past the watcher_dump tool\n");
+
+    // Clear device maps to prevent teardown from trying to close corrupted devices
+    // watcher_dump may have corrupted the device state, so we skip normal teardown
+    this->ClearDeviceMaps();
+
+    std::ifstream watcher_log(watcher_log_path);
+    ASSERT_TRUE(watcher_log.is_open()) << "Failed to open watcher log: " << watcher_log_path;
+    std::string line;
+    bool found = false;
+    const std::string expected_str = "tests/tt_metal/tt_metal/test_kernels/misc/print_hang.cpp";
+    while (std::getline(watcher_log, line)) {
+        if (line.find(expected_str) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    watcher_log.close();
+    ASSERT_TRUE(found) << "Error: couldn't find expected string in watcher log after dump: " << expected_str;
+
+    std::filesystem::remove(watcher_log_path);
+
 
 }
 
