@@ -50,15 +50,27 @@ RoutingTableGenerator::RoutingTableGenerator(const std::string& mesh_graph_desc_
     const auto& inter_mesh_connectivity = this->mesh_graph->get_inter_mesh_connectivity();
     this->intra_mesh_table_.resize(intra_mesh_connectivity.size());
     this->inter_mesh_table_.resize(intra_mesh_connectivity.size());
+    this->new_intra_mesh_table_.resize(intra_mesh_connectivity.size());
+    this->new_inter_mesh_table_.resize(intra_mesh_connectivity.size());
     for (std::uint32_t mesh_id_val = 0; mesh_id_val < intra_mesh_connectivity.size(); mesh_id_val++) {
         this->intra_mesh_table_[mesh_id_val].resize(intra_mesh_connectivity[mesh_id_val].size());
         this->inter_mesh_table_[mesh_id_val].resize(intra_mesh_connectivity[mesh_id_val].size());
+        this->new_intra_mesh_table_[mesh_id_val].resize(intra_mesh_connectivity[mesh_id_val].size());
+        this->new_inter_mesh_table_[mesh_id_val].resize(intra_mesh_connectivity[mesh_id_val].size());
         for (auto& devices_in_mesh : this->intra_mesh_table_[mesh_id_val]) {
             // intra_mesh_table[mesh_id][chip_id] holds a vector of ports to route to other chips in the mesh
             devices_in_mesh.resize(intra_mesh_connectivity[mesh_id_val].size());
         }
         for (auto& devices_in_mesh : this->inter_mesh_table_[mesh_id_val]) {
             // inter_mesh_table[mesh_id][chip_id] holds a vector of ports to route to other meshes
+            devices_in_mesh.resize(intra_mesh_connectivity.size());
+        }
+        for (auto& devices_in_mesh : this->new_intra_mesh_table_[mesh_id_val]) {
+            // new_intra_mesh_table[mesh_id][chip_id] holds a vector of FabricNodeId to route to other chips in the mesh
+            devices_in_mesh.resize(intra_mesh_connectivity[mesh_id_val].size());
+        }
+        for (auto& devices_in_mesh : this->new_inter_mesh_table_[mesh_id_val]) {
+            // new_inter_mesh_table[mesh_id][chip_id] holds a vector of FabricNodeId to route to other meshes
             devices_in_mesh.resize(intra_mesh_connectivity.size());
         }
     }
@@ -121,14 +133,16 @@ void RoutingTableGenerator::generate_intramesh_routing_table(const IntraMeshConn
             for (chip_id_t dst_chip_id = 0; dst_chip_id < this->intra_mesh_table_[mesh_id_val].size(); dst_chip_id++) {
                 auto src_mesh_coord = this->mesh_graph->chip_to_coordinate(mesh_id, src_chip_id);
                 auto dst_mesh_coord = this->mesh_graph->chip_to_coordinate(mesh_id, dst_chip_id);
-                uint32_t next_chip_id;
+
+                RoutingDirection direction;
+                
                 // X first routing, traverse rows first
                 if (src_mesh_coord[0] != dst_mesh_coord[0]) {
                     // If source and destination are in different rows, we need to move in the X direction first
                     // Move North or South
                     MeshCoordinate target_coord_on_column(dst_mesh_coord[0], src_mesh_coord[1]);
                     auto target_chip_id = this->mesh_graph->coordinate_to_chip(mesh_id, target_coord_on_column);
-                    auto direction = get_shorter_direction_on_row_or_col(
+                    direction = get_shorter_direction_on_row_or_col(
                         mesh_id_val, src_chip_id, target_chip_id, RoutingDirection::N, RoutingDirection::S);
                     this->intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = direction;
                     // TODO: today we are not updating the weight of the edge, should we use weight to balance
@@ -136,7 +150,7 @@ void RoutingTableGenerator::generate_intramesh_routing_table(const IntraMeshConn
                     //  intra_mesh_connectivity[mesh_id][src_chip_id][next_chip_id].weight += 1;
                 } else if (src_mesh_coord[1] != dst_mesh_coord[1]) {
                     // Move East or West
-                    auto direction = get_shorter_direction_on_row_or_col(
+                    direction = get_shorter_direction_on_row_or_col(
                         mesh_id_val, src_chip_id, dst_chip_id, RoutingDirection::E, RoutingDirection::W);
                     this->intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = direction;
                     // intra_mesh_connectivity[mesh_id][src_chip_id][next_chip_id].weight += 1;
@@ -144,7 +158,28 @@ void RoutingTableGenerator::generate_intramesh_routing_table(const IntraMeshConn
                     // No movement
                     // TODO: what value do we put for this entry? If we pack table entries to 4 bits
                     // any number is a valid port id. Do we assume FW will never try to access table entry to itself?
+                    direction = RoutingDirection::C;
                     this->intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = RoutingDirection::C;
+                }
+
+                // FIXME: Change this to fundamentally use Next fabric id
+                // Get the next chip id
+                if (direction == RoutingDirection::N) {
+                    auto next_chip_id = this->mesh_graph->coordinate_to_chip(mesh_id, MeshCoordinate(src_mesh_coord[0] - 1, src_mesh_coord[1]));
+                    this->new_intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = FabricNodeId(mesh_id, next_chip_id);
+                } else if (direction == RoutingDirection::E) {
+                    auto next_chip_id = this->mesh_graph->coordinate_to_chip(mesh_id, MeshCoordinate(src_mesh_coord[0], src_mesh_coord[1] + 1));
+                    this->new_intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = FabricNodeId(mesh_id, next_chip_id);
+                } else if (direction == RoutingDirection::S) {
+                    auto next_chip_id = this->mesh_graph->coordinate_to_chip(mesh_id, MeshCoordinate(src_mesh_coord[0] + 1, src_mesh_coord[1]));
+                    this->new_intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = FabricNodeId(mesh_id, next_chip_id);
+                } else if (direction == RoutingDirection::W) {
+                    auto next_chip_id = this->mesh_graph->coordinate_to_chip(mesh_id, MeshCoordinate(src_mesh_coord[0], src_mesh_coord[1] - 1));
+                    this->new_intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = FabricNodeId(mesh_id, next_chip_id);
+                } else if (direction == RoutingDirection::C) {
+                    this->new_intra_mesh_table_[*mesh_id][src_chip_id][dst_chip_id] = FabricNodeId(mesh_id, dst_chip_id);
+                } else {
+                    TT_ASSERT(false, "Invalid direction");
                 }
             }
         }
@@ -227,6 +262,11 @@ void RoutingTableGenerator::generate_intermesh_routing_table(
                 if (dst_mesh_id == src_mesh_id) {
                     // inter mesh table entry from mesh to itself
                     this->inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = RoutingDirection::C;
+
+                    // FIXME: This is test code
+                    // Set the next fabric node ID to the destination mesh with the source chip
+                    this->new_inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = 
+                        FabricNodeId(dst_mesh_id, src_chip_id);
                     continue;
                 }
                 auto& candidate_paths = paths[dst_mesh_id_val];
@@ -234,6 +274,11 @@ void RoutingTableGenerator::generate_intermesh_routing_table(
                 std::uint32_t min_distance = std::numeric_limits<std::uint32_t>::max();
                 if (candidate_paths.size() == 0) {
                     this->inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = RoutingDirection::NONE;
+
+                    // FIXME: This is test code
+                    // Set the next fabric node ID to an invalid value (same mesh, invalid chip)
+                    this->new_inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = 
+                        FabricNodeId(src_mesh_id, std::numeric_limits<std::uint32_t>::max());
                     continue;
                 }
                 // TODO: This exit_chip_id doesn't make sense since it is always chip 0
@@ -282,6 +327,11 @@ void RoutingTableGenerator::generate_intermesh_routing_table(
                     // If src is already exit chip, use port directions to next mesh
                     this->inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] =
                         inter_mesh_connectivity[*src_mesh_id][src_chip_id].at(next_mesh_id).port_direction;
+                    
+                    // FIXME: This is test code
+                    // Set the next fabric node ID to the destination mesh with the exit chip
+                    this->new_inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = 
+                        FabricNodeId(next_mesh_id, exit_chip_id);
                     // TODO: today we are not updating the weight of the edge, should we use weight to balance
                     //  routing traffic?
                     //  inter_mesh_connectivity[src_mesh_id][src_chip_id][next_mesh_id].weight += 1;
@@ -289,6 +339,11 @@ void RoutingTableGenerator::generate_intermesh_routing_table(
                     // Use direction to exit chip from the intermesh routing table
                     this->inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] =
                         this->intra_mesh_table_[src_mesh_id_val][src_chip_id].at(exit_chip_id);
+
+                    // FIXME: This is test code
+                    // Set the next fabric node ID to the exit chip in the current mesh
+                    this->new_inter_mesh_table_[src_mesh_id_val][src_chip_id][dst_mesh_id_val] = 
+                        FabricNodeId(src_mesh_id, exit_chip_id);
                     // Update weight for exit chip to next mesh and src chip to exit chip
                     // inter_mesh_connectivity[src_mesh_id][exit_chip_id][next_mesh_id].weight += 1;
                     // for (auto& edge: intra_mesh_connectivity[src_mesh_id][src_chip_id]) {
@@ -333,6 +388,41 @@ void RoutingTableGenerator::print_routing_tables() const {
                  dst_chip_or_mesh_id++) {
                 auto direction = this->inter_mesh_table_[mesh_id_val][src_chip_id][dst_chip_or_mesh_id];
                 ss << dst_chip_or_mesh_id << "(" << magic_enum::enum_name(direction) << ") ";
+            }
+            ss << std::endl;
+        }
+    }
+    log_debug(tt::LogFabric, "{}", ss.str());
+    
+    // Print new routing tables
+    ss.str(std::string());
+    ss << "Routing Table Generator: New IntraMesh Routing Tables (FabricNodeId)" << std::endl;
+    for (std::uint32_t mesh_id_val = 0; mesh_id_val < this->new_intra_mesh_table_.size(); mesh_id_val++) {
+        ss << "M" << mesh_id_val << ":" << std::endl;
+        for (chip_id_t src_chip_id = 0; src_chip_id < this->new_intra_mesh_table_[mesh_id_val].size(); src_chip_id++) {
+            ss << "   D" << src_chip_id << ": ";
+            for (chip_id_t dst_chip_or_mesh_id = 0;
+                 dst_chip_or_mesh_id < this->new_intra_mesh_table_[mesh_id_val][src_chip_id].size();
+                 dst_chip_or_mesh_id++) {
+                auto next_node = this->new_intra_mesh_table_[mesh_id_val][src_chip_id][dst_chip_or_mesh_id];
+                ss << dst_chip_or_mesh_id << "(" << next_node << ") ";
+            }
+            ss << std::endl;
+        }
+    }
+    log_debug(tt::LogFabric, "{}", ss.str());
+    
+    ss.str(std::string());
+    ss << "Routing Table Generator: New InterMesh Routing Tables (FabricNodeId)" << std::endl;
+    for (std::uint32_t mesh_id_val = 0; mesh_id_val < this->new_inter_mesh_table_.size(); mesh_id_val++) {
+        ss << "M" << mesh_id_val << ":" << std::endl;
+        for (chip_id_t src_chip_id = 0; src_chip_id < this->new_inter_mesh_table_[mesh_id_val].size(); src_chip_id++) {
+            ss << "   D" << src_chip_id << ": ";
+            for (chip_id_t dst_chip_or_mesh_id = 0;
+                 dst_chip_or_mesh_id < this->new_inter_mesh_table_[mesh_id_val][src_chip_id].size();
+                 dst_chip_or_mesh_id++) {
+                auto next_node = this->new_inter_mesh_table_[mesh_id_val][src_chip_id][dst_chip_or_mesh_id];
+                ss << dst_chip_or_mesh_id << "(" << next_node << ") ";
             }
             ss << std::endl;
         }

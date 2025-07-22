@@ -18,16 +18,20 @@
 namespace tt::tt_fabric {
 
 using RoutingTable =
-    std::vector<std::vector<std::vector<RoutingDirection>>>;  // [mesh_id][chip_id][target_chip_or_mesh_id]
+    std::vector<std::vector<std::vector<std::pair<RoutingDirection, FabricNodeId>>>>;  // [mesh_id][chip_id][target_chip_or_mesh_id]
 
 // TODO: first pass at switching over MeshId/chip_id_t to proper struct
 // Need to update the usage in routing table generator
 class FabricNodeId {
 public:
+    FabricNodeId() = default;  // Default constructor for vector resizing
     explicit FabricNodeId(MeshId mesh_id, std::uint32_t chip_id);
     MeshId mesh_id{0};
     std::uint32_t chip_id = 0;
 };
+
+using NewRoutingTable =
+    std::vector<std::vector<std::vector<FabricNodeId>>>;  // [mesh_id][chip_id][target_chip_or_mesh_id]
 
 bool operator==(const FabricNodeId& lhs, const FabricNodeId& rhs);
 bool operator!=(const FabricNodeId& lhs, const FabricNodeId& rhs);
@@ -47,6 +51,8 @@ public:
 
     RoutingTable get_intra_mesh_table() const { return this->intra_mesh_table_; }
     RoutingTable get_inter_mesh_table() const { return this->inter_mesh_table_; }
+    NewRoutingTable get_new_intra_mesh_table() const { return this->new_intra_mesh_table_; }
+    NewRoutingTable get_new_inter_mesh_table() const { return this->new_inter_mesh_table_; }
 
     void print_routing_tables() const;
     // Return a list of all exit nodes, across all meshes that are connected to the requested
@@ -62,6 +68,8 @@ private:
 
     RoutingTable intra_mesh_table_;
     RoutingTable inter_mesh_table_;
+    NewRoutingTable new_intra_mesh_table_;
+    NewRoutingTable new_inter_mesh_table_;
     std::unordered_map<MeshId, std::vector<FabricNodeId>> mesh_to_exit_nodes_;
 
     std::vector<std::vector<std::vector<std::pair<chip_id_t, MeshId>>>> get_paths_to_all_meshes(
@@ -71,6 +79,7 @@ private:
     // the exit chip
     void generate_intermesh_routing_table(
         const InterMeshConnectivity& inter_mesh_connectivity, const IntraMeshConnectivity& intra_mesh_connectivity);
+
 };
 
 }  // namespace tt::tt_fabric

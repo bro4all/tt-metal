@@ -62,6 +62,7 @@ enum eth_chan_directions : std::uint8_t {
     NORTH = 2,
     SOUTH = 3,
     COUNT = 4,
+    INTERMESH = 0xEE,
 };
 
 struct routing_table_t {

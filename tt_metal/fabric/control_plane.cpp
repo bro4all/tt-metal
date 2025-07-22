@@ -108,28 +108,6 @@ std::vector<chip_id_t> get_adjacent_chips_from_ethernet_connections(
     return adjacent_chips;
 }
 
-// Helper function to find an unused routing direction for intermesh links
-// Returns the first NESW direction with fewer than max_channels_per_direction channels
-// Throws if no suitable direction is found
-RoutingDirection find_unused_routing_direction(
-    const std::map<FabricNodeId, std::unordered_map<RoutingDirection, std::vector<chan_id_t>>>&
-        router_port_directions_to_physical_eth_chan_map,
-    const FabricNodeId& fabric_node_id,
-    size_t max_channels_per_direction) {
-    // Loop through NESW directions in order of preference
-    const std::vector<RoutingDirection> directions = {
-        RoutingDirection::N, RoutingDirection::E, RoutingDirection::S, RoutingDirection::W};
-
-    for (const auto& direction : directions) {
-        const auto& router_directions = router_port_directions_to_physical_eth_chan_map.at(fabric_node_id);
-        auto it = router_directions.find(direction);
-        if (it == router_directions.end() || it->second.size() < max_channels_per_direction) {
-            return direction;
-        }
-    }
-    TT_THROW("Could not find free ethernet channel for link");
-}
-
 }  // namespace
 
 void ControlPlane::initialize_dynamic_routing_plane_counts(
@@ -571,6 +549,7 @@ void ControlPlane::convert_fabric_routing_table_to_chip_routing_table() {
 
     auto host_rank_id = this->get_local_host_rank_id_binding();
     const auto& router_intra_mesh_routing_table = this->routing_table_generator_->get_intra_mesh_table();
+    const auto& router_new_intra_mesh_routing_table = this->routing_table_generator_->get_new_intra_mesh_table();
     for (std::uint32_t mesh_id_val = 0; mesh_id_val < router_intra_mesh_routing_table.size(); mesh_id_val++) {
         MeshId mesh_id{mesh_id_val};
         if (!this->is_local_mesh(mesh_id)) {
@@ -600,6 +579,9 @@ void ControlPlane::convert_fabric_routing_table_to_chip_routing_table() {
                 // Target direction is the direction to the destination chip for all ethernet channesl
                 const auto& target_direction =
                     router_intra_mesh_routing_table[mesh_id_val][src_fabric_chip_id][dst_fabric_chip_id];
+
+                const auto& target_fabric_node_id = router_new_intra_mesh_routing_table[mesh_id_val][src_fabric_chip_id][dst_fabric_chip_id];
+
                 // We view ethernet channels on one side of the chip as parallel planes. So N[0] talks to S[0], E[0],
                 // W[0] and so on For all live ethernet channels on this chip, set the routing table entry to the
                 // destination chip as the ethernet channel on the same plane
@@ -662,12 +644,8 @@ void ControlPlane::convert_fabric_routing_table_to_chip_routing_table() {
                  dst_mesh_id_val++) {
 
                 // Target direction is the direction to the destination mesh for all ethernet channesl
-                // FIXME: Need to change change to next mesh id instead of direction
                 const auto& target_direction =
                     router_inter_mesh_routing_table[src_mesh_id_val][src_fabric_chip_id][dst_mesh_id_val];
-
-                const std::unordered_set<RoutingDirection> valid_directions = {
-                    RoutingDirection::N, RoutingDirection::S, RoutingDirection::E, RoutingDirection::W};
 
                 // We view ethernet channels on one side of the chip as parallel planes. So N[0] talks to S[0], E[0],
                 // W[0] and so on For all live ethernet channels on this chip, set the routing table entry to the
@@ -692,10 +670,9 @@ void ControlPlane::convert_fabric_routing_table_to_chip_routing_table() {
                             this->inter_mesh_routing_tables_.at(src_fabric_node_id)[src_chan_id][dst_mesh_id_val] =
                                     src_chan_id;
                         } else {
-                            // FIXME: Need to find a way to find the ethernet channels to the target mesh without the direction
                             const auto& eth_chans_in_target_direction =
                                 this->router_port_directions_to_physical_eth_chan_map_.at(
-                                    src_fabric_node_id)[target_direction]; // FIXME: Should change this map to use next fabric_node_id
+                                    src_fabric_node_id)[target_direction];
                             const auto src_routing_plane_id =
                                 this->get_routing_plane_id(src_chan_id, eth_chans_on_side);
                             this->inter_mesh_routing_tables_.at(src_fabric_node_id)[src_chan_id][dst_mesh_id_val] =
@@ -1085,6 +1062,7 @@ eth_chan_directions ControlPlane::routing_direction_to_eth_direction(RoutingDire
         case RoutingDirection::S: dir = eth_chan_directions::SOUTH; break;
         case RoutingDirection::E: dir = eth_chan_directions::EAST; break;
         case RoutingDirection::W: dir = eth_chan_directions::WEST; break;
+        case RoutingDirection::M: dir = eth_chan_directions::INTERMESH; break;
         default: TT_FATAL(false, "Invalid Routing Direction");
     }
     return dir;
@@ -1954,7 +1932,7 @@ void ControlPlane::exchange_intermesh_link_tables() {
 }
 
 void ControlPlane::assign_direction_to_fabric_eth_core(
-    const FabricNodeId& fabric_node_id, const CoreCoord& eth_core, RoutingDirection direction) {
+    const FabricNodeId& fabric_node_id, const CoreCoord& eth_core, const RouterEdge& edge) {
     auto physical_chip_id = this->logical_mesh_chip_id_to_physical_chip_id_mapping_.at(fabric_node_id);
     auto fabric_router_channels_on_chip =
         tt::tt_metal::MetalContext::instance().get_cluster().get_fabric_ethernet_channels(physical_chip_id);
@@ -1966,19 +1944,8 @@ void ControlPlane::assign_direction_to_fabric_eth_core(
 
     // TODO: add logic here to disable unsed routers, e.g. Mesh on Torus system
     if (fabric_router_channels_on_chip.contains(chan_id)) {
-        std::uint32_t num_ports_per_side =
-            routing_table_generator_->mesh_graph->get_chip_spec().num_eth_ports_per_direction;
-
-        // Special case for non-directional intermesh links
-        if (direction == RoutingDirection::M) {
-            direction = find_unused_routing_direction(
-                this->router_port_directions_to_physical_eth_chan_map_,
-                fabric_node_id,
-                num_ports_per_side);  // Change teh 2 to be auto deteremined
-        }
-
-        this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)[direction].push_back(chan_id);
-
+        this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)[edge.direction].push_back(chan_id);
+        this->router_next_hop_to_physical_eth_chan_map_.at(fabric_node_id)[next_hop_fabric_node_id].push_back(chan_id);
     } else {
         log_debug(
             tt::LogFabric,
@@ -2012,7 +1979,7 @@ void ControlPlane::assign_intermesh_link_directions_to_local_host(const FabricNo
                 FabricNodeId(connected_mesh_id, logical_connected_chip_id));
             const auto& connected_eth_cores = connected_chips_and_eth_cores.at(physical_connected_chip_id);
             for (const auto& eth_core : connected_eth_cores) {
-                this->assign_direction_to_fabric_eth_core(fabric_node_id, eth_core, edge.port_direction);
+                this->assign_direction_to_fabric_eth_core(fabric_node_id, eth_core, edge);
             }
         }
     }
@@ -2029,6 +1996,7 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
 
     for (const auto& [eth_core, eth_chan] : intermesh_links) {
         auto intermesh_routing_direction = RoutingDirection::NONE;
+        FabricNodeId next_hop_fabric_node_id;
         auto curr_eth_chan_desc = EthChanDescriptor{.board_id = board_id, .chan_id = eth_chan};
         const auto& remote_eth_chan_desc = intermesh_link_table_.intermesh_links.at(curr_eth_chan_desc);
         for (const auto& [connected_mesh_id, edge] :
@@ -2044,6 +2012,7 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
                     // Found the matching intermesh link
                     num_directions_assigned++;
                     intermesh_routing_direction = edge.port_direction;
+                    next_hop_fabric_node_id = FabricNodeId(connected_mesh_id, edge.connected_chip_ids[0]);
                     connection_found = true;
                     break;
                 }
@@ -2053,17 +2022,12 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
             }
         }
 
-        // Use helper function to find unused direction
-        if (intermesh_routing_direction == RoutingDirection::M) {
-            std::uint32_t num_ports_per_side =
-                routing_table_generator_->mesh_graph->get_chip_spec().num_eth_ports_per_direction;
-            intermesh_routing_direction = find_unused_routing_direction(
-                this->router_port_directions_to_physical_eth_chan_map_, fabric_node_id, num_ports_per_side);
-        }
-
         if (intermesh_routing_direction != RoutingDirection::NONE) {
             auto& direction_to_channel_map = router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id);
             direction_to_channel_map[intermesh_routing_direction].push_back(eth_chan);
+
+            auto& next_hop_to_channel_map = router_next_hop_to_physical_eth_chan_map_.at(fabric_node_id);
+            next_hop_to_channel_map[next_hop_fabric_node_id].push_back(eth_chan);
         }
     }
 }

@@ -187,6 +187,9 @@ private:
     // map[mesh_fabric_id][direction] has a vector of ethernet channels in that direction
     std::map<FabricNodeId, std::unordered_map<RoutingDirection, std::vector<chan_id_t>>>
         router_port_directions_to_physical_eth_chan_map_;
+    std::map<FabricNodeId, std::unordered_map<FabricNodeId, std::vector<chan_id_t>>>
+        router_next_hop_to_physical_eth_chan_map_;
+
     // map[mesh_fabric_id][direction] has the number of live routing planes in that direction
     std::map<FabricNodeId, std::unordered_map<RoutingDirection, size_t>>
         router_port_directions_to_num_routing_planes_map_;
@@ -268,7 +271,7 @@ private:
     bool is_local_mesh(MeshId mesh_id) const;
 
     void assign_direction_to_fabric_eth_core(
-        const FabricNodeId& fabric_node_id, const CoreCoord& eth_core, RoutingDirection direction);
+        const FabricNodeId& fabric_node_id, const CoreCoord& eth_core, const RouterEdge& edge);
 
     void assign_intermesh_link_directions_to_local_host(const FabricNodeId& fabric_node_id);
 
