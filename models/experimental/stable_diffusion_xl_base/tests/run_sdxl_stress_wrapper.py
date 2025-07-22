@@ -58,7 +58,7 @@ def main():
     )
 
     total = args.total_images_per_device
-    chunk_size = 100
+    chunk_size = total
     num_chunks = math.ceil(total / chunk_size)
 
     logging.info(f"=== Starting SDXL stress test with total {total} images per device in {num_chunks} chunk(s) ===")

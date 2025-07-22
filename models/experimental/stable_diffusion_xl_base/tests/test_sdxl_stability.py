@@ -5,14 +5,20 @@
 import pytest
 from models.experimental.stable_diffusion_xl_base.demo.demo import test_demo
 from loguru import logger
-from models.experimental.stable_diffusion_xl_base.tests.test_common import SDXL_L1_SMALL_SIZE, SDXL_DEFAULT_PROMPT
+from models.experimental.stable_diffusion_xl_base.tests.test_common import (
+    SDXL_L1_SMALL_SIZE,
+    SDXL_DEFAULT_PROMPT,
+    SDXL_TRACE_REGION_SIZE,
+)
 
 test_demo.__test__ = False
 
 import os
 
 
-@pytest.mark.parametrize("device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE}], indirect=True)
+@pytest.mark.parametrize(
+    "device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE, "trace_region_size": SDXL_TRACE_REGION_SIZE}], indirect=True
+)
 @pytest.mark.parametrize(
     "num_inference_steps",
     ((50),),
@@ -37,6 +43,7 @@ def test_sdxl_stress(
         prompts,
         num_inference_steps,
         True,  # vae on device
+        True,  # do trace capture
         evaluation_range,
     )
 
