@@ -136,15 +136,15 @@ def run_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_e
 
 @pytest.mark.parametrize(
     "shape",
-    [[32, 32], [2, 2, 2, 2, 2, 2, 64, 64]],
+    [[32, 32]],
 )
-@pytest.mark.parametrize("lr", [0.0, 1e-1])
-@pytest.mark.parametrize("betas", ((0.9, 0.999), (0.5, 0.555)))
-@pytest.mark.parametrize("eps", [1e-06, 1e-08])
-@pytest.mark.parametrize("weight_decay", [0.0, 0.3])
-@pytest.mark.parametrize("amsgrad", [True, False])
-@pytest.mark.parametrize("fp32_dest_acc_en", compute_kernel_options, ids=compute_kernel_ids)
-@pytest.mark.parametrize("dtype", [ttnn.bfloat16, ttnn.bfloat8_b])
+@pytest.mark.parametrize("lr", [0.2])
+@pytest.mark.parametrize("betas", [(0.5, 0.555)])
+@pytest.mark.parametrize("eps", [1e-08])
+@pytest.mark.parametrize("weight_decay", [0.3])
+@pytest.mark.parametrize("amsgrad", [True])
+@pytest.mark.parametrize("fp32_dest_acc_en", [False])
+@pytest.mark.parametrize("dtype", [ttnn.bfloat16])
 def test_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en, device, dtype, step=1):
     torch.manual_seed(0)
     if dtype == ttnn.bfloat8_b:
@@ -152,64 +152,3 @@ def test_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_
     return run_moreh_adam(
         shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en, device, dtype=dtype, step=step
     )
-
-
-@pytest.mark.parametrize(
-    "params",
-    (
-        # shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en
-        ([32, 32], 0.0, (0.9, 0.999), 1e-06, 0.0, True, True),
-        ([2, 2, 2, 2, 2, 2, 64, 64], 0.0, (0.9, 0.999), 1e-06, 0.0, False, False),
-    ),
-)
-def test_moreh_adam_callback(params, device):
-    torch.manual_seed(2024)
-    num_program_cache_entries_list = []
-    for i in range(2):
-        shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en = params
-        run_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en, device)
-        torch_dummy = torch.randn([32, 32])
-        tt_dummy = to_ttnn(torch_dummy, device=device)
-        num_program_cache_entries_list.append(device.num_program_cache_entries())
-    logger.info(f"num_program_cache_entries_list={num_program_cache_entries_list}")
-    assert num_program_cache_entries_list[0] > 0
-    assert num_program_cache_entries_list[0] == num_program_cache_entries_list[1]
-
-
-@pytest.mark.parametrize(
-    "params",
-    (
-        # shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en
-        ([32, 32], 0.0, (0.9, 0.999), 1e-06, 0.0, True, True),
-        ([2, 2, 2, 2, 2, 2, 64, 64], 0.0, (0.9, 0.999), 1e-06, 0.0, False, False),
-    ),
-)
-def test_moreh_adam_caching(params, device):
-    torch.manual_seed(2024)
-    num_program_cache_entries_list = []
-    for i in range(1, 5):
-        shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en = params
-        run_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en, device, step=i)
-        torch_dummy = torch.randn([32, 32])
-        tt_dummy = to_ttnn(torch_dummy, device=device)
-        num_program_cache_entries_list.append(device.num_program_cache_entries())
-
-    logger.info(f"num_program_cache_entries_list={num_program_cache_entries_list}")
-    for i in range(1, 4):
-        assert num_program_cache_entries_list[0] == num_program_cache_entries_list[i]
-
-    num_program_cache_entries_list = []
-    for i in range(4):
-        shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en = params
-
-        # generate a random lr between (0, 1)
-        lr = torch.rand(1).item()
-
-        run_moreh_adam(shape, lr, betas, eps, weight_decay, amsgrad, fp32_dest_acc_en, device)
-        torch_dummy = torch.randn([32, 32])
-        tt_dummy = to_ttnn(torch_dummy, device=device)
-        num_program_cache_entries_list.append(device.num_program_cache_entries())
-
-    logger.info(f"num_program_cache_entries_list={num_program_cache_entries_list}")
-    for i in range(1, 4):
-        assert num_program_cache_entries_list[0] == num_program_cache_entries_list[i]

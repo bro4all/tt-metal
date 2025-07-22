@@ -46,10 +46,6 @@ void kernel_main() {
     constexpr uint32_t cb_id_exp_avg = tt::CBIndex::c_2;
     constexpr uint32_t cb_id_exp_avg_sq = tt::CBIndex::c_3;
 
-    // lr, beta1, beta2, eps, weight_decay
-    constexpr uint32_t cb_scalar_args = tt::CBIndex::c_5;
-    constexpr uint32_t cb_id_one = tt::CBIndex::c_6;
-
     const uint32_t param_tile_bytes = get_tile_size(cb_id_param);
     const auto param_data_format = get_dataformat(cb_id_param);
 
@@ -92,18 +88,6 @@ void kernel_main() {
         .page_size = max_exp_avg_sq_tile_bytes,
         .data_format = max_exp_avg_sq_data_format};
 #endif
-
-    fill_cb_with_value(cb_scalar_args, lr);
-    fill_cb_with_value(cb_scalar_args, beta1);
-    fill_cb_with_value(cb_scalar_args, beta2);
-    fill_cb_with_value(cb_scalar_args, eps);
-    fill_cb_with_value(cb_scalar_args, weight_decay);
-    union {
-        float f;
-        uint32_t u;
-    } scaler;
-    scaler.f = 1.0f;
-    fill_cb_with_value(cb_id_one, scaler.u);
 
     constexpr uint32_t onetile = 1;
     uint32_t end_id = start_id + num_tiles_per_core;
