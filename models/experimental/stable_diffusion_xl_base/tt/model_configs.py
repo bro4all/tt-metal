@@ -1041,7 +1041,10 @@ class ModelOptimisations:
                 # same as in tp
                 return self.conv_configs["ABH_32_NO_ADB_BS"]
             elif "up_blocks.1.resnets.1.conv1" == conv_path:
-                return self.conv_configs["ABH_64_NO_ADB_WDB_BS"]
+                if parallelism_strategy == SdxlParallelism.NoParallelism:
+                    return self.conv_configs["ABH_64_NO_ADB_WDB_BS"]
+                else:
+                    return self.conv_configs["ABH_64_NO_ADB_WDB_BS_TP2"]
             elif "up_blocks.1.resnets.2.conv1" == conv_path:
                 # same in tp
                 return self.conv_configs["ABH_64_NO_ADB_WDB_MOVE_BS"]
