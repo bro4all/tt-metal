@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "compute_kernel_api/transpose_wh.h"
+#include "debug/dprint.h"
 
 namespace NAMESPACE {
 void MAIN {
@@ -16,6 +17,7 @@ void MAIN {
     // - assumes the tiles come in in column major order from reader
     // - uses reader_unary_transpose_wh
     // - transpose_wh each tile
+    DPRINT << "transpose_wh: NHtWt = " << NHtWt << ENDL();
     for (uint32_t n = 0; n < NHtWt; n++) {
         cb_wait_front(tt::CBIndex::c_0, 1);
         cb_reserve_back(tt::CBIndex::c_16, 1);

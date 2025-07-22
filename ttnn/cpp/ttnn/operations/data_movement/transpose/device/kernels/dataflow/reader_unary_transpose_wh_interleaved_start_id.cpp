@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "debug/dprint.h"
 
 void kernel_main() {
     uint32_t src_addr = get_arg_val<uint32_t>(0);
@@ -36,6 +37,7 @@ void kernel_main() {
     uint32_t i_tile = start_id;
 
     // this reader will read a NHW tensor in NWH order
+    DPRINT << "num_tiles " << num_tiles << ENDL();
     for (uint32_t i = 0; i < num_tiles; i++) {
         cb_reserve_back(cb_id_in0, onetile);
         uint32_t l1_write_addr = get_write_ptr(cb_id_in0);

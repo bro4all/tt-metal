@@ -17,10 +17,10 @@ from tests.ttnn.utils_for_testing import assert_with_pcc, assert_equal
 
 def random_torch_tensor(dtype, shape):
     if dtype == ttnn.uint16:
-        return torch.randint(0, 100, shape).to(torch.int16)
+        return torch.arange(np.prod(shape), dtype=torch.int16).reshape(shape)
     if dtype == ttnn.int32:
-        return torch.randint(-(2**31), 2**31, shape, dtype=torch.int32)
-    return torch.rand(shape).bfloat16().float()
+        return torch.arange(np.prod(shape), dtype=torch.int32).reshape(shape)
+    return torch.arange(np.prod(shape), dtype=torch.bfloat16).float().reshape(shape)
 
 
 def transpose(
@@ -707,6 +707,16 @@ def test_transpose_3D(dtype, shape, layout, dims, device):
     tt_input = ttnn.from_torch(torch_input, dtype=dtype, layout=layout, device=device)
     tt_output = ttnn.transpose(tt_input, dims[0], dims[1])
     tt_output = ttnn.to_torch(tt_output)
+
+    torch.set_printoptions(threshold=float("inf"), sci_mode=False, linewidth=500)
+
+    if not comp_equal(torch_output, tt_output)[0]:
+        print(torch_input)
+        print()
+        print(torch_output)
+        print()
+        print(tt_output)
+
     assert_equal(torch_output, tt_output)
 
 
