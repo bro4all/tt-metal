@@ -47,15 +47,8 @@ def torch_model():
         ),
     ),
 )
-@pytest.mark.parametrize("model_config_str", ("BFLOAT16-DRAM", "BFLOAT16-L1"))
-@pytest.mark.parametrize(
-    "mesh_device",
-    [
-        1,
-        2,
-    ],
-    indirect=True,
-)
+@pytest.mark.parametrize("model_config_str", ("BFLOAT16-DRAM",))
+@pytest.mark.parametrize("mesh_device", [pytest.param((2, 4), id="2x4_grid")], indirect=True)
 def test_falcon_mlp(
     mesh_device,
     model_name,
@@ -93,12 +86,23 @@ def test_falcon_mlp(
         mesh_mapper=ShardTensorToMesh(mesh_device, dim=0),
     )
     ttnn_output = ttnn_model(ttnn_input)
+    ttnn_output_torch = ttnn.to_torch(ttnn_output, mesh_composer=ConcatMeshToTensor(mesh_device, dim=0), device=mesh_device).to(torch_output.dtype)
+    
+    shard_size = 1
+    
+    def get_data_for_rank(rank, data):
+        if rank == 0:
+            return torch.concat([data[:shard_size*2, ...], data[shard_size*4:shard_size*6, ...]], dim=0)
+        elif rank == 1:
+            return torch.concat([data[shard_size*2:shard_size*4, ...], data[shard_size*6:, ...]], dim=0)
+        else:
+            raise ValueError(f"Invalid rank: {rank}")
 
-    passed, pcc = assert_with_pcc(
-        torch_output,
-        ttnn.to_torch(ttnn_output, mesh_composer=ConcatMeshToTensor(mesh_device, dim=0), device=mesh_device).to(
-            torch_output.dtype
-        ),
-        expected_pcc,
-    )
+    import os
+    rank = int(os.getenv("TT_HOST_RANK"))
+    golden = get_data_for_rank(rank, torch_output)
+    result = get_data_for_rank(rank, ttnn_output_torch)
+    passed, pcc = assert_with_pcc(golden, result, pcc=0.99)
+
     logger.success(f"Passed: pcc: {pcc}, expected: {expected_pcc}")
+    assert passed

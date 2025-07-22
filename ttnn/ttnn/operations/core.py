@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
+import os
 import pathlib
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -679,7 +680,7 @@ def as_tensor(
         else:
             storage_type = ""
 
-        cache_file_name = f"{cache_file_name}{storage_type}_dtype_{dtype_name}_layout_{layout_name}.bin"
+        cache_file_name = f"{cache_file_name}{storage_type}_dtype_{dtype_name}_layout_{layout_name}_{os.getenv('TT_HOST_RANK')}.bin"
 
         cache_path = pathlib.Path(cache_file_name)
 
