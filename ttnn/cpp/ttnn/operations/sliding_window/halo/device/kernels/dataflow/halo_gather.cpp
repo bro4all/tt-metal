@@ -186,19 +186,20 @@ static inline void run_halo_gather(const tt_l1_ptr uint16_t* config, uint32_t my
         return;
     }
 
-    uint32_t start_segment =
-        ((my_noc_x + my_noc_y * num_cores_x) + BlockStartOffset * num_cores_x * num_cores_y) % number_of_segments;
-    for (uint32_t i = 0; i < start_segment; i++) {
-        uint16_t transfers_remaining = config[current_config_index + 2];
-        current_config_index += 3 * transfers_remaining + 3;  // Skip header and all transfers
-    }
-
     uint32_t in_base_l1_addr = get_read_ptr(InputCBIndex);
     const uint32_t out_base_l1_addr = get_write_ptr(OutputCBIndex);
 
     // Assume input is already ready when !EnableBlocking (like when using RM)
+    uint32_t start_segment = 0;
     if constexpr (EnableBlocking) {
         cb_wait_front(InputCBIndex, total_tiles_in_single_block);
+    } else {
+        start_segment =
+            ((my_noc_x + my_noc_y * num_cores_x) + BlockStartOffset * num_cores_x * num_cores_y) % number_of_segments;
+        for (uint32_t i = 0; i < start_segment; i++) {
+            uint16_t transfers_remaining = config[current_config_index + 2];
+            current_config_index += 3 * transfers_remaining + 3;  // Skip header and all transfers
+        }
     }
 
     uint64_t out_l1_addr = 0;
