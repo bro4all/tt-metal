@@ -77,8 +77,8 @@ class VisionBlock(LightweightModule):
     def forward(
         self,
         x: ttnn.Tensor,
+        cu_seqlens,
         rot_mats,
-        tt_mask,
     ) -> ttnn.Tensor:
         TG = self.args.is_galaxy
         # x is fractured across devices and interleaved in DRAM (for prefill) and sharded in L1 (for decode)
@@ -92,8 +92,8 @@ class VisionBlock(LightweightModule):
         # Attention takes replicated inputs and produces fractured outputs
         attn_out = self.attention.forward(
             attn_in,
+            cu_seqlens=cu_seqlens,
             rot_mats=rot_mats,
-            tt_mask=tt_mask,
         )
 
         # Here x and attn_out are both fractured across devices

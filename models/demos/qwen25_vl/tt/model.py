@@ -147,8 +147,8 @@ class VisionTransformer(LightweightModule):
         x,
         unpadded_seq_len,
         rot_mats,
-        tt_attention_mask_full_att,
-        tt_attention_mask_windowed_att,
+        cu_seqlens,
+        cu_window_seqlens,
         profiler=None,
     ):
         """
@@ -167,15 +167,15 @@ class VisionTransformer(LightweightModule):
         for i, block in enumerate(self.blocks):
             # Determine which attention type to use (full or windowed)
             if i in self.fullatt_block_indexes:
-                tt_mask = tt_attention_mask_full_att
+                cu_seqlens_now = cu_seqlens
             else:
-                tt_mask = tt_attention_mask_windowed_att
+                cu_seqlens_now = cu_window_seqlens
 
             # Forward through block
             x = block(
                 x,
+                cu_seqlens=cu_seqlens_now,
                 rot_mats=rot_mats,
-                tt_mask=tt_mask,
             )
 
         # Merge patches - first remove any sequence length padding
@@ -289,10 +289,6 @@ class DropInVisionTransformer(torch.nn.Module):
                 patch_size=self.model_args.hf_config.vision_config.patch_size,
             )
 
-            # Ensure cu_seqlens and cu_window_seqlens are tensors on the correct device
-            cu_seqlens = cu_seqlens.to(pixel_values.device)
-            cu_window_seqlens = cu_window_seqlens.to(pixel_values.device)
-
             # 3. Use reference model's patch embedding
             patch_input = self.reference_model.patch_embed(pixel_values)
 
@@ -333,35 +329,6 @@ class DropInVisionTransformer(torch.nn.Module):
 
             # 5. Prepare input tensor for the TT model using window_index
             tt_input = self.tt_model.prepare_input(patch_input, window_index, target_seq_len)
-            # create tt_mask
-            if profiler is not None:
-                profiler.start(f"vision_model_loop_create_tt_mask", iteration=num_iters)
-            seq_len = tt_input.shape[-2]
-            attention_mask = torch.full([1, 1, seq_len, seq_len], float("-inf"), dtype=torch.bfloat16)
-            for i in range(1, len(cu_window_seqlens)):
-                attention_mask[
-                    ...,
-                    cu_window_seqlens[i - 1] : cu_window_seqlens[i],
-                    cu_window_seqlens[i - 1] : cu_window_seqlens[i],
-                ] = 0
-            profiler.start(f"vision_model_loop_create_tt_windowed_att_mask_from_torch", iteration=num_iters)
-            tt_attention_mask_windowed_att = ttnn.from_torch(
-                attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
-            )
-            profiler.end(f"vision_model_loop_create_tt_windowed_att_mask_from_torch", iteration=num_iters)
-
-            tt_attention_mask_full_att = None
-            if self.tt_model.fullatt_block_indexes is not None:
-                attention_mask = torch.full([1, 1, seq_len, seq_len], float("-inf"), dtype=torch.bfloat16)
-                for i in range(1, len(cu_seqlens)):
-                    attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
-                profiler.start(f"vision_model_loop_create_tt_full_att_mask_from_torch", iteration=num_iters)
-                tt_attention_mask_full_att = ttnn.from_torch(
-                    attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
-                )
-                profiler.end(f"vision_model_loop_create_tt_full_att_mask_from_torch", iteration=num_iters)
-            if profiler is not None:
-                profiler.end(f"vision_model_loop_create_tt_mask", iteration=num_iters)
 
             # --- TT Model Execution ---
             if profiler is not None:
@@ -371,8 +338,15 @@ class DropInVisionTransformer(torch.nn.Module):
                 tt_input,
                 unpadded_seq_len=unpadded_seq_len,
                 rot_mats=rot_mats,  # Use rot_mats generated in this forward pass
-                tt_attention_mask_full_att=tt_attention_mask_full_att,
-                tt_attention_mask_windowed_att=tt_attention_mask_windowed_att,
+                cu_seqlens=ttnn.from_torch(
+                    cu_seqlens, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT, device=self.model_args.mesh_device
+                ),
+                cu_window_seqlens=ttnn.from_torch(
+                    cu_window_seqlens,
+                    dtype=ttnn.uint32,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=self.model_args.mesh_device,
+                ),
                 profiler=profiler,
             )
             if profiler is not None:
@@ -385,8 +359,6 @@ class DropInVisionTransformer(torch.nn.Module):
             ttnn.deallocate(sin)
             ttnn.deallocate(rot_mats[0])
             ttnn.deallocate(rot_mats[1])
-            ttnn.deallocate(tt_attention_mask_windowed_att)
-            ttnn.deallocate(tt_attention_mask_full_att)
 
             # --- Postprocessing ---
             # 1. Convert TT output back to torch tensor
@@ -425,15 +397,6 @@ class DropInVisionTransformer(torch.nn.Module):
             for i in range(num_iters):
                 logger.info(
                     f"vision_model_loop_preprocess at {i}: {profiler.get_duration('vision_model_loop_preprocess', iteration=i)}"
-                )
-                logger.info(
-                    f"vision_model_loop_create_tt_mask at {i}: {profiler.get_duration('vision_model_loop_create_tt_mask', iteration=i)}"
-                )
-                logger.info(
-                    f"vision_model_loop_create_tt_windowed_att_mask_from_torch at {i}: {profiler.get_duration('vision_model_loop_create_tt_windowed_att_mask_from_torch', iteration=i)}"
-                )
-                logger.info(
-                    f"vision_model_loop_create_tt_full_att_mask_from_torch at {i}: {profiler.get_duration('vision_model_loop_create_tt_full_att_mask_from_torch', iteration=i)}"
                 )
                 logger.info(
                     f"vision_model_loop_tt_model at {i}: {profiler.get_duration('vision_model_loop_tt_model', iteration=i)}"

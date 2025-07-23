@@ -4,7 +4,7 @@
         "content": [
             {
                 "type": "image",
-                "image": "file://paper.png"
+                "image": "https://private-user-images.githubusercontent.com/196707333/469967043-b1daa4ee-828d-4e45-8141-2f9da4dfabbc.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTMyOTk5NTIsIm5iZiI6MTc1MzI5OTY1MiwicGF0aCI6Ii8xOTY3MDczMzMvNDY5OTY3MDQzLWIxZGFhNGVlLTgyOGQtNGU0NS04MTQxLTJmOWRhNGRmYWJiYy5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwNzIzJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDcyM1QxOTQwNTJaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT02ZTAwMGZlMzUxMDM1NDUyNjJmNzA2ZTU1N2QwYWNmODJkNmNjZjRmMjY2Y2I1ODA3NmU2N2QyYmE2NzIwM2ZmJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.z9ik48a9TeD-M9ucikKyuBn5BSazXECYCDmmf63yEjY"
             },
             {
                 "type": "text",

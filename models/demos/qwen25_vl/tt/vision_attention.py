@@ -20,7 +20,7 @@ class VisionAttention(LightweightModule):
         self,
         x,
         rot_mats,
-        tt_mask,
+        cu_seqlens,
         user_id=0,
         page_table=None,
         chunk_page_table=None,
@@ -28,13 +28,13 @@ class VisionAttention(LightweightModule):
     ):
         return self.forward_prefill(
             x,
+            cu_seqlens=cu_seqlens,
             rot_mats=rot_mats,
             user_id=user_id,
             page_table=page_table,
             chunk_page_table=chunk_page_table,
             chunk_start_idx=chunk_start_idx,
             kv_cache=None,
-            mask=tt_mask,
         )
 
     def __init(
@@ -355,13 +355,13 @@ class VisionAttention(LightweightModule):
     def forward_prefill(
         self,
         x_11SH,
+        cu_seqlens,
         rot_mats,
         user_id: int = 0,
         page_table=None,
         chunk_page_table=None,
         chunk_start_idx=None,
         kv_cache=None,
-        mask=None,
     ):
         seq_len = x_11SH.shape[-2]
         assert seq_len % 128 == 0 and seq_len > 0, "Seqlen must be divisible by 128"
@@ -472,12 +472,11 @@ class VisionAttention(LightweightModule):
                 program_config=self.model_config["SDPA_PROGCFG"](seq_len),
             )
         else:
-            attn_output_84SD = ttnn.transformer.scaled_dot_product_attention(
+            attn_output_84SD = ttnn.transformer.windowed_scaled_dot_product_attention(
                 q_heads_1QSD_8b,
                 k_heads_1KSD_8b,
                 v_heads_1VSD_8b,
-                is_causal=self.causal_mask,
-                attn_mask=mask,
+                cu_seqlens,
                 scale=self.scale,
                 compute_kernel_config=self.sdpa_prefill_compute_kernel_cfg,
                 program_config=self.model_config["SDPA_PROGCFG"](seq_len),
