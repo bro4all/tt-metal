@@ -148,7 +148,10 @@ public:
     void SetUp(
         const std::string& mesh_graph_desc_file,
         const std::map<FabricNodeId, chip_id_t>& logical_mesh_chip_id_to_physical_chip_id_mapping) {
-        tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
+        // Set the environment variable for the mesh graph descriptor path, since this is used by MetalContext
+        // to construct a custom control plane topology.
+        setenv("TT_MESH_GRAPH_DESC_PATH", mesh_graph_desc_file.c_str(), 1);
+        tt::tt_metal::MetalContext::instance().set_custom_fabric_node_id_to_physical_chip_mapping(
             mesh_graph_desc_file, logical_mesh_chip_id_to_physical_chip_id_mapping);
         BaseFabricFixture::DoSetUpTestSuite(tt::tt_fabric::FabricConfig::FABRIC_2D_DYNAMIC);
     }
@@ -158,7 +161,9 @@ private:
 
     void TearDown() override {
         BaseFabricFixture::DoTearDownTestSuite();
-        tt::tt_metal::MetalContext::instance().set_default_control_plane_mesh_graph();
+        // Unset the environment variable and reset the custom mapping.
+        unsetenv("TT_MESH_GRAPH_DESC_PATH");
+        tt::tt_metal::MetalContext::instance().reset_custom_fabric_node_id_to_physical_chip_mapping();
     }
 };
 

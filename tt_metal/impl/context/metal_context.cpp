@@ -374,23 +374,22 @@ tt::tt_fabric::ControlPlane& MetalContext::get_control_plane() {
     return *control_plane_;
 }
 
-void MetalContext::set_custom_control_plane_mesh_graph(
+void MetalContext::set_custom_fabric_node_id_to_physical_chip_mapping(
     const std::string& mesh_graph_desc_file,
     const std::map<tt_fabric::FabricNodeId, chip_id_t>& logical_mesh_chip_id_to_physical_chip_id_mapping) {
     TT_FATAL(
         !DevicePool::is_initialized() || DevicePool::instance().get_all_active_devices().size() == 0,
         "Modifying control plane requires no devices to be active");
-
-    control_plane_ = std::make_unique<tt::tt_fabric::ControlPlane>(
-        mesh_graph_desc_file, logical_mesh_chip_id_to_physical_chip_id_mapping);
-    this->set_fabric_config(fabric_config_, tt::tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
+    this->logical_mesh_chip_id_to_physical_chip_id_mapping_ = logical_mesh_chip_id_to_physical_chip_id_mapping;
+    this->set_fabric_config(fabric_config_, tt::tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);    
 }
 
-void MetalContext::set_default_control_plane_mesh_graph() {
+void MetalContext::reset_custom_fabric_node_id_to_physical_chip_mapping() {
     TT_FATAL(
         !DevicePool::is_initialized() || DevicePool::instance().get_all_active_devices().size() == 0,
         "Modifying control plane requires no devices to be active");
     control_plane_.reset();
+    this->logical_mesh_chip_id_to_physical_chip_id_mapping_.clear();
     this->set_fabric_config(fabric_config_, tt::tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
 }
 
@@ -487,6 +486,15 @@ tt_fabric::FabricConfig MetalContext::get_fabric_config() const {
     return fabric_config_;
 }
 
+void MetalContext::construct_control_plane(const std::filesystem::path& mesh_graph_desc_path) {
+    if (logical_mesh_chip_id_to_physical_chip_id_mapping_.size()) {
+        log_info(tt::LogDistributed, "Using custom Fabric Node Id to physical chip mapping.");
+        control_plane_ = std::make_unique<tt::tt_fabric::ControlPlane>(mesh_graph_desc_path.string(), logical_mesh_chip_id_to_physical_chip_id_mapping_);
+    } else {
+        control_plane_ = std::make_unique<tt::tt_fabric::ControlPlane>(mesh_graph_desc_path.string());
+    }
+}
+
 void MetalContext::initialize_control_plane() {
     if (auto* custom_mesh_graph_desc_path = get_custom_mesh_graph_desc_path(); custom_mesh_graph_desc_path != nullptr) {
         std::filesystem::path mesh_graph_desc_path = std::filesystem::path(custom_mesh_graph_desc_path);
@@ -496,7 +504,7 @@ void MetalContext::initialize_control_plane() {
             mesh_graph_desc_path.string());
 
         log_info(tt::LogDistributed, "Using custom mesh graph descriptor: {}", mesh_graph_desc_path.string());
-        control_plane_ = std::make_unique<tt::tt_fabric::ControlPlane>(mesh_graph_desc_path.string());
+        this->construct_control_plane(mesh_graph_desc_path);
         return;
     }
 
@@ -529,7 +537,7 @@ void MetalContext::initialize_control_plane() {
     const std::filesystem::path mesh_graph_desc_path = std::filesystem::path(rtoptions_.get_root_dir()) /
                                                        "tt_metal/fabric/mesh_graph_descriptors" / mesh_graph_descriptor;
 
-    control_plane_ = std::make_unique<tt::tt_fabric::ControlPlane>(mesh_graph_desc_path.string());
+    this->construct_control_plane(mesh_graph_desc_path);
 }
 
 void MetalContext::reset_cores(chip_id_t device_id) {
