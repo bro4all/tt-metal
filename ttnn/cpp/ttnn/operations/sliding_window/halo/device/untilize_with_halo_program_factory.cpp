@@ -86,9 +86,13 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
     const tt::DataFormat out_df = datatype_to_dataformat_converter(output_tensor.dtype());
     const uint32_t out_nbytes = datum_size(out_df);
 
-    const CoreRangeSet all_cores = output_tensor.shard_spec().value().grid;
-
     const ShardOrientation shard_orientation = output_tensor.shard_spec().value().orientation;
+    const bool is_rm_orientation = shard_orientation == ShardOrientation::ROW_MAJOR;
+    const CoreRangeSet all_cores = output_tensor.shard_spec().value().grid;
+    const auto cores = corerange_to_cores(all_cores, std::nullopt, is_rm_orientation);
+    uint32_t num_cores_x = device->compute_with_storage_grid_size().x;
+    uint32_t num_cores_y = device->compute_with_storage_grid_size().y;
+
     const auto input_shard_shape = output_tensor.shard_spec().value().shape;
     const auto output_shard_shape = output_tensor.shard_spec().value().shape;
     TT_ASSERT(input_shard_shape[1] == output_shard_shape[1], "Expected input and output shard shapes to match");
@@ -172,8 +176,6 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
         KernelHandle untilize_kernel_id =
             CreateKernel(program, compute_kernel_name, all_cores, ComputeConfig{.compile_args = compute_ct_args});
 
-        const bool is_rm_orientation = shard_orientation == ShardOrientation::ROW_MAJOR;
-        const auto cores = corerange_to_cores(all_cores, std::nullopt, is_rm_orientation);
         for (int core_id = 0; core_id < cores.size(); core_id++) {
             SetRuntimeArgs(program, untilize_kernel_id, cores[core_id], {number_of_blocks_per_core[core_id]});
         }
@@ -263,9 +265,10 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
         skip_untilize,
         clamped_block_size_height,  // Block size in sticks
         ntiles_per_block,
-        0,            // Block start offset
-        block_stride  // Block stride
-    };
+        0,             // Block start offset
+        block_stride,  // Block stride
+        num_cores_x,
+        num_cores_y};
 
     const uint32_t EMPTY_PADDING_CONFIG_BUFFER_SIZE = 4;
     const bool enable_padding = padding_config_buffer0->size() / num_cores != EMPTY_PADDING_CONFIG_BUFFER_SIZE ||

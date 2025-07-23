@@ -170,7 +170,9 @@ template <
     bool EnableBlocking,
     bool IsBlockSharded,
     bool IsWidthSharded,
-    bool IsColumnMajor>
+    bool IsColumnMajor,
+    uint32_t num_cores_x,
+    uint32_t num_cores_y>
 static inline void run_halo_gather(const tt_l1_ptr uint16_t* config, uint32_t my_noc_x, uint32_t my_noc_y) {
     static_assert(BlockStride >= 1, "Blocks stride must be at least 1");
 
@@ -178,10 +180,17 @@ static inline void run_halo_gather(const tt_l1_ptr uint16_t* config, uint32_t my
     constexpr uint32_t total_tiles_in_single_block = block_size_height_tiles * BlockSizeWidthTiles;
 
     uint16_t current_config_index = 0;
-    uint16_t number_of_segments_remaining = config[current_config_index++];
+    uint16_t number_of_segments = config[current_config_index++];
 
-    if (number_of_segments_remaining == 0) {
+    if (number_of_segments == 0) {
         return;
+    }
+
+    uint32_t start_segment =
+        ((my_noc_x + my_noc_y * num_cores_x) + BlockStartOffset * num_cores_x * num_cores_y) % number_of_segments;
+    for (uint32_t i = 0; i < start_segment; i++) {
+        uint16_t transfers_remaining = config[current_config_index + 2];
+        current_config_index += 3 * transfers_remaining + 3;  // Skip header and all transfers
     }
 
     uint32_t in_base_l1_addr = get_read_ptr(InputCBIndex);
@@ -195,7 +204,10 @@ static inline void run_halo_gather(const tt_l1_ptr uint16_t* config, uint32_t my
     uint64_t out_l1_addr = 0;
     uint16_t block_id = BlockStartOffset;
     uint16_t block_boundary_offset = BlockSizeHeight + (BlockSizeHeight * BlockStartOffset);
-    while (number_of_segments_remaining) {
+    for (uint32_t i = start_segment; i < start_segment + number_of_segments; i++) {
+        if (i == number_of_segments) {
+            current_config_index = 1;  // Wrap around if we reach the end
+        }
         //  Read header for to get destination for this route
         const uint16_t destination_noc_x = config[current_config_index++];
         const uint16_t destination_noc_y = config[current_config_index++];
@@ -228,7 +240,6 @@ static inline void run_halo_gather(const tt_l1_ptr uint16_t* config, uint32_t my
                 in_base_l1_addr, out_l1_addr, src_offset, dst_offset, transfer_size);
             transfers_remaining--;
         }
-        number_of_segments_remaining--;
     }
 
     if constexpr (EnableBlocking) {
@@ -256,6 +267,8 @@ void kernel_main() {
     constexpr uint32_t block_size_width_tiles = get_compile_time_arg_val(16);
     constexpr uint32_t block_start_offset = get_compile_time_arg_val(17);
     constexpr uint32_t block_stride = get_compile_time_arg_val(18);
+    constexpr uint32_t num_cores_x = get_compile_time_arg_val(19);
+    constexpr uint32_t num_cores_y = get_compile_time_arg_val(20);
 
     static_assert(!remote_read, "Remote read is not supported in this kernel");
 
@@ -306,7 +319,9 @@ void kernel_main() {
         enable_blocking,
         is_block_sharded,
         is_width_sharded,
-        is_col_major>(config_data, my_noc_x, my_noc_y);
+        is_col_major,
+        num_cores_x,
+        num_cores_y>(config_data, my_noc_x, my_noc_y);
 
     noc_async_read_barrier();
     noc_async_write_barrier();
