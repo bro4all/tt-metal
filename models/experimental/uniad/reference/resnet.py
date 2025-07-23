@@ -122,6 +122,7 @@ class ModulatedDeformConv2dPack(nn.Module):
             self.bias = nn.Parameter(torch.Tensor(out_channels))
         else:
             self.register_parameter("bias", None)
+
         self.conv_offset = nn.Conv2d(
             self.in_channels,
             self.deform_groups * 3 * self.kernel_size[0] * self.kernel_size[1],
