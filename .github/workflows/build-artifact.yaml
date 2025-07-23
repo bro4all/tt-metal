@@ -150,7 +150,7 @@ jobs:
   build-artifact:
     name: "🛠️ Build ${{ inputs.build-type }} ${{ inputs.distro }} ${{ inputs.version }}"
     needs: build-docker-image
-    timeout-minutes: 45
+    timeout-minutes: 445
     runs-on: tt-beta-ubuntu-2204-large
     environment: ${{ github.ref == 'refs/heads/main' && 'mainline' || '' }}
     outputs:
@@ -250,7 +250,7 @@ jobs:
       - name: 🛠️ Compile
         run: |
           # --target install is for the tarball that should get replaced by proper packaging later
-          nice -19 cmake --build build --target install
+          cmake --build build --target install -- -j1
 
       - name: 🛠️ Profile
         if: ${{ inputs.profile }}
