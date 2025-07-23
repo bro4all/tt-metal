@@ -224,6 +224,10 @@ def run_trace_2cq_model(device, tt_inputs, test_infra, num_warmup_iterations, nu
 
     tid = ttnn.begin_trace_capture(device, cq_id=0)
     tt_output_res = test_infra.run()
+    shape = tt_output_res.shape
+    dtype = tt_output_res.dtype
+    layout = tt_output_res.layout
+    output_memory_config = tt_output_res.memory_config()
     input_tensor = ttnn.allocate_tensor_on_device(spec, device)
     ttnn.end_trace_capture(device, tid, cq_id=0)
     assert trace_input_addr == input_tensor.buffer_address()
@@ -239,10 +243,21 @@ def run_trace_2cq_model(device, tt_inputs, test_infra, num_warmup_iterations, nu
         ttnn.execute_trace(device, tid, cq_id=0, blocking=True)
         ttnn.dump_device_profiler(device)
 
+    print("Using new code path")
+    logger.info("Using new code path for 2 CQs trace model")
     ttnn.synchronize_device(device)
     if use_signpost:
         signpost(header="start")
-    outputs = []
+        outputs = [
+            ttnn.allocate_tensor_on_host(
+                shape,
+                dtype,
+                layout,
+                device,
+                output_memory_config,
+            )
+            for _ in range(num_measurement_iterations)
+        ]
     profiler.start(f"run")
     for iter in range(0, num_measurement_iterations):
         ttnn.wait_for_event(1, op_event)
@@ -253,7 +268,8 @@ def run_trace_2cq_model(device, tt_inputs, test_infra, num_warmup_iterations, nu
         input_tensor = ttnn.reshard(tt_image_res, input_mem_config, input_tensor)
         op_event = ttnn.record_event(device, 0)
         ttnn.execute_trace(device, tid, cq_id=0, blocking=False)
-        outputs.append(tt_output_res.cpu(blocking=False))
+        ttnn.copy_device_to_host_tensor(tt_output_res, outputs[iter], blocking=False)
+
     ttnn.synchronize_device(device)
     profiler.end(f"run")
     if use_signpost:
