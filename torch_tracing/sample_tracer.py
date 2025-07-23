@@ -3,6 +3,8 @@ from tracer_backend import trace_torch_model
 from generate_pytorch_unittest_graph import (
     PytorchLayerUnitTestGraph,
     ConvolutionUnittest,
+    AddmUnittest,
+    AddmCombiner,
     PytorchLayerUnitTestGraphConfig,
     ConvolutionCombiner,
 )
@@ -10,30 +12,34 @@ from generate_pytorch_graph import PytorchGraph
 from generate_pytorch_excel_graph import PytorchExcelGraph
 from torchinfo import summary
 
+allowed_modes = [
+    "yolov4",
+    "yolov7",
+    "yolov8x",
+    "yolov8s",
+    "yolov8s_world",
+    "yolov11",
+    "rtdetr",
+    "resnet50",
+    "mobilenetv2",
+    "efficientnetb0",
+    "efficientnetb3",
+    "efficientnetb4",
+    "sentence_bert",
+    "vgg_unet",
+    "ufld_v2",
+    "segformer_classification",
+    "vit_base_patch16_224",
+    "swin_transformer",
+    "swin_transformer_v2",
+]
 
-def main():
+allowed_dtypes = ["float32", "float64", "int32", "int64"]
+
+
+def get_parser():
+    """Creates and returns the argument parser."""
     parser = argparse.ArgumentParser(description="Trace YOLO model operations.")
-    allowed_modes = [
-        "yolov4",
-        "yolov7",
-        "yolov8x",
-        "yolov8s",
-        "yolov8s_world",
-        "yolov11",
-        "rtdetr",
-        "resnet50",
-        "mobilenetv2",
-        "efficientnetb0",
-        "efficientnetb3",
-        "efficientnetb4",
-        "sentence_bert",
-        "vgg_unet",
-        "ufld_v2",
-        "segformer_classification",
-        "vit_base_patch16_224",
-        "swin_transformer",
-        "swin_transformer_v2",
-    ]
     parser.add_argument(
         "--model",
         type=str,
@@ -49,7 +55,6 @@ def main():
         required=True,
         help="List of input tensor shapes as space-separated integers (e.g., --input-shape 1 3 640 640 --input-shape 1 3 320 320)",
     )
-    allowed_dtypes = ["float32", "float64", "int32", "int64"]
     parser.add_argument(
         "--input-dtype",
         type=str,
@@ -58,7 +63,12 @@ def main():
         default=["float32"],
         help=f"Optional list of data types for the input tensors (default: float32). Allowed types: {', '.join(allowed_dtypes)}",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main(args_dict):
+    """Main function to trace the model."""
+    args = argparse.Namespace(**args_dict)
 
     if args.model == "yolov8s":
         from ultralytics import YOLO
@@ -152,14 +162,18 @@ def main():
     pytorch_graph = PytorchGraph(operation_graph)
     pytorch_graph.dump_to_python_file("graph.py", True)
     pytorch_excel_graph = PytorchExcelGraph(operation_graph)
-    pytorch_excel_graph.dump_to_excel_file("graph.xlsx") 
+    pytorch_excel_graph.dump_to_excel_file("graph.xlsx")
     graph = PytorchLayerUnitTestGraph(
         PytorchLayerUnitTestGraphConfig(
-            operation_graph, [ConvolutionUnittest], {ConvolutionUnittest: ConvolutionCombiner}
+            operation_graph,
+            [ConvolutionUnittest, AddmUnittest],
+            {AddmUnittest: AddmCombiner, ConvolutionUnittest: ConvolutionCombiner},
         )
     )
     graph.dump_to_python_file("test.py", True)
 
 
 if __name__ == "__main__":
-    main()
+    parser = get_parser()
+    args = parser.parse_args()
+    main(vars(args))

@@ -58,6 +58,7 @@ class Operation:
     kwargs: Dict[str, Any]
     postfix: str = ""
     meta_data: Optional[OperationMetadata] = None
+    graph_output_indices: Optional[List[int]] = None
 
     def _serialize(self, value: Any) -> str:
         """Recursively serialize arguments or keyword arguments."""
@@ -82,6 +83,40 @@ class Operation:
             serialized_kwargs = ", " + serialized_kwargs
         return f"{to_valid_variable_name(self.unique_name)} = {self.function_call_name}({serialized_args}{serialized_kwargs}){self.postfix}"
 
+    def to_operation(self, New_type) -> 'Operation':
+        """Convert this operation to a generic Operation type."""
+        return New_type(
+            unique_name=self.unique_name,
+            function_call_name=self.function_call_name,
+            args=self.args,
+            kwargs=self.kwargs,
+            postfix=self.postfix,
+            meta_data=self.meta_data,
+            graph_output_indices=self.graph_output_indices,
+        )
+
+    @property
+    def input_shapes(self) -> Optional[Dict[int, Any]]:
+        try:
+            dynamic_shapes = self.meta_data.meta["i_shapes"]
+            args_shapes = {}
+            offset = 0
+            for index, elem in enumerate(self.args):
+                if isinstance(elem, PlaceholderTensor) and offset < len(dynamic_shapes):
+                    args_shapes[index] = dynamic_shapes[offset]
+                    offset += 1
+                elif isinstance(elem, ConstantTensor):
+                    args_shapes[index] = elem.value.shape
+            return args_shapes
+        except:
+            return None
+    
+    @property
+    def output_shapes(self) -> List[Any]:
+        try:
+            return self.meta_data.meta["o_shapes"]
+        except:
+            return None 
 
 @dataclass
 class WrappedOperation(Operation):
@@ -133,6 +168,26 @@ class AtenConvolution(WrappedOperation):
             * self.attrs.kernel[1]
             // self.attrs.groups
         )
+
+
+@dataclass
+class AtenAddTensor(WrappedOperation):
+    @property
+    def ops(self) -> int:
+        output_shapes = self.output_shapes
+        if output_shapes:
+            num_elements = output_shapes[0].numel()
+            return num_elements * 2  # Assuming two tensors are added
+        return super().ops 
+
+@dataclass
+class AtenAddm(WrappedOperation):
+    @property
+    def ops(self) -> int:
+        shapes = self.input_shapes
+        if shapes and len(shapes) > 2 and 1 in shapes and 2 in shapes:
+            return 2 * shapes[1][0] * shapes[2].numel()
+        return super().ops 
 
 
 @dataclass

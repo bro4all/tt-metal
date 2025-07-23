@@ -1,10 +1,11 @@
 import networkx as nx
 from tracer_backend import OperationGraph, Operation
-from tracer_backend_utils import ConvAttrs, AtenConvolution
-from typing import List, Optional, Type, Dict
+from tracer_backend_utils import ConvAttrs, AtenConvolution, AtenAddm
+from typing import List, Optional, Type, Dict, Any
 from dataclasses import dataclass
 from pytorch_graph_utils import format_file_with_black
 import os
+import torch
 
 HEADER_IMPORTS = set(
     [
@@ -30,18 +31,14 @@ class UnitTestOperation:
 class ConvolutionUnittest(UnitTestOperation):
     def __init__(self, conv_attrs: ConvAttrs):
         self.attrs = conv_attrs
-        HEADER_IMPORTS.add("from tests.ttnn.nightly.unit_tests.operations.conv.test_conv2d import run_conv, torch_tensor_map")
+        HEADER_IMPORTS.add(
+            "from tests.ttnn.nightly.unit_tests.operations.conv.test_conv2d import run_conv, torch_tensor_map"
+        )
 
     @staticmethod
     def parse_from_operation(operation: Operation) -> Optional["ConvolutionUnittest"]:
         if operation.function_call_name == "torch.ops.aten.convolution":
-            conv = AtenConvolution(
-                unique_name=operation.unique_name,
-                function_call_name=operation.function_call_name,
-                args=operation.args,
-                kwargs=operation.kwargs,
-                meta_data=operation.meta_data,
-            )
+            conv = operation.to_operation(AtenConvolution)
             return ConvolutionUnittest(conv.attrs)
         return None
 
@@ -51,10 +48,30 @@ class ConvolutionUnittest(UnitTestOperation):
         return group_unit_test.generate_code()
 
 
+class AddmUnittest(UnitTestOperation):
+    def __init__(self, input_shapes: Optional[Dict[int, Any]]):
+        self.input_shapes = input_shapes
+        HEADER_IMPORTS.add("from tests.ttnn.utils_for_testing import assert_with_pcc")
+
+    @staticmethod
+    def parse_from_operation(operation: Operation) -> Optional["ConvolutionUnittest"]:
+        if operation.function_call_name == "torch.ops.aten.addmm":
+            admm = operation.to_operation(AtenAddm)
+            return AddmUnittest(admm.input_shapes)
+        return None
+
+    def generate_code(self, indent="") -> str:
+        """Generate the code for this convolution unit test operation."""
+        group_unit_test = AddmGroupUnittest([self.input_shapes])
+        return group_unit_test.generate_code()
+
+
 class ConvolutionGroupUnittest(UnitTestOperation):
     def __init__(self, attrs_list: List[ConvAttrs]):
         self.attrs = attrs_list
-        HEADER_IMPORTS.add("from tests.ttnn.nightly.unit_tests.operations.conv.test_conv2d import run_conv, torch_tensor_map")
+        HEADER_IMPORTS.add(
+            "from tests.ttnn.nightly.unit_tests.operations.conv.test_conv2d import run_conv, torch_tensor_map"
+        )
 
     def generate_code(self) -> str:
         """Generate the code for this convolution unit test operation."""
@@ -68,7 +85,7 @@ class ConvolutionGroupUnittest(UnitTestOperation):
 @pytest.mark.parametrize(
     "input_batch, input_depth, hidden_units, input_height, input_width, kernel, stride, padding, dilation",
     (
-{''.join(f'        ({attr.input_batch}, {attr.input_depth}, {attr.hidden_units}, {attr.input_height}, {attr.input_width}, (3, 3), {attr.stride}, {attr.padding}, {attr.dilation}),' for attr in self.attrs)}
+{''.join(f'        ({attr.input_batch}, {attr.input_depth}, {attr.hidden_units}, {attr.input_height}, {attr.input_width}, {attr.kernel}, {attr.stride}, {attr.padding}, {attr.dilation}),' for attr in self.attrs)}
     )
 )
 @pytest.mark.parametrize(
@@ -127,6 +144,63 @@ def test_conv(
         """
 
 
+class AddmGroupUnittest(UnitTestOperation):
+    def __init__(self, input_shapes_list: List[Optional[Dict[int, Any]]]):
+        self.input_shape_list = [shapes for shapes in input_shapes_list if shapes is not None]
+        self.input_shape_list = [shapes for shapes in self.input_shape_list if len(shapes) > 2]
+        self.input_shape_list = [
+            {k: list(v) for k, v in shapes.items() if isinstance(v, torch.Size)} for shapes in self.input_shape_list
+        ]
+        for shape in self.input_shape_list:
+            if 1 in shape:
+                if len(shape[1]) == 2:
+                    shape[1] = [1, 1] + shape[1]
+                elif len(shape[1]) == 3:
+                    shape[1] = [1] + shape[1]
+            if 2 in shape:
+                if len(shape[2]) == 2:
+                    shape[2] = [1, 1] + shape[2]
+                elif len(shape[2]) == 3:
+                    shape[2] = [1] + shape[2]
+        HEADER_IMPORTS.add(
+            "from tests.ttnn.nightly.unit_tests.operations.conv.test_conv2d import run_conv, torch_tensor_map"
+        )
+
+    def generate_code(self) -> str:
+        """Generate the code for this convolution unit test operation."""
+        return f"""
+
+@pytest.mark.parametrize(
+    "batch_size, channel_a, channel_b, m_size, k_size, n_size",
+    (
+{''.join(f'        ({shapes[1][-4]}, {shapes[1][-3]}, {shapes[2][-3]}, {shapes[1][-2]}, {shapes[1][-1]}, {shapes[2][-1]}),' for shapes in self.input_shape_list)}
+    )
+)
+@pytest.mark.parametrize("dtype", [ttnn.bfloat8_b])
+def test_sd_matmul(device, batch_size, channel_a, channel_b, m_size, k_size, n_size, dtype):
+    torch.manual_seed(0)
+    if device.core_grid.y == 7:
+        pytest.skip("Issue #6984: Compute Grid size too small") 
+
+    torch_input_tensor_a = torch.randn((batch_size, channel_a, m_size, k_size), dtype=torch.bfloat16)
+    torch_input_tensor_b = torch.randn((batch_size, channel_b, k_size, n_size), dtype=torch.bfloat16)
+    torch_output_tensor = torch_input_tensor_a @ torch_input_tensor_b
+
+    input_tensor_a = ttnn.from_torch(torch_input_tensor_a, layout=ttnn.TILE_LAYOUT, device=device, dtype=dtype)
+    input_tensor_b = ttnn.from_torch(torch_input_tensor_b, layout=ttnn.TILE_LAYOUT, device=device, dtype=dtype)
+    pcc = 0.94 if dtype == ttnn.bfloat8_b else 0.98
+
+    output_tensor = ttnn.matmul(
+        input_tensor_a,
+        input_tensor_b,
+        core_grid=device.core_grid,
+    )
+
+    output_tensor = ttnn.to_torch(output_tensor)
+    assert_with_pcc(torch_output_tensor, output_tensor, pcc=pcc)
+"""
+
+
 class UnitTestOperationCombiner:
 
     @staticmethod
@@ -146,6 +220,19 @@ class ConvolutionCombiner(UnitTestOperationCombiner):
         # Assuming all operations are ConvolutionUnittest
         combined_attrs = [conv.attrs for conv in operations if isinstance(conv, ConvolutionUnittest)]
         return ConvolutionGroupUnittest(combined_attrs)
+
+
+class AddmCombiner(UnitTestOperationCombiner):
+
+    @staticmethod
+    def combine(operations: List[UnitTestOperation]) -> UnitTestOperation:
+        """Combine multiple addm operations into a single one."""
+        if not operations:
+            raise ValueError("No operations to combine.")
+
+        # Assuming all operations are ConvolutionUnittest
+        combined_shapes = [addm.input_shapes for addm in operations if isinstance(addm, AddmUnittest)]
+        return AddmGroupUnittest(combined_shapes)
 
 
 class UnitTestCombiner:

@@ -16,6 +16,8 @@ import os
 import networkx as nx
 from tracer_backend_utils import (
     AtenConvolution,
+    AtenAddTensor,
+    AtenAddm,
     Operation,
     OperationMetadata,
     PlaceholderTensor,
@@ -123,6 +125,9 @@ class FrozenTrackableTensor:
         self.tensor = tensor.elem  # Store the actual tensor data
         self.module_name = tensor.module_name  # Store the module name if it exists
         self.shape = tensor.shape
+        self.graph_output_index = None
+        if "graph_output_index" in tensor.__dict__:
+            self.graph_output_index = tensor.graph_output_index
 
     def __repr__(self):
         return f"FrozenTrackableTensor(pid={self.id}, tensor={self.tensor.shape})"
@@ -172,8 +177,6 @@ class Trackable_Tensor(torch.Tensor):
         # ...the real tensor is held as an element on the tensor.
         r.module_name = None  # Initialize module_name
         r.elem = elem
-        if isinstance(elem, bool):
-            breakpoint()
         r.id = "-1"
         return r
 
@@ -349,6 +352,16 @@ class OperationGraph:
             meta = node_data.get("meta", {})
             res = node_data.get("res", None)
             name = node_data["name"]
+            graph_output_indices = None
+            if isinstance(res, FrozenTrackableTensor) and res.graph_output_index is not None:
+                graph_output_indices = [res.graph_output_index]
+            elif isinstance(res, (list, tuple)):
+                intermediate_indices = []
+                for r in res:
+                    if isinstance(r, FrozenTrackableTensor) and r.graph_output_index is not None:
+                        intermediate_indices.append(r.graph_output_index)
+                if intermediate_indices:
+                    graph_output_indices = intermediate_indices
             if node_data["op_type"] == "TUPLE_GET_ITEM":
                 parent_index = node_data["kwargs"]["index"]
                 parent_id = node_data["args"][parent_index].id.split("_")[0]
@@ -361,6 +374,7 @@ class OperationGraph:
                     args=new_args,
                     kwargs=kwargs,
                     meta_data=OperationMetadata(meta=meta, res=self.parse_args([res], node_data["name"])[0]),
+                    graph_output_indices=graph_output_indices
                 )
             else:
                 args = self.parse_args(node_data.get("args", []), node_data["name"])
@@ -370,6 +384,7 @@ class OperationGraph:
                     args=args,
                     kwargs=kwargs,
                     meta_data=OperationMetadata(meta=meta, res=self.parse_args([res], node_data["name"])[0]),
+                    graph_output_indices=graph_output_indices
                 )
             self.operations[node_id] = operation
             self._handle_input_operations(node_data)
@@ -445,16 +460,13 @@ class WrappedOperationGraph(OperationGraph):
         unsupported_wrapped_ops = set()
         for node_id, operation in self.operations.items():
             if operation.function_call_name == "torch.ops.aten.convolution":
-                self.operations[node_id] = AtenConvolution(
-                    unique_name=operation.unique_name,
-                    function_call_name=operation.function_call_name,
-                    args=operation.args,
-                    kwargs=operation.kwargs,
-                    postfix=operation.postfix,
-                    meta_data=operation.meta_data,
-                )
-            else:
-                unsupported_wrapped_ops.add(operation.function_call_name)
+                self.operations[node_id] = operation.to_operation(AtenConvolution)
+            elif operation.function_call_name == "torch.ops.aten.add_.Tensor":
+                self.operations[node_id] = operation.to_operation(AtenAddTensor)
+            elif operation.function_call_name.startswith("torch.ops.aten.addmm"):
+                self.operations[node_id] = operation.to_operation(AtenAddm)
+            elif len(operation.function_call_name):
+                    unsupported_wrapped_ops.add(operation.function_call_name)
         if self.verbose and unsupported_wrapped_ops:
             print(f"Unsupported wrapped operations: {', '.join(unsupported_wrapped_ops)}")
 
@@ -650,6 +662,7 @@ def create_json_structure(graph_output_to_node, outputs_to_inputs):
     node_row_ptr = []
     current_row = 0
     id_to_row = {}
+    outputs = []
     for node, inputs in outputs_to_inputs.items():
         # Example attributes for demonstration purposes
         op = graph_output_to_node[node]["name"]
@@ -669,11 +682,19 @@ def create_json_structure(graph_output_to_node, outputs_to_inputs):
         if not inputs:  # Assuming nodes without inputs are argument nodes
             arg_nodes.append(len(nodes) - 1)
         id_to_row[node] = current_row
+        if isinstance(graph_output_to_node[node]["res"], FrozenTrackableTensor):
+            if graph_output_to_node[node]["res"].graph_output_index is not None:
+                outputs.append((graph_output_to_node[node]["res"].graph_output_index, current_row))
+        elif isinstance(graph_output_to_node[node]["res"], (list, tuple)):
+            for res in graph_output_to_node[node]["res"]:
+                if isinstance(res, FrozenTrackableTensor) and res.graph_output_index is not None:
+                    outputs.append((res.graph_output_index, current_row))
+                    break
         current_row += 1
         node_row_ptr.append(current_row)
 
     # Assuming the last node is the head
-    heads = [[len(nodes) - 1, 0, 0]]
+    heads = [[output[1], 0, 0] for output in sorted(outputs, key=lambda x: x[0])]
 
     # Construct the final JSON structure
     json_structure = {
@@ -756,6 +777,7 @@ def create_graph_json_structure(operation_graph: OperationGraph):
     node_row_ptr = []
     current_row = 0
     id_to_row = {}
+    outputs = []
     for node in list(nx.topological_sort(operation_graph.graph))[::-1]:
         inputs = list(operation_graph.graph.neighbors(node))
         # Example attributes for demonstration purposes
@@ -782,11 +804,13 @@ def create_graph_json_structure(operation_graph: OperationGraph):
         if not inputs:  # Assuming nodes without inputs are argument nodes
             arg_nodes.append(len(nodes) - 1)
         id_to_row[node] = current_row
+        if operation_graph.graph.nodes[node]["operation"].graph_output_indices is not None:
+            outputs.append((min(operation_graph.graph.nodes[node]["operation"].graph_output_indices), current_row))
         current_row += 1
         node_row_ptr.append(current_row)
 
     # Assuming the last node is the head
-    heads = [[len(nodes) - 1, 0, 0]]
+    heads = [[output[1], 0, 0] for output in sorted(outputs, key=lambda x: x[0])]
 
     # Construct the final JSON structure
     json_structure = {
@@ -798,6 +822,24 @@ def create_graph_json_structure(operation_graph: OperationGraph):
     }
 
     return json_structure
+
+
+def set_is_graph_output(outputs, index=0):
+    """
+    Set the is_graph_output attribute for Trackable_Tensor instances in the outputs.
+
+    Args:
+        outputs: The outputs of the traced model.
+    """
+    if isinstance(outputs, Trackable_Tensor):
+        outputs.graph_output_index = index
+    elif isinstance(outputs, (list, tuple)):
+        for index2, output in enumerate(outputs):
+            ## no recursion since we only support one level of nesting
+            if isinstance(output, Trackable_Tensor):
+                output.graph_output_index = index2
+    else:
+        print(f"Warning: Output {outputs} are not Trackable_Tensor instances, cannot set is_graph_output.")
 
 
 def trace_torch_model(
@@ -838,7 +880,8 @@ def trace_torch_model(
         input_tensors.append(input_tensor)
 
     handles = register_module_hooks(model)
-    model(*input_tensors)
+    outputs = model(*input_tensors)
+    set_is_graph_output(outputs)
     # remove the hooks after tracing
     for handle in handles:
         handle.remove()
@@ -853,7 +896,7 @@ def trace_torch_model(
         for key, value in tracer.graph_output_to_node.items():
             if isinstance(value["args"], (list, tuple)):
                 value["args"] = tree_map(
-                    lambda arg: arg.to_frozen() if isinstance(arg, (Trackable_Tensor, Trackable_Tensor)) else arg,
+                    lambda arg: arg.to_frozen() if isinstance(arg, Trackable_Tensor) else arg,
                     value["args"],
                 )
 
@@ -861,7 +904,7 @@ def trace_torch_model(
                 tracer.graph_output_to_node[key]["res"] = value["res"].to_frozen()
             if isinstance(value["res"], (list, tuple)):
                 value["res"] = tree_map(
-                    lambda res: res.to_frozen() if isinstance(res, (Trackable_Tensor, Trackable_Tensor)) else res,
+                    lambda res: res.to_frozen() if isinstance(res, Trackable_Tensor) else res,
                     value["res"],
                 )
 
@@ -873,26 +916,28 @@ def trace_torch_model(
     remove_tuple_get_item_detach_clone_with_no_consumers(tracer.graph_output_to_input, tracer.graph_output_to_node)
     propagate_module_name(tracer.graph_output_to_input, tracer.graph_output_to_node)
 
-    if dump_visualization:
-        json_structure = create_json_structure(tracer.graph_output_to_node, tracer.graph_output_to_input)
-        # Write the JSON structure to the specified output file
-        with open("trace_viz.json", "w") as f:
-            json.dump(json_structure, f, indent=2)
-        print(
-            f"Dumped visualization to {os.path.abspath('trace_viz.json')}. Load it into netron.app to visualize the model."
-        )
-
-    if wrap_operations:
-        operation_graph = WrappedOperationGraph(tracer, verbose=True)
-    else:
-        operation_graph = OperationGraph(tracer)
-    operation_graph.generate()
-    if dump_visualization:
-        json_structure = create_graph_json_structure(operation_graph)
-        # Write the JSON structure to the specified output file
-        with open("operation_graph_viz.json", "w") as f:
-            json.dump(json_structure, f, indent=2)
-        print(
-            f"Dumped visualization to {os.path.abspath('operation_graph_viz.json')}. Load it into netron.app to visualize the model."
-        )
+    try:
+        if wrap_operations:
+            operation_graph = WrappedOperationGraph(tracer, verbose=True)
+        else:
+            operation_graph = OperationGraph(tracer)
+        operation_graph.generate()
+        if dump_visualization:
+            json_structure = create_graph_json_structure(operation_graph)
+            # Write the JSON structure to the specified output file
+            with open("operation_graph_viz.json", "w") as f:
+                json.dump(json_structure, f, indent=2)
+            print(
+                f"Dumped visualization to {os.path.abspath('operation_graph_viz.json')}. Load it into netron.app to visualize the model."
+            )
+    except Exception as e:
+        if dump_visualization:
+            json_structure = create_json_structure(tracer.graph_output_to_node, tracer.graph_output_to_input)
+            # Write the JSON structure to the specified output file
+            with open("trace_viz.json", "w") as f:
+                json.dump(json_structure, f, indent=2)
+            print(
+                f"Dumped visualization to {os.path.abspath('trace_viz.json')}. Load it into netron.app to visualize the model."
+            )
+        raise e
     return operation_graph
