@@ -56,3 +56,28 @@ function(create_unit_test_executable)
 endfunction()
 
 create_unit_test_executable()
+
+# Add the integration test that mimics run_tools_tests.sh
+add_executable(tools_integration_test ${CMAKE_CURRENT_SOURCE_DIR}/test_watcher_dump.cpp)
+
+target_link_libraries(tools_integration_test PRIVATE test_metal_common_libs)
+
+target_include_directories(
+    tools_integration_test
+    BEFORE
+    PRIVATE
+        "$<TARGET_PROPERTY:Metalium::Metal,INCLUDE_DIRECTORIES>"
+        ${PROJECT_SOURCE_DIR}/tests
+        ${PROJECT_SOURCE_DIR}/tests/tt_metal/tt_metal/common
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/common
+)
+
+target_compile_definitions(tools_integration_test PRIVATE BUILD_ROOT_DIR="${PROJECT_BINARY_DIR}")
+
+set_target_properties(
+    tools_integration_test
+    PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY
+            ${PROJECT_BINARY_DIR}/test/tt_metal
+)
