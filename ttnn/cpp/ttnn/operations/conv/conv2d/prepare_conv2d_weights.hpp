@@ -53,6 +53,7 @@ Tensor convert_conv_weight_tensor_to_special_padding_tiled_layout(
     const Tensor& conv_weight_tensor,
     uint32_t in1_block_h,
     uint32_t in1_block_w,
+    bool enable_activation_data_reuse = false,
     std::optional<DataType> output_dtype = std::nullopt);
 
 // Converts convolution weights to grouped layout with padded zeros
@@ -126,7 +127,8 @@ struct Conv2dWeightsBiasPrepConfig {
         bool enable_kernel_stride_folding_ = false,
         std::array<uint32_t, 2> kernel_size_ = {1, 1},
         std::array<uint32_t, 2> stride_ = {1, 1},
-        std::array<uint32_t, 4> padding_n4_ = {0, 0, 0, 0}) :
+        std::array<uint32_t, 4> padding_n4_ = {0, 0, 0, 0},
+        bool enable_activation_data_reuse_ = false) :
         input_channels_alignment(input_channels_alignment_),
         weights_bias_dtype(weights_bias_dtype_),
         weight_block_h_ntiles(weight_block_h_ntiles_),
@@ -141,7 +143,8 @@ struct Conv2dWeightsBiasPrepConfig {
         enable_kernel_stride_folding(enable_kernel_stride_folding_),
         kernel_size(kernel_size_),
         stride(stride_),
-        padding_n4(padding_n4_) {}
+        padding_n4(padding_n4_),
+        enable_activation_data_reuse(enable_activation_data_reuse_) {}
 
     // Common parameters
     const uint32_t input_channels_alignment;
@@ -161,6 +164,8 @@ struct Conv2dWeightsBiasPrepConfig {
     const std::array<uint32_t, 2> kernel_size;
     const std::array<uint32_t, 2> stride;
     const std::array<uint32_t, 4> padding_n4;
+
+    bool enable_activation_data_reuse;
 };
 
 template <typename T>

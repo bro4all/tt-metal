@@ -57,6 +57,14 @@ struct CBInfo {
     uint32_t cb_size_per_core() const { return num_pages * page_size; }
 };
 
+struct ReuseDataOptConfig {
+    bool enabled = false;
+    uint32_t act_cb_num_tiles;
+    uint32_t image_width_tiles;
+    uint32_t reuse_loops;
+    uint32_t reuse_diff;
+};
+
 // Returns a vector of CBInfo objects for the Conv2d operation.
 // The vector will contain information about all circular buffers used in the Conv2d operation.
 // CBInfo::index and CBInfo::handle won't be valid until allocate_cbs() is called.
@@ -72,7 +80,8 @@ std::vector<CBInfo> get_cb_info(
     std::array<uint32_t, 2> conv_input_shard_shape,
     bool enable_bias,
     bool is_1d_depthwise_conv,
-    bool skip_act_cb_create);
+    bool skip_act_cb_create,
+    std::optional<ReuseDataOptConfig> reuse_data_opt_config);
 
 // Allocates circular buffers for the Conv2d operation.
 // This function will populate index and handle fields of each CBInfo in the cb_info vector,

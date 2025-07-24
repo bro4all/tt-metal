@@ -376,7 +376,8 @@ OptimizedConvBlockConfig determine_per_core_conv_block_config(
     uint32_t window_w,
     bool fp32_accum,
     bool split_reader_enabled,
-    bool full_inner_dim) {
+    bool full_inner_dim,
+    bool enable_activation_data_reuse = false) {
     if (act_block_h_override > 0) {
         TT_ASSERT(
             act_block_h_override % 32 == 0,
@@ -411,7 +412,7 @@ OptimizedConvBlockConfig determine_per_core_conv_block_config(
     TT_ASSERT(padded_in_channels % act_c_num_blocks == 0);
     uint32_t act_block_w = 0;
     if (parallel_config.shard_scheme == TensorMemoryLayout::HEIGHT_SHARDED) {
-        act_block_w = round_up(padded_in_channels * window_w, tt::constants::TILE_WIDTH);
+        act_block_w = enable_activation_data_reuse ? round_up(padded_in_channels * window_h * window_w, tt::constants::TILE_WIDTH) : round_up(padded_in_channels * window_w, tt::constants::TILE_WIDTH);
     } else if (parallel_config.shard_scheme == TensorMemoryLayout::BLOCK_SHARDED) {
         constexpr bool sliced_inner_dim = true;
         act_block_w = round_up(
@@ -905,7 +906,8 @@ Conv2dConfig determine_conv_config_for_auto_shard(
             input_datatype,
             output_datatype,
             enable_bias,
-            conv_is_1d_deptwise);
+            conv_is_1d_deptwise,
+            output_width);
 
         // Since we don't have L1 usage for halo output (input to conv2d)
         // use approx input tensor size per core as a proxy.
@@ -997,7 +999,8 @@ std::tuple<OptimizedConvParallelizationConfig, OptimizedConvBlockConfig, MemoryC
         kernel_size[1],
         get_fp32_dest_acc_en(compute_config),
         conv_config.enable_split_reader && input_parallel_config.shard_scheme == TensorMemoryLayout::HEIGHT_SHARDED,
-        conv_config.full_inner_dim);
+        conv_config.full_inner_dim,
+        conv_config.enable_activation_data_reuse);
     return {opt_conv_op_parallel_config, opt_conv_op_block_config, conv_out_memory_config};
 }
 
@@ -1012,9 +1015,33 @@ conv_op_l1_usage conv2d::calculate_L1_usage(
     const DataType output_datatype,
     const bool enable_bias,
     bool is_1d_depthwise_conv,
+    uint32_t image_width,
     bool skip_act_cb_create) {
     // Input shard doesn't affect L1 usage calculation.
     std::array<uint32_t, 2> dummy_input_shard_shape = {0, 0};
+
+    ReuseDataOptConfig reuse_config;
+    if (conv_config.enable_activation_data_reuse) {
+        uint32_t image_width_tiles = image_width / tt::constants::TILE_HEIGHT;
+        if (image_width_tiles == 0) {
+            image_width_tiles = 1;  // Avoid division by zero
+        }
+        uint32_t opt_act_cb_num_tiles = image_width_tiles * block_config.act_block_w_ntiles;
+
+        uint32_t height_tiles = block_config.act_block_h_ntiles;
+        if (conv_config.enable_split_reader) {
+            height_tiles = std::ceil(static_cast<float>(block_config.act_block_h_ntiles) / 2);
+        }
+
+        uint32_t opt_reuse_loops = std::ceil(static_cast<float>(height_tiles) / image_width_tiles);
+
+        reuse_config.enabled = true;
+        reuse_config.act_cb_num_tiles = opt_act_cb_num_tiles;
+        reuse_config.image_width_tiles = image_width_tiles;
+        reuse_config.reuse_loops = opt_reuse_loops;
+        reuse_config.reuse_diff = 0;
+    }
+
     std::vector<CBInfo> cb_info = get_cb_info(
         compute_kernel_config,
         block_config,
@@ -1027,7 +1054,8 @@ conv_op_l1_usage conv2d::calculate_L1_usage(
         dummy_input_shard_shape,
         enable_bias,
         is_1d_depthwise_conv,
-        skip_act_cb_create);
+        skip_act_cb_create,
+        reuse_config);
     uint32_t total_CB_size = 0;
     uint32_t output_size = 0;
     for (const CBInfo& cb : cb_info) {

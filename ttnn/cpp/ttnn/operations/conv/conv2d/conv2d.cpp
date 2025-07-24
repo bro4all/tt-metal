@@ -602,7 +602,8 @@ Result conv2d_L1(
         conv_config.enable_kernel_stride_folding,
         kernel_size,
         orig_stride,
-        padding_n4);
+        padding_n4,
+        conv_config.enable_activation_data_reuse);
 
     // Prepare weights and move to device if necessary
     if (!is_device_tensor(weight_tensor)) {
@@ -729,7 +730,9 @@ Result conv2d_L1(
             conv_config.enable_act_double_buffer,
             conv_config.enable_weights_double_buffer,
             conv_config.full_inner_dim,
-            enable_split_reader);
+            enable_split_reader,
+            false,
+            conv_config.enable_activation_data_reuse);
 
         if (memory_config.has_value() && memory_config.value() != conv_output.memory_config()) {
             conv_output = ttnn::to_memory_config(conv_output, memory_config.value(), std::nullopt);

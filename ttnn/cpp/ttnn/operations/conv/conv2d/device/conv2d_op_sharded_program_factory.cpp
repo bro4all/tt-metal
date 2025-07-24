@@ -68,7 +68,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_weights_double_buffer,
     bool enable_split_reader,
     bool enable_subblock_padding,
-    bool full_inner_dim) {
+    bool full_inner_dim,
+    bool enable_activation_data_reuse) {
     tt::tt_metal::IDevice* device = a.device();
     TT_FATAL(a.layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
     TT_FATAL(a.memory_config().is_sharded(), "Conv activation must be sharded.");
@@ -144,7 +145,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     const bool block_sharded = a.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED;
     const bool height_sharded = a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED;
 
-    const bool slice_inner_dim = height_sharded || !full_inner_dim;
+    const bool slice_inner_dim =
+        (height_sharded && !enable_activation_data_reuse) || (block_sharded && !full_inner_dim);
 
     uint32_t conv_act_c_blocks;
     uint32_t input_channels_padded;
@@ -207,7 +209,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             ashape_with_channels_padded,
             sliding_window_config,
             parallelization_config.num_cores_nhw,
-            out_block_h_ntiles);
+            out_block_h_ntiles,
+            enable_activation_data_reuse);
     TT_FATAL(act_matrix_shape.size() == 3, "act_matrix_shape should have be of size 3");
     TT_FATAL(act_matrix_shape[0] == 1, "act_matrix_shape should have 1 as the first dimension");
     uint32_t act_matrix_height = (uint32_t)act_matrix_shape[1];
@@ -308,6 +311,9 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     uint32_t act_block_num_tiles_split = act_block_h_nsubblocks_split * out_subblock_h_ntiles * act_block_w_ntiles;
     uint32_t act_block_num_tiles_split_last =
         act_block_h_nsubblocks_split_last * out_subblock_h_ntiles * act_block_w_ntiles;
+
+    uint32_t act_block_h_split = act_block_h_nsubblocks_split * out_subblock_h_ntiles;
+    uint32_t act_block_h_split_last = act_block_h_nsubblocks_split_last * out_subblock_h_ntiles;
 
     // weight block info
     uint32_t weight_block_w_datums = weight_matrix_width / num_blocks_weight_w;
@@ -592,13 +598,33 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     uint32_t conv_act_c_read_bytes = conv_act_size_c * a.element_size() / conv_act_c_blocks;
     uint32_t act_block_w_extra_align_bytes =
-        block_sharded
+        block_sharded || enable_activation_data_reuse
             ? (tt::round_up(shard_shape[1] * filter_h * filter_w, tt::constants::TILE_WIDTH) -
                (shard_shape[1] * filter_h * filter_w)) *
                   a.element_size()
             : (tt::round_up(shard_shape[1] * filter_w, tt::constants::TILE_WIDTH) - (shard_shape[1] * filter_w)) *
                   a.element_size();
     const uint32_t act_block_w_extra_align_scalars = act_block_w_extra_align_bytes / a.element_size();
+
+    ReuseDataOptConfig reuse_data_opt_config;
+    if (enable_activation_data_reuse) {
+        uint32_t image_width = sliding_window_config.get_output_shape()[2];
+        uint32_t image_width_tiles = image_width / tt::constants::TILE_HEIGHT;
+        if (image_width_tiles == 0) {
+            image_width_tiles = 1;  // Avoid division by zero
+        }
+        uint32_t opt_act_cb_num_tiles = image_width_tiles * act_block_w_ntiles / conv_act_c_blocks;
+        // approximation
+        uint32_t opt_reuse_loops = std::ceil(static_cast<float>(act_block_h_split) / image_width_tiles);
+        uint32_t opt_reuse_diff = (filter_w * conv_act_c_read_bytes) / 16;
+
+        reuse_data_opt_config.enabled = true;
+        reuse_data_opt_config.image_width_tiles = image_width_tiles;
+        reuse_data_opt_config.act_cb_num_tiles = opt_act_cb_num_tiles;
+        reuse_data_opt_config.reuse_loops = opt_reuse_loops;
+        reuse_data_opt_config.reuse_diff = opt_reuse_diff;
+    }
+
     // When using block float format, we must handle cases where the data doesn't align to 16-scalar boundaries.
     // If act_block_w_extra_align_bytes contains a number of scalars that isn't a multiple of 16,
     // we need to zero out the temporary circular buffers used during the tiling process.
@@ -620,7 +646,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         .output_layout = (untilize_out ? Layout::ROW_MAJOR : Layout::TILE),
         .enable_act_double_buffer = enable_act_double_buffer,
         .enable_weights_double_buffer = enable_weights_double_buffer,
-        .enable_split_reader = enable_split_reader};
+        .enable_split_reader = enable_split_reader,
+        .enable_activation_data_reuse = enable_activation_data_reuse};
     std::vector<CBInfo> cb_info = get_cb_info(
         compute_kernel_config,
         block_config,
@@ -633,7 +660,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         shard_shape,
         has_bias,
         is_conv_1d_depthwise_conv,
-        skip_mcast);
+        skip_mcast,
+        reuse_data_opt_config);
 
     access_cb_info_by_name(cb_info, Conv2dCb::READER_INDICES).page_size = conv_sharded_input_top_left_indices[0].size();
 
@@ -648,7 +676,9 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     std::string reader_kernel;
     std::string compute_kernel =
-        "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/conv_bmm_tilize_col_major_out_blocks.cpp";
+        enable_activation_data_reuse
+            ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/conv_bmm_tilize_col_major_out_blocks.cpp"
+            : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/conv_bmm_tilize_col_major_out_blocks.cpp";
     std::string writer_mcast_sender_kernel;
     std::string writer_mcast_receiver_kernel;
 
@@ -696,19 +726,31 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
         } else {
             // Height sharded conv
-            TT_FATAL(
-                act_block_w_datums == tt::round_up(conv_act_size_c * filter_w, tt::constants::TILE_WIDTH), "Error");
+            uint32_t expected_act_block_w_datums =
+                enable_activation_data_reuse
+                    ? tt::round_up(conv_act_size_c * filter_w * filter_h, tt::constants::TILE_WIDTH)
+                    : tt::round_up(conv_act_size_c * filter_w, tt::constants::TILE_WIDTH);
 
-            reader_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp";
+            TT_FATAL(act_block_w_datums == expected_act_block_w_datums, "Error");
+
+            reader_kernel = enable_activation_data_reuse
+                                ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                                  "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp"
+                                : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                                  "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp";
 
             writer_mcast_sender_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp";
+                enable_activation_data_reuse
+                    ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                      "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp"
+                    : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                      "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp";
             writer_mcast_receiver_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp";
+                enable_activation_data_reuse
+                    ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                      "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp"
+                    : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                      "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp";
         }
     } else {
         TT_THROW("Sharded input not supported for this conv yet!");
@@ -745,8 +787,12 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         get_cb_info_by_name(cb_info, Conv2dCb::READER_INDICES).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_TILIZED).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_ROW_MAJOR_BFLOAT16).index,
-        get_cb_info_by_name(cb_info, Conv2dCb::L1_ARRAY).index,
-    };
+        get_cb_info_by_name(cb_info, Conv2dCb::L1_ARRAY).index};
+
+    if (enable_activation_data_reuse) {
+        reader_compile_time_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+        reader_compile_time_args.push_back(act_block_w_ntiles);
+    }
 
     std::map<std::string, std::string> reader_defines;
     std::map<std::string, std::string> writer_defines;
@@ -824,6 +870,12 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             (uint32_t)dilation_h,
             (uint32_t)dilation_w,
             (uint32_t)stride_w};
+
+        if (enable_activation_data_reuse) {
+            split_reader_args.push_back(filter_h);
+            split_reader_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+            split_reader_args.push_back(act_block_w_ntiles);
+        }
         writer_compile_time_args.insert(
             writer_compile_time_args.end(), split_reader_args.begin(), split_reader_args.end());
     } else {
@@ -864,16 +916,21 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_SECOND_READER).index,
         get_cb_info_by_name(cb_info, Conv2dCb::MATMUL_PARTIALS).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_TILIZED).index,
-
         get_cb_info_by_name(cb_info, Conv2dCb::OUT).index,
         get_cb_info_by_name(cb_info, Conv2dCb::TEMP_SUM).index,
         partials_cb_uses_output,
-        conv_act_c_blocks};
+        conv_act_c_blocks,
+    };
+
+    if (enable_activation_data_reuse) {
+        compute_kernel_args.push_back(reuse_data_opt_config.reuse_diff);
+        compute_kernel_args.push_back(reuse_data_opt_config.image_width_tiles);
+    }
 
     const tt::tt_metal::NOC writer_mcast_noc = tt::tt_metal::detail::GetPreferredNOCForDRAMRead(device->arch());
     const tt::tt_metal::NOC reader_noc =
         writer_mcast_noc == tt::tt_metal::NOC::NOC_0 ? tt::tt_metal::NOC::NOC_1 : tt::tt_metal::NOC::NOC_0;
-    auto writer_mcast_sender_id = CreateKernel(
+    const tt::tt_metal::KernelHandle writer_mcast_sender_id = CreateKernel(
         program,
         writer_mcast_sender_kernel,
         mcast_sender_cores,
@@ -896,7 +953,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
                 .defines = writer_defines});
     }
 
-    auto reader_id = CreateKernel(
+    const tt::tt_metal::KernelHandle reader_id = CreateKernel(
         program,
         reader_kernel,
         all_active_cores,
@@ -908,7 +965,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     // Compile compute kernel for active cores only
     // Compile blank kernel for noop cores
-    CreateKernel(
+    const tt::tt_metal::KernelHandle compute_id = CreateKernel(
         program,
         compute_kernel,
         all_active_cores,
@@ -918,7 +975,55 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             .compile_args = compute_kernel_args,
             .defines = compute_defines});
 
+    uint32_t reader_reuse_loops;
+    uint32_t reader_reuse_loops_start;
+    uint32_t reader_rows_so_far = 0, reader_compute_start = 0;
+
+    uint32_t writer_reuse_loops = 0;
+    uint32_t writer_reuse_loops_start = 0;
+    uint32_t writer_rows_so_far = act_block_h_split, writer_compute_start = 0;
+
     for (uint32_t core_i = 0; core_i < total_active_num_cores; core_i++) {
+        if (enable_activation_data_reuse) {
+            if (reader_rows_so_far % reuse_data_opt_config.image_width_tiles == 0) {
+                reader_reuse_loops =
+                    std::ceil(static_cast<float>(act_block_h_split) / reuse_data_opt_config.image_width_tiles);
+                reader_reuse_loops_start = 0;
+                reader_compute_start = 0;
+            } else {
+                reader_compute_start = reuse_data_opt_config.image_width_tiles -
+                                       reader_rows_so_far % reuse_data_opt_config.image_width_tiles;
+                uint32_t new_act_block_h = (act_block_h_split - reader_compute_start);
+                reader_reuse_loops =
+                    1 + std::ceil(static_cast<float>(new_act_block_h) / reuse_data_opt_config.image_width_tiles);
+                reader_reuse_loops_start = 1;
+            }
+
+            reader_rows_so_far += act_block_h_split + act_block_h_split_last;
+            std::cout << "core_i: " << core_i << ", reader_reuse_loops: " << reader_reuse_loops
+                      << ", reader_reuse_loops_start: " << reader_reuse_loops_start << std::endl;
+
+            if (enable_split_reader) {
+                if (writer_rows_so_far % reuse_data_opt_config.image_width_tiles == 0) {
+                    writer_reuse_loops =
+                        std::ceil(static_cast<float>(act_block_h_split_last) / reuse_data_opt_config.image_width_tiles);
+                    writer_reuse_loops_start = 0;
+                    writer_compute_start = 0;
+                } else {
+                    writer_compute_start = reuse_data_opt_config.image_width_tiles -
+                                           writer_rows_so_far % reuse_data_opt_config.image_width_tiles;
+                    uint32_t new_act_block_h = (act_block_h_split_last - writer_compute_start);
+                    writer_reuse_loops =
+                        1 + std::ceil(static_cast<float>(new_act_block_h) / reuse_data_opt_config.image_width_tiles);
+                    writer_reuse_loops_start = 1;
+                }
+
+                writer_rows_so_far += act_block_h_split + act_block_h_split_last;
+                std::cout << "core_i: " << core_i << ", writer_reuse_loops: " << writer_reuse_loops
+                          << ", writer_reuse_loops_start: " << writer_reuse_loops_start << std::endl;
+            }
+        }
+
         uint32_t core_x_i = core_i % num_cores_x;
         uint32_t core_y_i = core_i / num_cores_x;
         CoreRange core(CoreCoord(core_x_i, core_y_i), CoreCoord(core_x_i, core_y_i));
@@ -994,8 +1099,17 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             }
         } else {
             reader_rt_args = {(uint32_t)noop_core};
+            if (enable_activation_data_reuse) {
+                reader_rt_args.push_back(reader_reuse_loops);
+                reader_rt_args.push_back(reader_reuse_loops_start);
+            }
         }
         SetRuntimeArgs(program, reader_id, core, reader_rt_args);
+
+        // TODO(sjovic): send second argument only when needed
+
+        std::vector<uint32_t> compute_rt_args = {reader_compute_start, writer_compute_start};
+        SetRuntimeArgs(program, compute_id, core, compute_rt_args);
 
         std::vector<uint32_t> sender_rt_args = {
             weight_dram_addr,
@@ -1096,6 +1210,11 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
                 sender_rt_args.push_back(weights_mcast_sender_semaphore_id);
                 sender_rt_args.push_back(weights_mcast_receiver_semaphore_id);
 
+                if (enable_split_reader && enable_activation_data_reuse) {
+                    sender_rt_args.push_back(writer_reuse_loops);
+                    sender_rt_args.push_back(writer_reuse_loops_start);
+                }
+
                 SetRuntimeArgs(program, writer_mcast_sender_id, core, sender_rt_args);
             } else {
                 std::vector<uint32_t> receiver_rt_args{
@@ -1104,6 +1223,11 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
                     top_left_core_physical.y,  // weights_mcast_sender_noc_y
                     weights_mcast_sender_semaphore_id,
                     weights_mcast_receiver_semaphore_id};
+
+                if (enable_split_reader && enable_activation_data_reuse) {
+                    receiver_rt_args.push_back(writer_reuse_loops);
+                    receiver_rt_args.push_back(writer_reuse_loops_start);
+                }
 
                 SetRuntimeArgs(program, writer_mcast_receiver_id, core, receiver_rt_args);
             }
@@ -1177,7 +1301,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_weights_double_buffer,
     bool enable_split_reader,
     bool enable_subblock_padding,
-    bool full_inner_dim) {
+    bool full_inner_dim,
+    bool enable_activation_data_reuse) {
     tt::tt_metal::Program program = tt::tt_metal::CreateProgram();
 
     ttnn::operations::sliding_window::ParallelConfig parallel_config{
@@ -1238,7 +1363,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         enable_weights_double_buffer,
         enable_split_reader,
         enable_subblock_padding,
-        full_inner_dim);
+        full_inner_dim,
+        enable_activation_data_reuse);
 }
 }  // namespace conv2d
 
