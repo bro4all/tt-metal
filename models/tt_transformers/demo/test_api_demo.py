@@ -77,10 +77,6 @@ def test_api_performance(
     """
     test_id = request.node.callspec.id
 
-    # Skip if not in CI environment for batch-32
-    if "batch-32" in test_id and not os.environ.get("CI"):
-        pytest.skip("Batch-32 test only runs in CI environment")
-
     logger.info(f"Running API performance test: {test_id}")
 
     # Test parameters
@@ -192,10 +188,6 @@ def test_api_functionality(
     Test basic API functionality.
     """
     test_id = request.node.callspec.id
-
-    # Skip if not in CI environment for batch-32
-    if "batch-32" in test_id and not os.environ.get("CI"):
-        pytest.skip("Batch-32 test only runs in CI environment")
 
     logger.info(f"Running API functionality test: {test_id}")
 
