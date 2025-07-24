@@ -35,8 +35,7 @@ namespace {
 namespace CMAKE_UNIQUE_NAMESPACE {
     // Some machines will run this test on different virtual cores, so wildcard the exact coordinates.
     const std::string golden_output =
-        R"(DPRINT server timed out on Device ?, worker core (x=?,y=?), riscv 4, waiting on a RAISE signal: 1
-    )";
+        R"(DPRINT server timed out on Device ?, worker core (x=?,y=?), riscv 4, waiting on a RAISE signal: 1)";
 
     void RunTest(DPrintFixture* fixture, IDevice* device) {
         // Set up program
@@ -61,13 +60,30 @@ namespace CMAKE_UNIQUE_NAMESPACE {
         EXPECT_TRUE(error.find(expected) != std::string::npos);
     }
 
+    // Print the actual file contents
+    std::cout << "=== ACTUAL FILE CONTENTS ===" << std::endl;
+    std::ifstream actual_file(DPrintFixture::dprint_file_name);
+    if (actual_file.is_open()) {
+        std::cout << actual_file.rdbuf();
+        actual_file.close();
+    } else {
+        std::cout << "Could not open file: " << DPrintFixture::dprint_file_name << std::endl;
+    }
+
+    // Print the golden output
+    std::cout << "=== GOLDEN OUTPUT ===" << std::endl;
+    std::cout << golden_output << std::endl;
+
+        std::cout << "ABOUT TO ASSERT\n" << std::endl;
+
         // Check the print log against golden output.
-        EXPECT_TRUE(
+        ASSERT_TRUE(
             FilesMatchesString(
                 DPrintFixture::dprint_file_name,
                 golden_output
             )
         );
+        std::cout << "THE TEST IS SUPPOSED TO HAVE PASSED AS THE ASSERT STATEMENT FINISHED\n" << std::endl;
     }
 }
 }
