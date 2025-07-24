@@ -168,7 +168,7 @@ def test_windowed_sdpa_basic(mesh_device, batch_size, num_heads, seq_len, head_d
                 k_chunk_size=qk_chunk_size,
             ),
         )
-        output_standard = ttnn.to_torch(output_standard_tt)
+        output_standard = ttnn.to_torch(ttnn.get_device_tensors(output_standard_tt.cpu())[0])
 
     # sleep for 1 seconds
     time.sleep(1)
@@ -198,7 +198,7 @@ def test_windowed_sdpa_basic(mesh_device, batch_size, num_heads, seq_len, head_d
 
         # Convert back to torch for verification
         # NOTE: there is an implicit synchronization during the to_torch call, so the call getting here is not a guarantee that the computation above is complete.
-        output = ttnn.to_torch(output_tt)
+        output = ttnn.to_torch(ttnn.get_device_tensors(output_tt.cpu())[0])
 
     # sleep for 1 seconds
     time.sleep(1)

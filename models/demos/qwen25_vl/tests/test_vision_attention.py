@@ -35,7 +35,6 @@ from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
 # Model and attention prefill tests should run both with and without paged attention to debug any issues that may occur with default attention
 def test_vision_attention_inference(
     mesh_device,
-    use_program_cache,
     reset_seeds,
     ensure_gc,
 ):
@@ -134,7 +133,7 @@ def test_vision_attention_inference(
 
     tt_out = tt_model(
         attention_input,
-        cu_seqlens=cu_seqlens,
+        cu_seqlens=ttnn.from_torch(cu_seqlens, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT, device=mesh_device),
         rot_mats=rot_mats,
     )
     tt_out = ttnn.to_torch(

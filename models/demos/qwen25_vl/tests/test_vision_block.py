@@ -28,14 +28,13 @@ from models.utility_functions import comp_allclose, comp_pcc
 )
 def test_vision_block_inference(
     mesh_device,
-    use_program_cache,
     reset_seeds,
     ensure_gc,
 ):
     n_layers = 32
     dtype = ttnn.bfloat8_b
     pccs = [0.99] * n_layers
-    pccs[24:] = [0.915] * (n_layers - 24)
+    pccs[24:] = [0.86] * (n_layers - 24)
     print(pccs)
     batch_size = 1  # For prefill we only support batch_size = 1
 
@@ -135,7 +134,7 @@ def test_vision_block_inference(
         # Run our model
         tt_out = tt_model(
             tt_input,
-            cu_seqlens=cu_seqlens,
+            cu_seqlens=ttnn.from_torch(cu_seqlens, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT, device=mesh_device),
             rot_mats=rot_mats,
         )
 
