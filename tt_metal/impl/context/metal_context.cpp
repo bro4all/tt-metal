@@ -96,12 +96,6 @@ void MetalContext::initialize(
     // Initialize inspector
     inspector_data_ = Inspector::initialize();
 
-    // If a custom fabric mesh graph descriptor is specified as an RT Option, use it by default
-    // to initialize the control plane.
-    if (rtoptions_.is_custom_fabric_mesh_graph_desc_path_specified()) {
-        custom_mesh_graph_desc_path_ = rtoptions_.get_custom_fabric_mesh_graph_desc_path();
-    }
-
     // Initialize dispatch state
     dispatch_core_manager_ = std::make_unique<dispatch_core_manager>(dispatch_core_config, num_hw_cqs);
     dispatch_query_manager_ = std::make_unique<DispatchQueryManager>(num_hw_cqs);
@@ -232,6 +226,12 @@ MetalContext& MetalContext::instance() {
 }
 
 MetalContext::MetalContext() {
+    // If a custom fabric mesh graph descriptor is specified as an RT Option, use it by default
+    // to initialize the control plane.
+    if (rtoptions_.is_custom_fabric_mesh_graph_desc_path_specified()) {
+        custom_mesh_graph_desc_path_ = rtoptions_.get_custom_fabric_mesh_graph_desc_path();
+    }
+
     bool is_base_routing_fw_enabled =
         Cluster::is_base_routing_fw_enabled(Cluster::get_cluster_type_from_cluster_desc(rtoptions_));
     hal_ = std::make_unique<Hal>(get_platform_architecture(rtoptions_), is_base_routing_fw_enabled);
@@ -499,6 +499,7 @@ void MetalContext::construct_control_plane(const std::filesystem::path& mesh_gra
 
 void MetalContext::initialize_control_plane() {
     if (custom_mesh_graph_desc_path_.has_value()) {
+        log_info(tt::LogDistributed, "Using custom mesh graph descriptor: {}", custom_mesh_graph_desc_path_.value());
         std::filesystem::path mesh_graph_desc_path = std::filesystem::path(custom_mesh_graph_desc_path_.value());
         TT_FATAL(
             std::filesystem::exists(mesh_graph_desc_path),
@@ -509,6 +510,7 @@ void MetalContext::initialize_control_plane() {
         this->construct_control_plane(mesh_graph_desc_path);
         return;
     }
+    log_info(tt::LogDistributed, "Using default mesh graph descriptor.");
 
     // Default mode, auto select mesh graph descriptor. In future, we can add a way for user to specify custom
     // descriptors

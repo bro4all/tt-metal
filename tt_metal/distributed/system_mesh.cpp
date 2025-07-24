@@ -33,6 +33,8 @@ private:
     DistributedCoordinateTranslator coordinate_translator_;
 
     DistributedMeshContainer<PhysicalMeshCoordinate> physical_coordinates_;
+    
+    std::vector<int> pcie_device_ids_;
 
     MaybeRemoteDeviceId get_maybe_remote_device_id(const MeshCoordinate& coord) const;
 
@@ -44,6 +46,7 @@ public:
     DistributedMeshContainer<chip_id_t> get_mapped_physical_device_ids(
         const MeshShape& shape, const std::optional<MeshCoordinate>& offset = std::nullopt) const;
     chip_id_t get_physical_device_id(const MeshCoordinate& coord) const;
+    const std::vector<int>& pcie_device_ids() const;
 };
 
 MaybeRemoteDeviceId SystemMesh::Impl::get_maybe_remote_device_id(const MeshCoordinate& coord) const {
@@ -95,6 +98,15 @@ SystemMesh::Impl::Impl() :
             local_coord);
         physical_coordinates_.at(global_coord) =
             MaybeRemote<PhysicalMeshCoordinate>::local(local_physical_translation_map.at(local_coord));
+    }
+    for (auto coord : MeshCoordinateRange(coordinate_translator_.global_shape())) {
+        physical_coordinates_.at(coord).if_local(
+            [&](const auto& physical_coord) {
+                auto physical_device_id = physical_coord.chip_id();
+                if (MetalContext::instance().get_cluster().get_cluster_desc()->is_chip_mmio_capable(physical_device_id)) {
+                    pcie_device_ids_.push_back(physical_device_id);
+                }
+            });
     }
 }
 
@@ -214,6 +226,10 @@ DistributedMeshContainer<int> SystemMesh::Impl::get_mapped_physical_device_ids(
     return DistributedMeshContainer<int>(shape, std::move(physical_device_ids));
 }
 
+const std::vector<int>& SystemMesh::Impl::pcie_device_ids() const {
+    return pcie_device_ids_;
+}
+
 SystemMesh::SystemMesh() : pimpl_(std::make_unique<Impl>()) {}
 
 SystemMesh& SystemMesh::instance() {
@@ -223,6 +239,7 @@ SystemMesh& SystemMesh::instance() {
 
 const MeshShape& SystemMesh::shape() const { return pimpl_->coordinate_translator().global_shape(); }
 const MeshShape& SystemMesh::local_shape() const { return pimpl_->coordinate_translator().local_shape(); }
+const std::vector<int>& SystemMesh::pcie_device_ids() const { return pimpl_->pcie_device_ids(); }
 
 DistributedMeshContainer<chip_id_t> SystemMesh::get_mapped_physical_device_ids(
     const MeshShape& shape, const std::optional<MeshCoordinate>& offset) const {

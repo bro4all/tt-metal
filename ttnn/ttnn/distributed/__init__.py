@@ -14,6 +14,7 @@ from .distributed import (
     ShardTensor2dMesh,
     ConcatMeshToTensor,
     ConcatMesh2dToTensor,
+    SystemMeshDescriptor,
     open_mesh_device,
     close_mesh_device,
     get_num_pcie_devices,

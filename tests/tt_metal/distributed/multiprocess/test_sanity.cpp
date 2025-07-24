@@ -114,7 +114,7 @@ TEST(BigMeshDualRankTest2x4, SystemMeshShape) {
     }
 }
 
-TEST(BigMeshDualRankTestT3K, DistributedHostBuffer) {
+TEST(BigMeshDualRankTest2x4Fixture, DistributedHostBuffer) {
     auto mesh_device = MeshDevice::create(MeshDeviceConfig(MeshShape(2, 4)));
     auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
 
@@ -145,7 +145,7 @@ TEST(BigMeshDualRankTestT3K, DistributedHostBuffer) {
     host_buffer.apply(validate_local_shards);
 }
 
-TEST(BigMeshDualRankTestT3K, SimpleShardedBufferTest) {
+TEST(BigMeshDualRankTest2x4Fixture, SimpleShardedBufferTest) {
     // Simple test with a 2x4 mesh, 64x128 buffer, 32x32 shards
     auto mesh_device = MeshDevice::create(MeshDeviceConfig(MeshShape(2, 4)));
     uint32_t single_tile_size = ::tt::tt_metal::detail::TileSize(DataFormat::UInt32);

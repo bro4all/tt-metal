@@ -468,6 +468,7 @@ std::string to_string(const Tensor& tensor) {
                 return ss.str();
             },
             [&](const DeviceStorage& storage) -> std::string {
+                log_info(LogDistributed, "to_string: mesh_buffer: {}", storage.mesh_buffer != nullptr);
                 auto cpu_tensor = tensor.cpu();
                 if (storage.mesh_buffer == nullptr) {
                     // Use owned buffer path above.
@@ -487,8 +488,10 @@ std::string to_string(const Tensor& tensor) {
                 std::stringstream ss;
                 for (size_t i = 0; i < buffers.size(); i++) {
                     const distributed::MeshCoordinate coord = *coords_it++;
-                    ss << "device_id: " << mesh_device->get_device(coord)->id() << ", " << coord << std::endl;
-                    detail::to_string(ss, buffers[i].view_as<T>(), shape, strides, tensor.dtype(), tensor.layout());
+                    if (mesh_device->is_local(coord)) {
+                        ss << "device_id: " << mesh_device->get_device(coord)->id() << ", " << coord << std::endl;
+                        detail::to_string(ss, buffers[i].view_as<T>(), shape, strides, tensor.dtype(), tensor.layout());
+                    }
                     if (i + 1 != buffers.size()) {
                         ss << std::endl;
                     }
@@ -590,7 +593,7 @@ Tensor to_host_mesh_tensor(const Tensor& tensor, bool blocking, ttnn::QueueId cq
     distributed::MeshCommandQueue& mesh_cq = device->mesh_command_queue(*cq_id);
 
     // For performance, perform all allocations via DistributedHostBuffer::transform, run from multiple threads.
-    auto distributed_host_buffer = DistributedHostBuffer::create(device->shape());
+    auto distributed_host_buffer = DistributedHostBuffer::create(device->get_view());
     for (const auto& coord : storage.coords) {
         distributed_host_buffer.emplace_shard(coord, []() { return HostBuffer(); });
     }

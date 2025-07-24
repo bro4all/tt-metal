@@ -761,6 +761,8 @@ def test_fabric_with_submeshes(t3k_mesh_device):
     
 @pytest.mark.parametrize("mesh_device", [pytest.param((2, 4), id="2x4_grid")], indirect=True)
 def test_multihost_sanity(mesh_device):
+    torch.manual_seed(0)
+    
     shard_size = 32
     torch_tensor = torch.rand((1, 1, 32, shard_size * mesh_device.get_num_devices()), dtype=torch.bfloat16)
     torch_gelu = torch.nn.functional.gelu(torch_tensor)
@@ -773,16 +775,4 @@ def test_multihost_sanity(mesh_device):
     ttnn_loop_back_tensor = ttnn.from_device(ttnn_tensor)
     torch_loop_back_tensor = ttnn.to_torch(ttnn_loop_back_tensor, mesh_composer=ConcatMeshToTensor(mesh_device, dim=3))
     
-    def get_data_for_rank(rank, data):
-        if rank == 0:
-            return torch.concat([data[..., :shard_size*2], data[..., shard_size*4:shard_size*6]], dim=-1)
-        elif rank == 1:
-            return torch.concat([data[..., shard_size*2:shard_size*4], data[..., shard_size*6:]], dim=-1)
-        else:
-            raise ValueError(f"Invalid rank: {rank}")
-
-    import os
-    rank = int(os.getenv("TT_HOST_RANK"))
-    golden = get_data_for_rank(rank, torch_gelu)
-    result = get_data_for_rank(rank, torch_loop_back_tensor)
-    assert_with_pcc(golden, result, pcc=0.9999)
+    assert_with_pcc(torch_gelu, torch_loop_back_tensor, pcc=0.9999)

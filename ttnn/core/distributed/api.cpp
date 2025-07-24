@@ -16,10 +16,57 @@
 #include "ttnn/tensor/host_buffer/functions.hpp"
 #include "ttnn/tensor/tensor_utils.hpp"
 #include "ttnn/distributed/distributed_tensor_config.hpp"
+#include "ttnn/tensor/tensor_impl.hpp"
 #include <tt-metalium/mesh_device.hpp>
 #include <tt-metalium/system_mesh.hpp>
+#include <tt-metalium/distributed_context.hpp>
+#include <tt-logger/tt-logger.hpp>
 
 using namespace tt::tt_metal;
+
+namespace host_ccl {
+
+Tensor all_gather(const Tensor& tensor) {
+    TT_FATAL(tensor.storage_type() == StorageType::HOST, "Tensor must be on host");
+    auto& ctx = tt::tt_metal::distributed::multihost::DistributedContext::get_current_world();
+
+    log_info(tt::LogDistributed, "All-gather on rank {}", *ctx->rank());
+
+
+    // Destination buffer for all-gather data is fully local on each host.
+    auto all_gather_buffer = DistributedHostBuffer::create(tensor.host_storage().buffer().shape());
+
+    for (const auto& coord : tensor.host_storage().buffer().shard_coords()) {
+        auto shard = tensor.host_storage().buffer().get_shard(coord);
+
+        // Run all-reduce to determine which rank has data for this shard.
+        int has_data = shard.has_value() ? *ctx->rank() : -1;
+        int has_data_rank = -1;
+        log_info(tt::LogDistributed, "Shard Coord: {}, has data: rank {}, has_data {}", coord, *ctx->rank(), has_data);
+
+        ctx->all_reduce(
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&has_data), sizeof(int)),
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&has_data_rank), sizeof(int)),
+            tt::tt_metal::distributed::multihost::ReduceOp::MAX,
+            tt::tt_metal::distributed::multihost::DType::INT32);
+
+        TT_FATAL(has_data_rank != -1, "Failed to find shard for rank {}", *ctx->rank());
+
+        if (shard.has_value()) {
+            //log_info(tt::LogDistributed, "Copying shard for shard {} from rank {}", coord, has_data_rank);
+            ctx->broadcast(shard->view_bytes(), tt::tt_metal::distributed::multihost::Rank(has_data_rank));
+            all_gather_buffer.emplace_shard(coord, [&shard]() { return *shard; });
+        } else {
+            //log_info(tt::LogDistributed, "Allocating buffer for shard {}", coord);
+            HostBuffer buffer = tt::tt_metal::tensor_impl::allocate_host_buffer(tensor.tensor_spec());
+            ctx->broadcast(buffer.view_bytes(), tt::tt_metal::distributed::multihost::Rank(has_data_rank));
+            all_gather_buffer.emplace_shard(coord, [&buffer]() { return std::move(buffer); });
+        }
+    }
+    return Tensor(HostStorage{std::move(all_gather_buffer)}, tensor.tensor_spec(), AllGatherTensor{}, tensor.tensor_topology());
+}
+
+} // namespace
 
 namespace ttnn::distributed {
 
@@ -47,7 +94,20 @@ void close_mesh_device(const std::shared_ptr<MeshDevice>& mesh_device) { mesh_de
 std::vector<Tensor> get_device_tensors(const Tensor& tensor) {
     if (std::holds_alternative<tt::tt_metal::HostStorage>(tensor.storage())) {
         std::vector<ttnn::Tensor> tensors;
-        const auto& distributed_buffer = tensor.host_storage().buffer();
+        for (const auto& coord : tensor.host_storage().buffer().shard_coords()) {
+            auto shard = tensor.host_storage().buffer().get_shard(coord);
+            if (shard.has_value()) {
+                //tensors.push_back(Tensor{shard->view_bytes(), tensor.tensor_spec()});
+                log_info(tt::LogDistributed, "Shard Coord: {}, has_data", coord);
+            }
+            else {
+                log_info(tt::LogDistributed, "Shard Coord: {}, has no data", coord);
+            }
+        }
+        auto gathered_tensor= host_ccl::all_gather(tensor);
+        //auto gathered_tensor1= host_ccl::all_gather(gathered_tensor);
+        const auto& distributed_buffer = gathered_tensor.host_storage().buffer();
+        //const auto& distributed_buffer = tensor.host_storage().buffer();
         distributed_buffer.apply(
             [&](const HostBuffer& buffer) { tensors.push_back(Tensor{buffer, tensor.tensor_spec()}); });
         return tensors;

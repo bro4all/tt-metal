@@ -42,6 +42,9 @@ public:
     // Returns the physical device IDs mapped to a MeshDevice
     DistributedMeshContainer<int> get_mapped_physical_device_ids(
         const MeshShape& shape, const std::optional<MeshCoordinate>& offset = std::nullopt) const;
+
+    // Returns the physical device IDs mapped to a MeshDevice
+    const std::vector<int>& pcie_device_ids() const;
 };
 
 }  // namespace tt::tt_metal::distributed

@@ -37,11 +37,13 @@ class SystemMeshDescriptor {
 private:
     MeshShape global_shape_;
     MeshShape local_shape_;
+    std::vector<chip_id_t> pcie_device_ids_;
 
 public:
     SystemMeshDescriptor() :
         global_shape_(tt::tt_metal::distributed::SystemMesh::instance().shape()),
-        local_shape_(tt::tt_metal::distributed::SystemMesh::instance().local_shape()) {}
+        local_shape_(tt::tt_metal::distributed::SystemMesh::instance().local_shape()),
+        pcie_device_ids_(tt::tt_metal::distributed::SystemMesh::instance().pcie_device_ids()) {}
 
     const MeshShape& shape() const { return global_shape_; }
     const MeshShape& local_shape() const { return local_shape_; }
@@ -96,7 +98,8 @@ void py_module(py::module& module) {
         .def(
             "__iter__",
             [](const MeshShape& ms) { return py::make_iterator(ms.view().begin(), ms.view().end()); },
-            py::keep_alive<0, 1>());
+            py::keep_alive<0, 1>())
+        .def("mesh_size", &MeshShape::mesh_size);
     static_cast<py::class_<MeshCoordinate>>(module.attr("MeshCoordinate"))
         .def(
             py::init([](size_t c0, size_t c1) { return MeshCoordinate(c0, c1); }),
