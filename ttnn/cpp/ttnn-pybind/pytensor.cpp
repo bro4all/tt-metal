@@ -139,6 +139,7 @@ Tensor create_tt_tensor_from_py_data(
             py_data_ptr, py_data_shape, tensor_layout, device, pydata_pin, cq_id, pad_value, mesh_mapper);
     };
     switch (tensor_layout.get_data_type()) {
+        case DataType::BOOL: return create_concrete.operator()<bool>();
         case DataType::UINT8: return create_concrete.operator()<uint8_t>();
         case DataType::UINT16: return create_concrete.operator()<uint16_t>();
         case DataType::INT32: return create_concrete.operator()<int32_t>();
@@ -189,6 +190,8 @@ PreprocessedPyTensor parse_py_tensor(const py::handle& py_tensor, std::optional<
             data_type = DataType::UINT16;
         } else if (py_dtype.equal(torch.attr("uint8"))) {
             data_type = DataType::UINT8;
+        } else if (py_dtype.equal(torch.attr("bool"))) {
+            data_type = DataType::BOOL;
         } else {
             TT_THROW("Unsupported DataType: {}", std::string(py::repr(py_dtype)));
         }
@@ -199,6 +202,10 @@ PreprocessedPyTensor parse_py_tensor(const py::handle& py_tensor, std::optional<
             }
         };
         switch (data_type) {
+            case DataType::BOOL: {
+                maybe_convert_pytorch_tensor("bool");
+                break;
+            }
             case DataType::UINT8: {
                 maybe_convert_pytorch_tensor("uint8");
                 break;
@@ -425,6 +432,7 @@ RowMajorHostBuffer convert_to_row_major_host_buffer(const Tensor& tt_tensor, con
     auto convert_to_logical = [&tensor_spec, &dispatch_to_concrete](const HostBuffer& buffer) {
         const auto tt_dtype = tensor_spec.data_type();
         switch (tt_dtype) {
+            case DataType::BOOL: return dispatch_to_concrete.template operator()<uint8_t>(buffer);
             case DataType::UINT8: return dispatch_to_concrete.template operator()<uint8_t>(buffer);
             case DataType::UINT16: return dispatch_to_concrete.template operator()<uint16_t>(buffer);
             case DataType::INT32: return dispatch_to_concrete.template operator()<int32_t>(buffer);
@@ -485,6 +493,7 @@ RowMajorHostBuffer convert_to_row_major_host_buffer(
     };
 
     switch (tt_tensor.dtype()) {
+        case DataType::BOOL: return dispatch_to_concrete.template operator()<bool>(tt_tensor);
         case DataType::UINT8: return dispatch_to_concrete.template operator()<uint8_t>(tt_tensor);
         case DataType::UINT16: return dispatch_to_concrete.template operator()<uint16_t>(tt_tensor);
         case DataType::INT32: return dispatch_to_concrete.template operator()<int32_t>(tt_tensor);
@@ -507,6 +516,7 @@ py::object convert_tt_tensor_to_torch_tensor(const RowMajorHostBuffer& row_major
 
     py::object torch_dtype = [&]() {
         switch (row_major_host_buffer.data_type) {
+            case DataType::BOOL: return torch.attr("bool");
             case DataType::UINT8: return torch.attr("uint8");
             case DataType::UINT16: return torch.attr("int16");
             case DataType::INT32: return torch.attr("int32");
@@ -544,6 +554,7 @@ py::object convert_tt_tensor_to_numpy_tensor(const RowMajorHostBuffer& row_major
 
     py::object np_dtype = [&]() {
         switch (row_major_host_buffer.data_type) {
+            case DataType::BOOL: return np.attr("bool");
             case DataType::UINT8: return np.attr("ubyte");
             case DataType::UINT16: return np.attr("int16");
             case DataType::INT32: return np.attr("int32");
@@ -1068,6 +1079,7 @@ void pytensor_module(py::module& m_tensor) {
             "item",
             [](const Tensor& self) -> py::object {
                 switch (self.dtype()) {
+                    case DataType::BOOL: return py::cast(self.item<uint8_t>());
                     case DataType::FLOAT32: return py::cast(self.item<float>());
                     case DataType::BFLOAT16: return py::cast(self.item<bfloat16>().to_float());
                     case DataType::BFLOAT8_B:
@@ -1668,7 +1680,12 @@ void pytensor_module(py::module& m_tensor) {
                     const auto& logical_shape = self.logical_shape();
                     std::vector<uint32_t> shape{logical_shape.cbegin(), logical_shape.cend()};
 
-                    if constexpr (
+                    if constexpr (std::is_same_v<T, bool>) {
+                        // Special handling for bool since std::vector<bool> doesn't have .data()
+                        auto bool_vector = self.to_vector<bool>();
+                        std::vector<uint8_t> uint8_vector(bool_vector.begin(), bool_vector.end());
+                        return py::array(shape, uint8_vector.data()).attr("tolist")();
+                    } else if constexpr (
                         std::is_same_v<T, bfloat8_b> || std::is_same_v<T, bfloat4_b> || std::is_same_v<T, bfloat16>) {
                         return py::array(shape, self.to_vector<float>().data()).attr("tolist")();
                     } else {

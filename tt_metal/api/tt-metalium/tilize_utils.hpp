@@ -90,3 +90,87 @@ std::vector<T> tilize_nfaces(const std::vector<T>& input, uint32_t m, uint32_t n
 
 template <typename T>
 std::vector<T> untilize_nfaces(const std::vector<T>& input, uint32_t m, uint32_t n);
+
+// Additional convert_layout function declarations
+template <typename T>
+std::vector<T> convert_layout_row_major_to_tile_swizzled(
+    tt::stl::Span<const T> in_row_major, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape);
+
+template <typename T>
+std::vector<T> convert_layout_tile_swizzled_to_row_major(
+    tt::stl::Span<const T> in_tile_swizzled, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape);
+
+template <typename T>
+std::vector<T> convert_layout_row_major_to_tile_nfaces(
+    tt::stl::Span<const T> in_row_major,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    const bool transpose_face_order);
+
+template <typename T>
+std::vector<T> convert_layout_tile_nfaces_to_row_major(
+    tt::stl::Span<const T> in_nfaces,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order);
+
+// Bool specializations for functions that handle std::vector<bool>
+// These handle std::vector<bool> which doesn't support .data() or direct memory operations
+template <>
+std::vector<bool> tilize_swizzled<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n);
+
+template <>
+std::vector<bool> untilize_swizzled<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n);
+
+template <>
+std::vector<bool> tilize_nfaces<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n);
+
+template <>
+std::vector<bool> untilize_nfaces<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n);
+
+// Bool specializations for convert_layout functions
+template <>
+std::vector<bool> convert_layout_row_major_to_tile_swizzled<bool>(
+    tt::stl::Span<const bool> in_row_major, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape);
+
+template <>
+std::vector<bool> convert_layout_tile_swizzled_to_row_major<bool>(
+    tt::stl::Span<const bool> in_tile_swizzled, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape);
+
+template <>
+std::vector<bool> convert_layout_tile_swizzled_to_tile_nfaces<bool>(
+    tt::stl::Span<const bool> in_tile_swizzled,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order);
+
+template <>
+std::vector<bool> convert_layout_tile_nfaces_to_tile_swizzled<bool>(
+    tt::stl::Span<const bool> in_tile_nfaces,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order);
+
+template <>
+std::vector<bool> convert_layout_row_major_to_tile_nfaces<bool>(
+    tt::stl::Span<const bool> in_row_major,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    const bool transpose_face_order);
+
+template <>
+std::vector<bool> convert_layout_tile_nfaces_to_row_major<bool>(
+    tt::stl::Span<const bool> in_nfaces,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order);

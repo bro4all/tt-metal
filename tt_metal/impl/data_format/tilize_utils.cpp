@@ -561,6 +561,10 @@ template std::vector<uint16_t> convert_layout<uint16_t>(tt::stl::Span<const uint
 template std::vector<uint32_t> convert_layout<uint32_t>(tt::stl::Span<const uint32_t>, tt::stl::Span<const uint32_t>, TensorLayoutType, TensorLayoutType, std::optional<PhysicalSize>, std::optional<PhysicalSize>, const bool, const bool);
 template std::vector<bfloat16> convert_layout<bfloat16>(tt::stl::Span<const bfloat16>, tt::stl::Span<const uint32_t>, TensorLayoutType, TensorLayoutType, std::optional<PhysicalSize>, std::optional<PhysicalSize>, const bool, const bool);
 
+// Template instantiations for convert_layout functions with bool
+template std::vector<bool> convert_layout<bool>(tt::stl::Span<const bool> inp, const PhysicalSize& shape, TensorLayoutType inL, TensorLayoutType outL, std::optional<PhysicalSize> tile_shape, std::optional<PhysicalSize> face_shape, const bool transpose_within_face, const bool transpose_of_faces);
+template std::vector<bool> convert_layout<bool>(tt::stl::Span<const bool> inp, tt::stl::Span<const uint32_t> shape, TensorLayoutType inL, TensorLayoutType outL, std::optional<PhysicalSize> tile_shape, std::optional<PhysicalSize> face_shape, const bool transpose_within_face, const bool transpose_of_faces);
+
 template std::vector<uint16_t> tilize_swizzled<uint16_t>(const std::vector<uint16_t>& input, uint32_t m, uint32_t n);
 template std::vector<uint32_t> tilize_swizzled<uint32_t>(const std::vector<uint32_t>& input, uint32_t m, uint32_t n);
 template std::vector<bfloat16> tilize_swizzled<bfloat16>(const std::vector<bfloat16>& input, uint32_t m, uint32_t n);
@@ -580,5 +584,209 @@ template std::vector<uint16_t> untilize_nfaces<uint16_t>(const std::vector<uint1
 template std::vector<uint32_t> untilize_nfaces<uint32_t>(const std::vector<uint32_t>& input, uint32_t m, uint32_t n);
 template std::vector<bfloat16> untilize_nfaces<bfloat16>(const std::vector<bfloat16>& input, uint32_t m, uint32_t n);
 template std::vector<float> untilize_nfaces<float>(const std::vector<float>& input, uint32_t m, uint32_t n);
+
+// Bool specializations for functions that use std::vector<bool>
+// These handle std::vector<bool> which doesn't support .data() or direct memory operations
+
+template <>
+std::vector<bool> tilize_swizzled<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        temp_input[i] = input[i] ? 1 : 0;
+    }
+
+    auto temp_result = tilize_swizzled<uint8_t>(temp_input, m, n);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> untilize_swizzled<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        temp_input[i] = input[i] ? 1 : 0;
+    }
+
+    auto temp_result = untilize_swizzled<uint8_t>(temp_input, m, n);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> tilize_nfaces<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        temp_input[i] = input[i] ? 1 : 0;
+    }
+
+    auto temp_result = tilize_nfaces<uint8_t>(temp_input, m, n);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> untilize_nfaces<bool>(const std::vector<bool>& input, uint32_t m, uint32_t n) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(input.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        temp_input[i] = input[i] ? 1 : 0;
+    }
+
+    auto temp_result = untilize_nfaces<uint8_t>(temp_input, m, n);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+// Specializations for convert_layout functions that handle std::vector<bool>
+template <>
+std::vector<bool> convert_layout_row_major_to_tile_swizzled<bool>(
+    tt::stl::Span<const bool> in_row_major, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_row_major.size());
+    for (size_t i = 0; i < in_row_major.size(); ++i) {
+        temp_input[i] = in_row_major[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_row_major_to_tile_swizzled<uint8_t>(temp_span, shape, tile_shape);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> convert_layout_tile_swizzled_to_row_major<bool>(
+    tt::stl::Span<const bool> in_tile_swizzled, const PhysicalSize& shape, std::optional<PhysicalSize> tile_shape) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_tile_swizzled.size());
+    for (size_t i = 0; i < in_tile_swizzled.size(); ++i) {
+        temp_input[i] = in_tile_swizzled[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_tile_swizzled_to_row_major<uint8_t>(temp_span, shape, tile_shape);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> convert_layout_tile_swizzled_to_tile_nfaces<bool>(
+    tt::stl::Span<const bool> in_tile_swizzled,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_tile_swizzled.size());
+    for (size_t i = 0; i < in_tile_swizzled.size(); ++i) {
+        temp_input[i] = in_tile_swizzled[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_tile_swizzled_to_tile_nfaces<uint8_t>(temp_span, tile_shape, face_shape, transpose_face, transpose_face_order);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> convert_layout_tile_nfaces_to_tile_swizzled<bool>(
+    tt::stl::Span<const bool> in_tile_nfaces,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_tile_nfaces.size());
+    for (size_t i = 0; i < in_tile_nfaces.size(); ++i) {
+        temp_input[i] = in_tile_nfaces[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_tile_nfaces_to_tile_swizzled<uint8_t>(temp_span, tile_shape, face_shape, transpose_face, transpose_face_order);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> convert_layout_row_major_to_tile_nfaces<bool>(
+    tt::stl::Span<const bool> in_row_major,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    const bool transpose_face_order) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_row_major.size());
+    for (size_t i = 0; i < in_row_major.size(); ++i) {
+        temp_input[i] = in_row_major[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_row_major_to_tile_nfaces<uint8_t>(temp_span, shape, tile_shape, face_shape, transpose_face, transpose_face_order);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
+
+template <>
+std::vector<bool> convert_layout_tile_nfaces_to_row_major<bool>(
+    tt::stl::Span<const bool> in_nfaces,
+    const PhysicalSize& shape,
+    std::optional<PhysicalSize> tile_shape,
+    std::optional<PhysicalSize> face_shape,
+    const bool transpose_face,
+    bool transpose_face_order) {
+    // For bool vectors, we need to convert to uint8_t for processing, then back to bool
+    std::vector<uint8_t> temp_input(in_nfaces.size());
+    for (size_t i = 0; i < in_nfaces.size(); ++i) {
+        temp_input[i] = in_nfaces[i] ? 1 : 0;
+    }
+
+    tt::stl::Span<const uint8_t> temp_span(temp_input);
+    auto temp_result = convert_layout_tile_nfaces_to_row_major<uint8_t>(temp_span, shape, tile_shape, face_shape, transpose_face, transpose_face_order);
+
+    std::vector<bool> result(temp_result.size());
+    for (size_t i = 0; i < temp_result.size(); ++i) {
+        result[i] = temp_result[i] != 0;
+    }
+    return result;
+}
 
 // clang-format on

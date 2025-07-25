@@ -101,6 +101,21 @@ void ReadFromBuffer(Buffer& buffer, std::vector<DType>& host_buffer) {
     host_buffer.resize(buffer.size() / sizeof(DType));
     ReadFromBuffer(buffer, reinterpret_cast<uint8_t*>(host_buffer.data()));
 }
+
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+inline void ReadFromBuffer(Buffer& buffer, std::vector<bool>& host_buffer) {
+    auto buffer_size = buffer.size();
+    TT_FATAL(buffer_size % sizeof(bool) == 0, "Buffer size is not divisible by dtype size");
+    host_buffer.resize(buffer.size() / sizeof(bool));
+    // For bool vectors, we need to read into a temporary uint8_t buffer and convert
+    std::vector<uint8_t> temp_buffer(host_buffer.size());
+    ReadFromBuffer(buffer, temp_buffer.data());
+    // Convert uint8_t to bool
+    for (size_t i = 0; i < host_buffer.size(); ++i) {
+        host_buffer[i] = temp_buffer[i] != 0;
+    }
+}
 template <typename DType>
 void ReadFromBuffer(std::shared_ptr<Buffer> buffer, std::vector<DType>& host_buffer) {
     ReadFromBuffer(*buffer, host_buffer);
@@ -122,6 +137,19 @@ template <typename DType>
 void ReadShard(Buffer& buffer, std::vector<DType>& host_buffer, const uint32_t& core_id) {
     host_buffer.resize(buffer.page_size() * buffer.shard_spec().num_pages());
     ReadShard(buffer, reinterpret_cast<uint8_t*>(host_buffer.data()), core_id);
+}
+
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+inline void ReadShard(Buffer& buffer, std::vector<bool>& host_buffer, const uint32_t& core_id) {
+    host_buffer.resize(buffer.page_size() * buffer.shard_spec().num_pages());
+    // For bool vectors, we need to read into a temporary uint8_t buffer and convert
+    std::vector<uint8_t> temp_buffer(host_buffer.size());
+    ReadShard(buffer, temp_buffer.data(), core_id);
+    // Convert uint8_t to bool
+    for (size_t i = 0; i < host_buffer.size(); ++i) {
+        host_buffer[i] = temp_buffer[i] != 0;
+    }
 }
 
 // Launches all kernels on cores specified with kernels in the program.

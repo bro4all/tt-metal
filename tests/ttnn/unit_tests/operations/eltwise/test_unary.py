@@ -1070,3 +1070,17 @@ def test_unary_hardsigmoid_ttnn(input_shapes, torch_dtype, ttnn_dtype, atol, dev
 
     assert_allclose(output_tensor, golden_tensor, rtol=1e-05, atol=atol)
     assert_with_pcc(ttnn.to_torch(output_tensor), golden_tensor, pcc=0.9999)
+
+
+def test_ttnn_bool_dtype(device):
+    in_data = torch.tensor([True, False, True, False], dtype=torch.bool)
+    input_tensor = ttnn.from_torch(in_data, dtype=ttnn.bool, layout=ttnn.TILE_LAYOUT, device=device)
+    print(input_tensor)
+    print(ttnn.to_torch(input_tensor))
+    print(ttnn.to_torch(input_tensor).dtype)
+    # output_tensor = ttnn.frac(input_tensor)
+    # golden_function = ttnn.get_golden_function(ttnn.frac)
+    # golden_tensor = golden_function(in_data)
+
+    # assert_with_ulp(output_tensor, golden_tensor)
+    # assert_with_pcc(ttnn.to_torch(output_tensor), golden_tensor)

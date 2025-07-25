@@ -209,6 +209,9 @@ public:
         };
 
         switch (tensor.tensor_spec().data_type()) {
+            case DataType::BOOL:
+                // Handle BOOL appropriately (e.g., treat as uint8_t for storage)
+                break;
             case tt::tt_metal::DataType::BFLOAT8_B:
             case tt::tt_metal::DataType::BFLOAT4_B:
             case tt::tt_metal::DataType::FLOAT32: return extract_logical_data.template operator()<float>(tensor);
@@ -468,6 +471,9 @@ public:
         };
 
         switch (tensor.dtype()) {
+            case DataType::BOOL:
+                // Handle BOOL appropriately (e.g., treat as uint8_t for storage)
+                break;
             case tt::tt_metal::DataType::BFLOAT8_B:
             case tt::tt_metal::DataType::BFLOAT4_B:
             case tt::tt_metal::DataType::FLOAT32: return dispatch_to_concrete.template operator()<float>(tensor);
@@ -682,6 +688,7 @@ INSTANTIATE_CREATE_DISTRIBUTED_TENSOR(int32_t)
 INSTANTIATE_CREATE_DISTRIBUTED_TENSOR(uint8_t)
 INSTANTIATE_CREATE_DISTRIBUTED_TENSOR(uint16_t)
 INSTANTIATE_CREATE_DISTRIBUTED_TENSOR(uint32_t)
+INSTANTIATE_CREATE_DISTRIBUTED_TENSOR(bool)
 
 #undef INSTANTIATE_CREATE_DISTRIBUTED_TENSOR
 
@@ -693,5 +700,6 @@ template std::pair<std::vector<bfloat16>, Shape> MeshToTensor::compose<bfloat16>
 template std::pair<std::vector<int32_t>, Shape> MeshToTensor::compose<int32_t>(const Tensor& tensor) const;
 template std::pair<std::vector<uint8_t>, Shape> MeshToTensor::compose<uint8_t>(const Tensor& tensor) const;
 template std::pair<std::vector<uint16_t>, Shape> MeshToTensor::compose<uint16_t>(const Tensor& tensor) const;
+template std::pair<std::vector<bool>, Shape> MeshToTensor::compose<bool>(const Tensor& tensor) const;
 
 }  // namespace ttnn::distributed

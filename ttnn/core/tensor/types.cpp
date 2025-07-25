@@ -9,6 +9,7 @@ namespace tt::tt_metal {
 
 std::ostream& operator<<(std::ostream& os, const tt::tt_metal::DataType& data_type) {
     switch (data_type) {
+        case DataType::BOOL: return os << "DataType::BOOL";
         case DataType::BFLOAT16: return os << "DataType::BFLOAT16";
         case DataType::FLOAT32: return os << "DataType::FLOAT32";
         case DataType::UINT32: return os << "DataType::UINT32";
@@ -50,6 +51,7 @@ tt::DataFormat datatype_to_dataformat_converter(tt::tt_metal::DataType datatype)
         case tt::tt_metal::DataType::UINT32: return tt::DataFormat::UInt32;
         case tt::tt_metal::DataType::UINT16: return tt::DataFormat::UInt16;
         case tt::tt_metal::DataType::UINT8: return tt::DataFormat::UInt8;
+        case tt::tt_metal::DataType::BOOL: return tt::DataFormat::UInt8;
         default: TT_ASSERT(false, "Unsupported DataType"); return tt::DataFormat::Float16_b;
     }
 }

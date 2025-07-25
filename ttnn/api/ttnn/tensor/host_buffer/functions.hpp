@@ -32,6 +32,8 @@ void validate_datatype(const Tensor& tensor) {
         TT_FATAL(tensor.dtype() == DataType::UINT16, "Incorrect data type {}", tensor.dtype());
     } else if constexpr (std::is_same_v<BaseType, uint8_t>) {
         TT_FATAL(tensor.dtype() == DataType::UINT8, "Incorrect data type {}", tensor.dtype());
+    } else if constexpr (std::is_same_v<BaseType, bool>) {
+        TT_FATAL(tensor.dtype() == DataType::BOOL, "Incorrect data type {}", tensor.dtype());
     } else {
         static_assert(tt::stl::concepts::always_false_v<BaseType>, "Unsupported DataType");
     }

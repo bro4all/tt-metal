@@ -182,13 +182,26 @@ XtensorAdapter<typename Expression::value_type> concat_ndim(
         }
 
         if (can_use_memcpy) {
-            DataType* result_ptr = result.data().data();
-            const size_t chunk_size =
-                std::accumulate(expected_shape.begin(), expected_shape.end(), 1, std::multiplies<size_t>());
-            size_t offset = 0;
-            for (const auto& expr : expressions) {
-                std::memcpy(result_ptr + offset, expr.data(), chunk_size * sizeof(DataType));
-                offset += chunk_size;
+            // Special handling for bool to avoid using .data() and memcpy
+            if constexpr (std::is_same_v<DataType, bool>) {
+                const size_t chunk_size =
+                    std::accumulate(expected_shape.begin(), expected_shape.end(), 1, std::multiplies<size_t>());
+                size_t offset = 0;
+                for (const auto& expr : expressions) {
+                    for (size_t i = 0; i < chunk_size; ++i) {
+                        result.data()[offset + i] = expr.data()[i];
+                    }
+                    offset += chunk_size;
+                }
+            } else {
+                DataType* result_ptr = result.data().data();
+                const size_t chunk_size =
+                    std::accumulate(expected_shape.begin(), expected_shape.end(), 1, std::multiplies<size_t>());
+                size_t offset = 0;
+                for (const auto& expr : expressions) {
+                    std::memcpy(result_ptr + offset, expr.data(), chunk_size * sizeof(DataType));
+                    offset += chunk_size;
+                }
             }
             return result;
         }
@@ -300,6 +313,7 @@ EXPLICIT_INSTANTIATIONS_FOR_TYPE(int32_t)
 EXPLICIT_INSTANTIATIONS_FOR_TYPE(uint8_t)
 EXPLICIT_INSTANTIATIONS_FOR_TYPE(uint16_t)
 EXPLICIT_INSTANTIATIONS_FOR_TYPE(uint32_t)
+EXPLICIT_INSTANTIATIONS_FOR_TYPE(bool)
 
 #undef EXPLICIT_INSTANTIATIONS_FOR_TYPE
 

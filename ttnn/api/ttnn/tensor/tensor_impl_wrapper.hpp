@@ -20,6 +20,7 @@ auto dispatch(DataType dtype, Func&& func, Args&&... args) {
         case DataType::UINT8: return func.template operator()<uint8_t>(static_cast<Args&&>(args)...);
         case DataType::BFLOAT8_B: return func.template operator()<bfloat8_b>(static_cast<Args&&>(args)...);
         case DataType::BFLOAT4_B: return func.template operator()<bfloat4_b>(static_cast<Args&&>(args)...);
+        case DataType::BOOL: return func.template operator()<bool>(static_cast<Args&&>(args)...);
         default: TT_THROW("Unsupported data type");
     }
 }

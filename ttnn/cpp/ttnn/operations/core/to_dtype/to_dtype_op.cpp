@@ -125,6 +125,7 @@ Tensor ToDtype::invoke(const ttnn::Tensor& input_tensor, const ttnn::DataType& d
     auto transform_tensor = [src_type, dtype]() {
         auto get_dest_func = [&]<typename SrcType>() {
             switch (dtype) {
+                case DataType::BOOL: return &transform_type<SrcType, bool>;
                 case DataType::BFLOAT4_B: return &transform_type<SrcType, bfloat4_tag>;
                 case DataType::BFLOAT8_B: return &transform_type<SrcType, bfloat8_tag>;
                 case DataType::BFLOAT16: return &transform_type<SrcType, bfloat16>;
@@ -140,6 +141,7 @@ Tensor ToDtype::invoke(const ttnn::Tensor& input_tensor, const ttnn::DataType& d
         };
 
         switch (src_type) {
+            case DataType::BOOL: return get_dest_func.operator()<bool>();
             case DataType::BFLOAT4_B: return get_dest_func.operator()<bfloat4_tag>();
             case DataType::BFLOAT8_B: return get_dest_func.operator()<bfloat8_tag>();
             case DataType::BFLOAT16: return get_dest_func.operator()<bfloat16>();

@@ -109,6 +109,7 @@ void dump_host_storage(FILE* output_file, const HostBuffer& buffer, DataType dty
     // We should dump the `size` of raw bytes, not the size of logical elements.
     const size_t element_size = [dtype]() {
         switch (dtype) {
+            case DataType::BOOL: return sizeof(uint8_t);
             case DataType::BFLOAT16: return sizeof(::bfloat16);
             case DataType::FLOAT32: return sizeof(float);
             case DataType::UINT8: return sizeof(uint8_t);
@@ -230,7 +231,10 @@ DistributedStorage load_multi_device_host_storage(
 }
 
 HostStorage load_host_storage(FILE* input_file, DataType data_type) {
-    if (data_type == DataType::UINT32 or data_type == DataType::BFLOAT8_B or data_type == DataType::BFLOAT4_B) {
+    if (data_type == DataType::BOOL) {
+        using T = uint8_t;
+        return load_host_storage<T>(input_file);
+    } else if (data_type == DataType::UINT32 or data_type == DataType::BFLOAT8_B or data_type == DataType::BFLOAT4_B) {
         using T = std::uint32_t;
         return load_host_storage<T>(input_file);
     } else if (data_type == DataType::INT32) {
@@ -255,7 +259,10 @@ HostStorage load_host_storage(FILE* input_file, DataType data_type) {
 
 DistributedStorage load_multi_device_host_storage(
     FILE* input_file, DataType data_type, Layout layout, const MeshDevice& mesh_device) {
-    if (data_type == DataType::UINT32 or data_type == DataType::BFLOAT8_B or data_type == DataType::BFLOAT4_B) {
+    if (data_type == DataType::BOOL) {
+        using T = uint8_t;
+        return load_multi_device_host_storage<T>(input_file, data_type, layout, mesh_device);
+    } else if (data_type == DataType::UINT32 or data_type == DataType::BFLOAT8_B or data_type == DataType::BFLOAT4_B) {
         using T = std::uint32_t;
         return load_multi_device_host_storage<T>(input_file, data_type, layout, mesh_device);
     } else if (data_type == DataType::UINT16) {

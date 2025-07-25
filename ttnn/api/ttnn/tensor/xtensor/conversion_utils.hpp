@@ -79,6 +79,70 @@ private:
     AdaptedView<T> expr_;
 };
 
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+class XtensorAdapter<bool> {
+public:
+    XtensorAdapter(std::vector<bool>&& data, std::vector<size_t> shape_vec) : data_(std::move(data)) {
+        // For bool, we need to create the expression differently since std::vector<bool> doesn't have .data()
+        // Create xtensor from shape and then copy data
+        expr_ = xt::xarray<bool>::from_shape(shape_vec);
+        for (size_t i = 0; i < data_.size() && i < expr_.size(); ++i) {
+            expr_.flat(i) = data_[i];
+        }
+    }
+
+    XtensorAdapter(const XtensorAdapter& other) : data_(other.data_) {
+        expr_ = xt::xarray<bool>::from_shape(other.expr_.shape());
+        for (size_t i = 0; i < data_.size() && i < expr_.size(); ++i) {
+            expr_.flat(i) = data_[i];
+        }
+    }
+
+    XtensorAdapter(XtensorAdapter&& other) noexcept : data_(std::move(other.data_)) {
+        expr_ = xt::xarray<bool>::from_shape(other.expr_.shape());
+        for (size_t i = 0; i < data_.size() && i < expr_.size(); ++i) {
+            expr_.flat(i) = data_[i];
+        }
+    }
+
+    XtensorAdapter& operator=(const XtensorAdapter& other) {
+        if (this != &other) {
+            data_ = other.data_;
+            expr_ = xt::xarray<bool>::from_shape(other.expr_.shape());
+            for (size_t i = 0; i < data_.size() && i < expr_.size(); ++i) {
+                expr_.flat(i) = data_[i];
+            }
+        }
+        return *this;
+    }
+
+    XtensorAdapter& operator=(XtensorAdapter&& other) noexcept {
+        if (this != &other) {
+            data_ = std::move(other.data_);
+            expr_ = xt::xarray<bool>::from_shape(other.expr_.shape());
+            for (size_t i = 0; i < data_.size() && i < expr_.size(); ++i) {
+                expr_.flat(i) = data_[i];
+            }
+        }
+        return *this;
+    }
+
+    // Returns a reference to the underlying xtensor expression.
+    auto& expr() & { return expr_; }
+    const auto& expr() const& { return expr_; }
+
+    // Returns a reference to the underlying data.
+    std::vector<bool>& data() & { return data_; }
+    const std::vector<bool>& data() const& { return data_; }
+    std::vector<bool> data() && { return std::move(data_); }
+    std::vector<bool> data() const&& = delete;
+
+private:
+    std::vector<bool> data_;
+    xt::xarray<bool> expr_;
+};
+
 // Converts a span to an xtensor view.
 // IMPORTANT: the lifetime of the returned xtensor view is tied to the lifetime of the underlying buffer.
 template <typename T>

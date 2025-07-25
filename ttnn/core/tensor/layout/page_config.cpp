@@ -12,6 +12,7 @@ namespace {
 namespace CMAKE_UNIQUE_NAMESPACE {
 size_t rm_element_size_bytes(DataType dtype) {
     switch (dtype) {
+        case DataType::BOOL: return sizeof(bool);
         case DataType::BFLOAT16: return sizeof(bfloat16);
         case DataType::FLOAT32: return sizeof(float);
         case DataType::INT32: return sizeof(int32_t);

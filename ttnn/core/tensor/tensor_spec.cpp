@@ -99,6 +99,7 @@ void validate_dtype_and_layout(DataType dtype, Layout layout) {
     };
     auto supported_layout = [&dtype, &layout]() {
         switch (dtype) {
+            case DataType::BOOL:
             case DataType::UINT32:
             case DataType::INT32:
             case DataType::FLOAT32:
@@ -112,7 +113,8 @@ void validate_dtype_and_layout(DataType dtype, Layout layout) {
             default:
                 TT_ASSERT(
                     false,
-                    "Only UINT32, INT32, FLOAT32, UINT16, BFLOAT16, BFLOAT8_B, or BFLOAT4_B dtypes are supported on "
+                    "Only BOOL, UINT32, INT32, FLOAT32, UINT16, BFLOAT16, BFLOAT8_B, or BFLOAT4_B dtypes are supported "
+                    "on "
                     "device!");
                 break;
         }

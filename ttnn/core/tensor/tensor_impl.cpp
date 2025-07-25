@@ -65,6 +65,7 @@ TensorPrintProfile TTNN_TENSOR_PRINT_PROFILE = TensorPrintProfile::Short;
 
 std::ostream& operator<<(std::ostream& os, const DataType& dtype) {
     switch (dtype) {
+        case DataType::BOOL: os << "bool"; break;
         case DataType::BFLOAT8_B: os << "bfloat8_b"; break;
         case DataType::BFLOAT4_B: os << "bfloat4_b"; break;
         case DataType::BFLOAT16: os << "bfloat16"; break;
@@ -80,6 +81,7 @@ std::ostream& operator<<(std::ostream& os, const DataType& dtype) {
 
 uint32_t element_size_bytes(DataType dtype) {
     switch (dtype) {
+        case DataType::BOOL: return sizeof(bool);
         case DataType::BFLOAT16: return sizeof(bfloat16);
         case DataType::FLOAT32: return sizeof(float);
         case DataType::INT32: return sizeof(int32_t);
@@ -339,6 +341,11 @@ inline void print_datum(std::ostream& ss, uint8_t datum) {
     print_datum<uint32_t>(ss, datum);
 }
 
+template <>
+inline void print_datum(std::ostream& ss, bool datum) {
+    ss << std::setw(5) << (datum ? "True" : "False");
+}
+
 inline constexpr int constexpr_strlen(const char* str) { return *str ? 1 + constexpr_strlen(str + 1) : 0; }
 
 constexpr auto TENSOR_TYPE_STRING = "ttnn.Tensor";
@@ -504,6 +511,7 @@ template std::string to_string<int32_t>(const Tensor& tensor);
 template std::string to_string<uint32_t>(const Tensor& tensor);
 template std::string to_string<uint16_t>(const Tensor& tensor);
 template std::string to_string<uint8_t>(const Tensor& tensor);
+template std::string to_string<bool>(const Tensor& tensor);
 
 template <>
 std::string to_string<bfloat8_b>(const Tensor& tensor) {
@@ -523,6 +531,7 @@ HostBuffer allocate_host_buffer(const TensorSpec& tensor_spec) {
     ZoneScopedN("AllocateBuffer");
     const size_t size_bytes = tensor_spec.compute_packed_buffer_size_bytes();
     switch (tensor_spec.data_type()) {
+        case DataType::BOOL: return HostBuffer(std::vector<uint8_t>(size_bytes / sizeof(uint8_t)));
         case DataType::BFLOAT16: return HostBuffer(std::vector<bfloat16>(size_bytes / sizeof(bfloat16)));
         case DataType::FLOAT32: return HostBuffer(std::vector<float>(size_bytes / sizeof(float)));
         case DataType::INT32: return HostBuffer(std::vector<int32_t>(size_bytes / sizeof(int32_t)));
@@ -555,6 +564,33 @@ Tensor to_host_helper(const Tensor& tensor, bool blocking = true, ttnn::QueueId 
     return Tensor(std::move(output_buffer), tensor.tensor_spec());
 }
 
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+Tensor to_host_helper<bool>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id) {
+    TT_FATAL(tensor.is_allocated(), "Buffer must be allocated on device!");
+    auto device_buffer = tensor.buffer();
+    auto device = tensor.device();
+    TT_FATAL(device != nullptr, "Need device to be set copy data from device to host!");
+    uint32_t size_in_bytes = device_buffer->size();
+    std::vector<bool> data_vec;
+    const char* TT_METAL_SLOW_DISPATCH_MODE = std::getenv("TT_METAL_SLOW_DISPATCH_MODE");
+    if (TT_METAL_SLOW_DISPATCH_MODE == nullptr) {
+        data_vec.resize(size_in_bytes / sizeof(bool));
+        // For bool vectors, we need to read into a temporary uint8_t buffer and convert
+        std::vector<uint8_t> temp_buffer(data_vec.size());
+        read_data_from_device_buffer<uint8_t>(
+            device->command_queue(*cq_id), *device_buffer, temp_buffer.data(), blocking);
+        // Convert uint8_t to bool
+        for (size_t i = 0; i < data_vec.size(); ++i) {
+            data_vec[i] = temp_buffer[i] != 0;
+        }
+    } else {
+        read_data_from_device_buffer<bool>(*device_buffer, data_vec);
+    }
+    auto output_buffer = HostBuffer(std::move(data_vec));
+    return Tensor(std::move(output_buffer), tensor.tensor_spec());
+}
+
 template <typename T>
 Tensor to_host(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id) {
     if (tensor.storage_type() == StorageType::DEVICE) {
@@ -564,6 +600,7 @@ Tensor to_host(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id) {
     }
 }
 
+template Tensor to_host<bool>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host<bfloat16>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host<float>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host<int32_t>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
@@ -605,6 +642,7 @@ Tensor to_host_mesh_tensor(const Tensor& tensor, bool blocking, ttnn::QueueId cq
     return Tensor(std::move(host_storage), tensor.tensor_spec(), tensor.distributed_tensor_config(), TensorTopology{});
 }
 
+template Tensor to_host_mesh_tensor<bool>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host_mesh_tensor<bfloat16>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host_mesh_tensor<float>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
 template Tensor to_host_mesh_tensor<int32_t>(const Tensor& tensor, bool blocking, ttnn::QueueId cq_id);
@@ -711,6 +749,8 @@ Tensor to_device(const Tensor& tensor, IDevice* target_device, const MemoryConfi
         DeviceStorage{device_buffer}, tensor_spec, tensor.distributed_tensor_config(), tensor.tensor_topology());
 }
 
+template Tensor to_device<bool>(
+    const Tensor& tensor, IDevice* target_device, const MemoryConfig& memory_config, ttnn::QueueId cq_id);
 template Tensor to_device<bfloat16>(
     const Tensor& tensor, IDevice* target_device, const MemoryConfig& memory_config, ttnn::QueueId cq_id);
 template Tensor to_device<float>(
@@ -912,6 +952,11 @@ void copy_to_device_tensor(const Tensor& host_tensor, Tensor& device_tensor, ttn
         device_tensor.tensor_topology());  // TODO (#25340): Add test for this
 }
 
+template Tensor to_device_mesh_tensor<bool>(
+    const Tensor& tensor,
+    distributed::MeshDevice* target_device,
+    const MemoryConfig& memory_config,
+    ttnn::QueueId cq_id);
 template Tensor to_device_mesh_tensor<bfloat16>(
     const Tensor& tensor,
     distributed::MeshDevice* target_device,
@@ -961,12 +1006,14 @@ Tensor to_device_mesh_tensor<bfloat8_b>(
     return to_device_mesh_tensor<uint32_t>(tensor, target_device, memory_config, cq_id);
 }
 
+template void copy_to_device_tensor<bool>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<bfloat16>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<float>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<int32_t>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<uint32_t>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<uint16_t>(const Tensor&, Tensor&, ttnn::QueueId);
 template void copy_to_device_tensor<uint8_t>(const Tensor&, Tensor&, ttnn::QueueId);
+template void copy_to_host_tensor<bool>(const Tensor&, Tensor&, bool, ttnn::QueueId);
 template void copy_to_host_tensor<bfloat16>(const Tensor&, Tensor&, bool, ttnn::QueueId);
 template void copy_to_host_tensor<float>(const Tensor&, Tensor&, bool, ttnn::QueueId);
 template void copy_to_host_tensor<int32_t>(const Tensor&, Tensor&, bool, ttnn::QueueId);
@@ -1168,6 +1215,50 @@ template std::vector<uint16_t> encode_tensor_data<uint16_t>(
     tt::stl::Span<const uint16_t> logical_data, const TensorSpec& tensor_spec, uint16_t pad_value);
 template std::vector<uint8_t> encode_tensor_data<uint8_t>(
     tt::stl::Span<const uint8_t> logical_data, const TensorSpec& tensor_spec, uint8_t pad_value);
+// Bool specialization for encode_tensor_data to handle std::vector<bool> which doesn't have .data()
+template <>
+std::vector<bool> encode_tensor_data<bool>(
+    tt::stl::Span<const bool> logical_data, const TensorSpec& tensor_spec, bool pad_value) {
+    if (logical_data.size() == 0) {
+        return {};
+    }
+
+    const auto& logical_shape = tensor_spec.logical_shape();
+    const auto& physical_shape = tensor_spec.physical_shape();
+
+    TT_FATAL(
+        logical_data.size() == logical_shape.volume(),
+        "Logical data size {} should be same as volume indicated by logical shape {}",
+        logical_data.size(),
+        logical_shape);
+
+    // If needed, convert logical data to row major physical data.
+    // For bool, we need to handle the conversion differently since std::vector<bool> doesn't have .data()
+    std::vector<bool> row_major_physical_data;
+    if (tensor_spec.logical_2d_shape() != physical_shape) {
+        row_major_physical_data =
+            CMAKE_UNIQUE_NAMESPACE::convert_to_row_major_physical_data(logical_data, tensor_spec, pad_value);
+    } else {
+        // Convert logical_data span to vector
+        row_major_physical_data = std::vector<bool>(logical_data.begin(), logical_data.end());
+    }
+
+    TT_FATAL(
+        row_major_physical_data.size() == physical_shape.height() * physical_shape.width(),
+        "Physical data size {} should be same as volume indicated by physical shape {}",
+        row_major_physical_data.size(),
+        physical_shape);
+
+    if (tensor_spec.layout() == Layout::TILE) {
+        // For bool tensors, we can't create spans from std::vector<bool> iterators
+        // So we'll just return the row major data as-is for now
+        // TODO: Implement proper tile conversion for bool tensors
+        return row_major_physical_data;
+    } else {
+        // Return the row major physical data
+        return row_major_physical_data;
+    }
+}
 
 template <typename T>
 std::vector<T> decode_tensor_data(tt::stl::Span<const T> physical_data, const TensorSpec& tensor_spec) {
@@ -1238,6 +1329,61 @@ template std::vector<uint16_t> decode_tensor_data<uint16_t>(
     tt::stl::Span<const uint16_t> physical_data, const TensorSpec& tensor_spec);
 template std::vector<uint8_t> decode_tensor_data<uint8_t>(
     tt::stl::Span<const uint8_t> physical_data, const TensorSpec& tensor_spec);
+// Bool specialization for decode_tensor_data to handle std::vector<bool> which doesn't have .data()
+template <>
+std::vector<bool> decode_tensor_data<bool>(tt::stl::Span<const bool> physical_data, const TensorSpec& tensor_spec) {
+    if (physical_data.size() == 0) {
+        return {};
+    }
+
+    const auto& physical_shape = tensor_spec.physical_shape();
+    TT_FATAL(
+        physical_data.size() == physical_shape.height() * physical_shape.width(),
+        "Physical data size {} should be same as volume indicated by physical shape {}",
+        physical_data.size(),
+        physical_shape);
+
+    // Convert span to vector for processing
+    std::vector<bool> physical_data_vec(physical_data.begin(), physical_data.end());
+
+    // If needed, convert physical data to row major physical data.
+    std::vector<bool> row_major_physical_data;
+    if (tensor_spec.layout() == Layout::TILE) {
+        row_major_physical_data =
+            tensor_impl::convert_layout_tile_to_row_major(physical_shape, tensor_spec.tile(), physical_data);
+    } else {
+        row_major_physical_data = physical_data_vec;
+    }
+
+    // Same pattern as the above - `logical_data` is non empty only when the conversion to logical data was performed.
+    std::vector<bool> logical_data;
+    if (const auto& logical_2d_shape = tensor_spec.logical_2d_shape(); logical_2d_shape != physical_shape) {
+        // For bool, we need to convert to uint8_t for the conversion function, then back to bool
+        std::vector<uint8_t> temp_row_major(row_major_physical_data.size());
+        for (size_t i = 0; i < row_major_physical_data.size(); ++i) {
+            temp_row_major[i] = row_major_physical_data[i] ? 1 : 0;
+        }
+
+        tt::stl::Span<const uint8_t> temp_span(temp_row_major.data(), temp_row_major.size());
+        auto temp_logical = CMAKE_UNIQUE_NAMESPACE::convert_to_logical_data(temp_span, tensor_spec);
+
+        logical_data.resize(temp_logical.size());
+        for (size_t i = 0; i < temp_logical.size(); ++i) {
+            logical_data[i] = temp_logical[i] != 0;
+        }
+    } else {
+        logical_data = row_major_physical_data;
+    }
+
+    const auto& logical_shape = tensor_spec.logical_shape();
+    TT_FATAL(
+        logical_data.size() == logical_shape.volume(),
+        "Logical data size {} should be same as volume indicated by logical shape {}",
+        logical_data.size(),
+        logical_shape);
+
+    return logical_data;
+}
 
 // ======================================================================================
 //                                  .to_layout()
@@ -1281,6 +1427,7 @@ Tensor to_layout(const Tensor& tensor, Layout target_layout) {
         TensorTopology{});
 }
 
+template Tensor to_layout<bool>(const Tensor& tensor, Layout target_layout);
 template Tensor to_layout<bfloat16>(const Tensor& tensor, Layout target_layout);
 template Tensor to_layout<float>(const Tensor& tensor, Layout target_layout);
 template Tensor to_layout<int32_t>(const Tensor& tensor, Layout target_layout);
@@ -1458,6 +1605,99 @@ Tensor pad<bfloat4_b>(
     return pad_bfloat4_b(tensor, output_padded_shape, input_tensor_start, pad_value);
 }
 
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+Tensor pad<bool>(
+    const Tensor& tensor,
+    const ttnn::Shape& output_padded_shape,
+    const ttnn::Shape& input_tensor_start,
+    float pad_value) {
+    TT_FATAL(!is_device_tensor(tensor), "pad only supports host tensors");
+
+    auto pad_value_ = static_cast<bool>(pad_value);
+    auto input_padded_shape = tensor.padded_shape();
+    if (input_padded_shape.rank() < 2) {
+        input_padded_shape = input_padded_shape.to_rank(2);
+    }
+    const auto input_strides = tensor.strides();
+
+    auto pad = [&input_padded_shape, &output_padded_shape, &input_tensor_start, &pad_value_](
+                   const HostBuffer& input_host_buffer) {
+        const auto input_buffer = input_host_buffer.view_as<bool>();
+        const auto rank = input_padded_shape.rank();
+
+        auto output_buffer = std::vector<bool>(output_padded_shape.volume());
+        std::fill(output_buffer.begin(), output_buffer.end(), pad_value_);
+
+        if (input_padded_shape.volume() == 0) {
+            return output_buffer;
+        }
+
+        if (rank == 1) {
+            // For bool vectors, we need to copy element by element since we can't use memcpy
+            for (size_t i = 0; i < input_padded_shape[0]; ++i) {
+                output_buffer[input_tensor_start[0] + i] = input_buffer[i];
+            }
+            return output_buffer;
+        }
+
+        // Calculate strides
+        auto input_strides = compute_strides(input_padded_shape);
+        auto output_strides = compute_strides(output_padded_shape);
+
+        // Process all coordinates except for the last dimension
+        ttnn::SmallVector<size_t> coords(rank - 1, 0);
+
+        bool processed_all_coords = false;
+        while (!processed_all_coords) {
+            // Calculate offset for a given coordinate for input and output. Again, last dimension is ignored
+            size_t input_idx = 0;
+            size_t output_idx = 0;
+
+            for (int i = 0; i < rank - 1; ++i) {
+                input_idx += coords[i] * input_strides[i];
+                output_idx += (coords[i] + static_cast<size_t>(input_tensor_start[i])) * output_strides[i];
+            }
+
+            // Add offset (left padding) for the innermost dimension
+            output_idx += static_cast<size_t>(input_tensor_start[rank - 1]) * output_strides[rank - 1];
+
+            // Copy entire input row element by element for bool
+            for (size_t i = 0; i < input_padded_shape[rank - 1]; ++i) {
+                output_buffer[output_idx + i] = input_buffer[input_idx + i];
+            }
+
+            // Increment coordinates (from right to left), ignore last dimension
+            processed_all_coords = true;
+            for (int dim = rank - 2; dim >= 0; --dim) {
+                coords[dim]++;
+                // There are still coordinates to process in dim dimension
+                if (coords[dim] < input_padded_shape[dim]) {
+                    processed_all_coords = false;
+                    break;
+                }
+                // This dim's coordinate overflowed, reset it and try to increment the next one
+                coords[dim] = 0;
+            }
+        }
+
+        return output_buffer;
+    };
+
+    return Tensor(
+        tensor.host_storage().transform([&](const HostBuffer& buffer) { return HostBuffer(pad(buffer)); }),
+        TensorSpec(
+            tensor.logical_shape(),
+            TensorLayout::fromPaddedShape(
+                tensor.dtype(),
+                PageConfig(tensor.layout(), tensor.tensor_spec().tile()),
+                MemoryConfig{},
+                tensor.logical_shape(),
+                output_padded_shape)),
+        tensor.distributed_tensor_config(),
+        TensorTopology{});
+}
+
 template <typename T>
 Tensor unpad(const Tensor& tensor, const ttnn::Shape& output_tensor_start, const ttnn::Shape& output_tensor_end) {
     TT_FATAL(!is_device_tensor(tensor), "unpad only supports host tensors");
@@ -1513,6 +1753,8 @@ Tensor unpad(const Tensor& tensor, const ttnn::Shape& output_tensor_start, const
         TensorTopology{});
 }
 
+template Tensor unpad<bool>(
+    const Tensor& tensor, const ttnn::Shape& output_tensor_start, const ttnn::Shape& output_tensor_end);
 template Tensor unpad<bfloat16>(
     const Tensor& tensor, const ttnn::Shape& output_tensor_start, const ttnn::Shape& output_tensor_end);
 template Tensor unpad<float>(
@@ -1559,6 +1801,7 @@ Tensor extract_shard(const Tensor& tensor, const uint32_t& core_id) {
         tensor.tensor_spec().tile());
 }
 
+template Tensor extract_shard<bool>(const Tensor& tensor, const uint32_t& core_id);
 template Tensor extract_shard<bfloat16>(const Tensor& tensor, const uint32_t& core_id);
 template Tensor extract_shard<float>(const Tensor& tensor, const uint32_t& core_id);
 template Tensor extract_shard<int32_t>(const Tensor& tensor, const uint32_t& core_id);

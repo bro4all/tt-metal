@@ -79,13 +79,38 @@ HostBuffer::HostBuffer(std::shared_ptr<std::vector<T>> data) {
     type_info_ = &typeid(T);
 }
 
+// Specialization for bool to handle std::vector<bool> which doesn't have .data()
+template <>
+inline HostBuffer::HostBuffer(std::shared_ptr<std::vector<bool>> data) {
+    const size_t size_bytes = data->size() * sizeof(bool);
+    // For std::vector<bool>, we need to create a temporary buffer with actual bool values
+    // since std::vector<bool> stores bits, not actual bool values
+    auto bool_buffer = std::make_shared<std::vector<uint8_t>>(data->size());
+    for (size_t i = 0; i < data->size(); ++i) {
+        (*bool_buffer)[i] = (*data)[i] ? 1 : 0;
+    }
+    view_ = tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(bool_buffer->data()), size_bytes);
+    pin_ = MemoryPin(bool_buffer);
+    type_info_ = &typeid(bool);
+}
+
 template <typename T>
 HostBuffer::HostBuffer(std::vector<T>&& data) :
     HostBuffer(std::shared_ptr<std::vector<T>>(std::make_shared<std::vector<T>>(std::move(data)))) {}
 
+// Specialization for bool
+template <>
+inline HostBuffer::HostBuffer(std::vector<bool>&& data) :
+    HostBuffer(std::shared_ptr<std::vector<bool>>(std::make_shared<std::vector<bool>>(std::move(data)))) {}
+
 template <typename T>
 HostBuffer::HostBuffer(const std::vector<T>& data) :
     HostBuffer(std::shared_ptr<std::vector<T>>(std::make_shared<std::vector<T>>(data))) {}
+
+// Specialization for bool
+template <>
+inline HostBuffer::HostBuffer(const std::vector<bool>& data) :
+    HostBuffer(std::shared_ptr<std::vector<bool>>(std::make_shared<std::vector<bool>>(data))) {}
 
 template <typename T>
 HostBuffer::HostBuffer(tt::stl::Span<T> borrowed_data, MemoryPin pin) :

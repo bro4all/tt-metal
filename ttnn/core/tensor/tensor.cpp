@@ -54,6 +54,34 @@ HostBuffer create_host_buffer_from_row_major_data(std::vector<T>&& data, const T
                : HostBuffer(tensor_impl::encode_tensor_data(tt::stl::make_const_span(data), spec, pad_value));
 }
 
+// Bool specialization to handle std::vector<bool> which doesn't have .data()
+template <>
+HostBuffer create_host_buffer_from_row_major_data(std::vector<bool>&& data, const TensorSpec& spec, bool pad_value) {
+    if (tensor_impl::logical_matches_physical(spec)) {
+        return HostBuffer(std::move(data));
+    } else {
+        // Convert bool vector to uint8_t vector for processing
+        std::vector<uint8_t> temp_data(data.size());
+        for (size_t i = 0; i < data.size(); ++i) {
+            temp_data[i] = data[i] ? 1 : 0;
+        }
+
+        // Create span from uint8_t vector
+        tt::stl::Span<const uint8_t> temp_span(temp_data.data(), temp_data.size());
+
+        // Call encode_tensor_data with uint8_t, then convert back to bool
+        auto encoded_uint8 = tensor_impl::encode_tensor_data(temp_span, spec, static_cast<uint8_t>(pad_value ? 1 : 0));
+
+        // Convert back to bool
+        std::vector<bool> encoded_bool(encoded_uint8.size());
+        for (size_t i = 0; i < encoded_uint8.size(); ++i) {
+            encoded_bool[i] = encoded_uint8[i] != 0;
+        }
+
+        return HostBuffer(std::move(encoded_bool));
+    }
+}
+
 template <typename T>
 Tensor create_tensor_from_row_major_data(
     auto&& data, const TensorSpec& spec, distributed::MeshDevice* device, ttnn::QueueId cq_id, T pad_value) {
@@ -390,6 +418,12 @@ template Tensor Tensor::from_span<uint32_t>(
     distributed::MeshDevice* device,
     ttnn::QueueId cq_id,
     uint32_t pad_value);
+template Tensor Tensor::from_span<bool>(
+    tt::stl::Span<const bool> buffer,
+    const TensorSpec& spec,
+    distributed::MeshDevice* device,
+    ttnn::QueueId cq_id,
+    bool pad_value);
 template Tensor Tensor::from_borrowed_data<float>(
     tt::stl::Span<float> buffer,
     const ttnn::Shape& shape,
@@ -417,6 +451,11 @@ template Tensor Tensor::from_borrowed_data<uint16_t>(
     const std::optional<Tile>& tile);
 template Tensor Tensor::from_borrowed_data<uint32_t>(
     tt::stl::Span<uint32_t> buffer,
+    const ttnn::Shape& shape,
+    tt::tt_metal::MemoryPin buffer_pin,
+    const std::optional<Tile>& tile);
+template Tensor Tensor::from_borrowed_data<bool>(
+    tt::stl::Span<bool> buffer,
     const ttnn::Shape& shape,
     tt::tt_metal::MemoryPin buffer_pin,
     const std::optional<Tile>& tile);
@@ -450,12 +489,19 @@ template Tensor Tensor::from_vector<uint32_t>(
     distributed::MeshDevice* device,
     ttnn::QueueId cq_id,
     uint32_t pad_value);
+template Tensor Tensor::from_vector<bool>(
+    std::vector<bool>&& buffer,
+    const TensorSpec& spec,
+    distributed::MeshDevice* device,
+    ttnn::QueueId cq_id,
+    bool pad_value);
 
 template std::vector<bfloat16> Tensor::to_vector<bfloat16>(ttnn::QueueId cq_id) const;
 template std::vector<int32_t> Tensor::to_vector<int32_t>(ttnn::QueueId cq_id) const;
 template std::vector<uint8_t> Tensor::to_vector<uint8_t>(ttnn::QueueId cq_id) const;
 template std::vector<uint16_t> Tensor::to_vector<uint16_t>(ttnn::QueueId cq_id) const;
 template std::vector<uint32_t> Tensor::to_vector<uint32_t>(ttnn::QueueId cq_id) const;
+template std::vector<bool> Tensor::to_vector<bool>(ttnn::QueueId cq_id) const;
 
 template float Tensor::item<float>(ttnn::QueueId cq_id) const;
 template bfloat16 Tensor::item<bfloat16>(ttnn::QueueId cq_id) const;
@@ -463,6 +509,7 @@ template int32_t Tensor::item<int32_t>(ttnn::QueueId cq_id) const;
 template uint8_t Tensor::item<uint8_t>(ttnn::QueueId cq_id) const;
 template uint16_t Tensor::item<uint16_t>(ttnn::QueueId cq_id) const;
 template uint32_t Tensor::item<uint32_t>(ttnn::QueueId cq_id) const;
+template bool Tensor::item<bool>(ttnn::QueueId cq_id) const;
 
 Tensor Tensor::to_device(IDevice* target_device, const MemoryConfig& mem_config, QueueId cq_id) const {
     if (auto mesh_device = dynamic_cast<distributed::MeshDevice*>(target_device)) {

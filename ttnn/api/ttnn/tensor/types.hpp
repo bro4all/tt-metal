@@ -39,14 +39,17 @@ enum class DataType {
     UINT8 = 5,
     UINT16 = 6,
     INT32 = 7,
-    INVALID = 8,
+    BOOL = 8,
+    INVALID = 9,
 };
 
 std::ostream& operator<<(std::ostream& os, const tt::tt_metal::DataType& data_type);
 
 template <typename T>
 consteval inline DataType convert_to_data_type() {
-    if constexpr (std::is_same_v<T, uint8_t>) {
+    if constexpr (std::is_same_v<T, bool>) {
+        return DataType::BOOL;
+    } else if constexpr (std::is_same_v<T, uint8_t>) {
         return DataType::UINT8;
     } else if constexpr (std::is_same_v<T, uint16_t>) {
         return DataType::UINT16;

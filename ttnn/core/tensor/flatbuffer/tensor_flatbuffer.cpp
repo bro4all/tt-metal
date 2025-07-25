@@ -79,6 +79,9 @@ tt::tt_metal::HostBuffer create_host_buffer_from_bytes(
             tt::stl::Span<bfloat16> typed_span(reinterpret_cast<bfloat16*>(data.data()), size_bytes / sizeof(bfloat16));
             return tt::tt_metal::HostBuffer(typed_span, memory_pin);
         }
+        case tt::tt_metal::DataType::BOOL:
+            // Handle BOOL appropriately (e.g., treat as uint8_t for storage)
+            break;
         case tt::tt_metal::DataType::INVALID: TT_THROW("Unsupported DataType");
     }
     TT_THROW("Unreachable");

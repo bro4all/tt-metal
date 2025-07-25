@@ -72,6 +72,7 @@ tt::tt_metal::TensorMemoryLayout from_flatbuffer(flatbuffer::TensorMemoryLayout 
 
 tt::tt_metal::DataType from_flatbuffer(flatbuffer::DataType type) {
     switch (type) {
+        case flatbuffer::DataType::Bool: return tt::tt_metal::DataType::BOOL;
         case flatbuffer::DataType::BFloat16: return tt::tt_metal::DataType::BFLOAT16;
         case flatbuffer::DataType::Float32: return tt::tt_metal::DataType::FLOAT32;
         case flatbuffer::DataType::UInt32: return tt::tt_metal::DataType::UINT32;
@@ -108,6 +109,7 @@ flatbuffer::BufferType to_flatbuffer(tt::tt_metal::BufferType type) {
 
 flatbuffer::DataType to_flatbuffer(tt::tt_metal::DataType type) {
     switch (type) {
+        case tt::tt_metal::DataType::BOOL: return flatbuffer::DataType::Bool;
         case tt::tt_metal::DataType::BFLOAT16: return flatbuffer::DataType::BFloat16;
         case tt::tt_metal::DataType::FLOAT32: return flatbuffer::DataType::Float32;
         case tt::tt_metal::DataType::UINT32: return flatbuffer::DataType::UInt32;
