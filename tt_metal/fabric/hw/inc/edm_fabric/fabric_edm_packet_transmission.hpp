@@ -141,7 +141,7 @@ void execute_chip_unicast_to_local_chip(
             auto dest_address = header.command_fields.unicast_write.noc_address;
             invalidate_l1_cache();
             bool conflict = false;
-            if (*reinterpret_cast<volatile uint32_t*>(dest_address) == 0xF0C0FFEE || conflict) {
+            if (*reinterpret_cast<volatile uint32_t*>(payload_start_address) == 0xF0C0FFEE || conflict) {
                 // Commenting this out removes hang
                 // DPRINT << "dest_address: " << (uint64_t)dest_address << "\n";
                 // dest_address = get_noc_addr(3,3,1000000, tt::tt_fabric::edm_to_local_chip_noc);
