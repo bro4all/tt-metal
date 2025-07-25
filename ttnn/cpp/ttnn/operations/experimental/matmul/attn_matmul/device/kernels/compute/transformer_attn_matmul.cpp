@@ -80,6 +80,7 @@ void MAIN {
 
                 // tilize CB::intermed2 and write to CBIndex::c_16
                 tilize_init_short_with_dt(cb_in1, cb_intermed2, onetile, out_cb_id);
+                // UNPACK(for (int i = 0; i < 100; i++){ asm volatile("nop");});
                 tilize_block(cb_intermed2, onetile, out_cb_id);
                 cb_push_back(out_cb_id, onetile);
 
@@ -88,8 +89,8 @@ void MAIN {
 
                 pack_reconfig_data_format(out_cb_id, cb_intermed0);
                 // Workaround, needs to be reverted to the following when fix is found:
-                // mm_init_short_with_dt(cb_in0, cb_in1, cb_intermed2, transpose_hw);
-                mm_init(cb_in0, cb_in1, cb_intermed0, transpose_hw);
+                mm_init_short_with_dt(cb_in0, cb_in1, cb_intermed2, transpose_hw);
+                // mm_init(cb_in0, cb_in1, cb_intermed0, transpose_hw);
             }
         }
     }
