@@ -104,12 +104,10 @@ void kernel_main() {
     // DEBUGGING
     cb_reserve_back(cb_compute_output_id, tile_granularity);
     size_t l1_read_addr = get_read_ptr(cb_compute_output_id);
-    uint64_t remote_noc0_dest_noc_addr = get_noc_addr(0, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
     if (num_targets_in_direction) {
         for (volatile uint32_t x = 0; x < 5; ++x) {
-            pkt_hdr->to_noc_unicast_write(
-                tt::tt_fabric::NocUnicastCommandHeader{remote_noc0_dest_noc_addr}, intermediate_page_size);
+            tt::tt_fabric::linear::to_noc_unicast_write(pkt_hdr, 0, intermediate_addrgen);
             dir_fabric_connection->wait_for_empty_write_slot();
             dir_fabric_connection->send_payload_without_header_non_blocking_from_address(
                 l1_read_addr, intermediate_page_size);

@@ -9,6 +9,7 @@
 #include "cpp/ttnn/operations/ccl/kernel_common/worker_sync_utils.hpp"
 #include "cpp/ttnn/operations/ccl/ccl_host_types.hpp"
 #include "cpp/ttnn/operations/ccl/shared_with_host/hetergeneous_data_structs.hpp"
+#include "tt_metal/fabric/hw/inc/linear/addrgen_api.h"
 #include "minimal_ccl_common.hpp"
 #include <cstdint>
 #include <utility>
@@ -98,11 +99,9 @@ void kernel_main() {
     // DEBUGGING
     cb_reserve_back(cb_compute_output_id, tile_granularity);
     size_t l1_read_addr = get_read_ptr(cb_compute_output_id);
-    uint64_t remote_noc0_dest_noc_addr = get_noc_addr(0, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
-    for (volatile uint32_t x = 0; x < 5; ++x) {
-        pkt_hdr->to_noc_unicast_write(
-            tt::tt_fabric::NocUnicastCommandHeader{remote_noc0_dest_noc_addr}, intermediate_page_size);
+    for (volatile uint32_t x = 0; x < 1000; ++x) {
+        tt::tt_fabric::linear::to_noc_unicast_write(pkt_hdr, 0, intermediate_addrgen);
 
         fabric_direction_connection->wait_for_empty_write_slot();
         fabric_direction_connection->send_payload_without_header_non_blocking_from_address(
