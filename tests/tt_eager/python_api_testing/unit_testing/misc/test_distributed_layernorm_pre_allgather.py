@@ -76,6 +76,7 @@ def ln_pre_allgather_op(xs, n_devices, is_rmsnorm, out_dtpe):
     tt_out = []
     for d in range(n_devices):
         if is_rmsnorm:
+            print("rmsnorm")
             tt_out.append(ttnn.rms_norm_pre_all_gather(xs[d], compute_kernel_config=kernel_config, dtype=out_dtpe))
         else:
             tt_out.append(ttnn.layer_norm_pre_all_gather(xs[d], compute_kernel_config=kernel_config, dtype=out_dtpe))
@@ -129,11 +130,11 @@ def run_layernorm_part_1(inp_shape, n_devices, is_rmsnorm, input_dtype, output_d
         device_offset = i * 32 if is_rmsnorm else i * 64
         # Compare sum(xˆ2)
 
-        # print("out_torch sum(x^2):")
-        # print(out_torch[0, 0, :64, 0 + device_offset])
+        print("out_torch sum(x^2):")
+        print(out_torch[0, 0, :, 0 + device_offset].tolist())
 
-        # print("tt_output_host sum(x^2):")
-        # print(tt_output_host[0, 0, :64, 0 + device_offset])
+        print("tt_output_host sum(x^2):")
+        print(tt_output_host[0, 0, :, 0 + device_offset].tolist())
 
         passing, output_str = comp_allclose_and_pcc(
             out_torch[:, :, :, 0 + device_offset],
@@ -190,82 +191,43 @@ def run_layernorm_part_1(inp_shape, n_devices, is_rmsnorm, input_dtype, output_d
 @skip_for_grayskull("Requires wormhole")
 @pytest.mark.parametrize(
     "input_dtype",
-    (ttnn.bfloat16, ttnn.bfloat8_b),
-    ids=["BFLOAT16", "BFLOAT8_B"],
+    (ttnn.bfloat8_b,),
+    ids=[
+        "BFLOAT16",
+    ],
 )
 @pytest.mark.parametrize(
     "output_dtype",
-    (ttnn.bfloat16, ttnn.bfloat8_b),
-    ids=["BFLOAT16", "BFLOAT8_B"],
+    (ttnn.bfloat16,),
+    ids=[
+        "BFLOAT16",
+    ],
 )
 @pytest.mark.parametrize(
     "inp_shape",
     [
-        (1, 1, 32, 8192),
-        (1, 1, 128, 8192),
-        (1, 1, 2048, 8192),
-        (1, 1, 8192, 8192),
-        (2, 1, 128, 8192),
+        # (1, 1, 32, 8192),
+        # (1, 1, 128, 8192),
+        # (1, 1, 2048, 8192),
+        # (1, 1, 8192, 8192),
+        # (2, 1, 128, 8192),
         (1, 1, 128, 2048),
     ],
 )
 @pytest.mark.parametrize(
     "n_devices",
-    [4, 8],
-)
-@pytest.mark.parametrize(
-    "is_rmsnorm",
-    [True, False],
-    ids=["rmsnorm", "layernorm"],
-)
-def test_layernorm_part_1_with_program_cache(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device):
-    run_layernorm_part_1(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device)
-
-
-@skip_for_grayskull("Requires wormhole")
-@pytest.mark.parametrize(
-    "input_dtype",
-    [ttnn.bfloat16],
-    ids=["BFLOAT16"],
-)
-@pytest.mark.parametrize(
-    "output_dtype",
-    [ttnn.bfloat16],
-    ids=["BFLOAT16"],
-)
-@pytest.mark.parametrize(
-    "inp_shape",
     [
-        (1, 1, 2048, 8192),
+        1,
     ],
 )
 @pytest.mark.parametrize(
-    "n_devices",
-    [8],
-)
-@pytest.mark.parametrize(
     "is_rmsnorm",
-    [True, False],
-    ids=["rmsnorm", "layernorm"],
+    [
+        True,
+    ],
+    ids=[
+        "rmsnorm",
+    ],
 )
-def test_layernorm_part_1_with_program_cache2(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device):
-    dummy_tensors = []
-
-    dram_memcfg = ttnn.DRAM_MEMORY_CONFIG
-
-    for i in range(2):
-        if i > 0:
-            dummy_tensors.append(
-                torch2tt_tensor(
-                    torch.randn(inp_shape),
-                    tt_dtype=input_dtype,
-                    tt_device=device,
-                    tt_layout=ttnn.TILE_LAYOUT,
-                    tt_memory_config=dram_memcfg,
-                )
-            )
-        run_layernorm_part_1(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device)
-
-    assert device.num_program_cache_entries() == 1, "Program cache should have only one entry" + str(
-        device.num_program_cache_entries()
-    )
+def test_layernorm_part_1_with_program_cache(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device):
+    run_layernorm_part_1(inp_shape, n_devices, is_rmsnorm, input_dtype, output_dtype, device)

@@ -68,13 +68,15 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
     const uint32_t tile_cols_per_device = is_rmsnorm ? 1 : 2;
 
     uint32_t num_tile_rows = NC * Ht;
+    uint32_t num_tile_cols = Wt;
 
-    log_debug(tt::LogOp, "is_rmsnorm: {}", is_rmsnorm);
-    log_debug(tt::LogOp, "W: {}", W);
-    log_debug(tt::LogOp, "H: {}", H);
-    log_debug(tt::LogOp, "num_tile_rows: {}", num_tile_rows);
-    log_debug(tt::LogOp, "Wt: {}", Wt);
-    log_debug(tt::LogOp, "Ht: {}", Ht);
+    log_info(tt::LogOp, "is_rmsnorm: {}", is_rmsnorm);
+    log_info(tt::LogOp, "W: {}", W);
+    log_info(tt::LogOp, "H: {}", H);
+    log_info(tt::LogOp, "num_tile_rows: {}", num_tile_rows);
+    log_info(tt::LogOp, "num_tile_cols: {}", num_tile_cols);
+    log_info(tt::LogOp, "Wt: {}", Wt);
+    log_info(tt::LogOp, "Ht: {}", Ht);
 
     ////////////////////////////////////////////////////////////////////////////
     //                       Device Setup
@@ -98,8 +100,9 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
     uint32_t single_tile_size = tt::tt_metal::detail::TileSize(cb_data_format);
     uint32_t bfloat16_tile_size = tt::tt_metal::detail::TileSize(tt::DataFormat::Float16_b);
 
-    log_debug(tt::LogOp, "in_data_format: {}", in_data_format);
-    log_debug(tt::LogOp, "out_data_format: {}", out_data_format);
+    log_info(tt::LogOp, "in_data_format: {}", in_data_format);
+    log_info(tt::LogOp, "out_data_format: {}", out_data_format);
+    log_info(tt::LogOp, "bfloat16_tile_size: {}", bfloat16_tile_size);
 
     tt::DataFormat inb_data_format = tt::DataFormat::Invalid;
     uint32_t inb_single_tile_size = 0;
@@ -152,30 +155,46 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
         block_size);
 
     auto grid_size = device->compute_with_storage_grid_size();
-    auto
-        [num_cores,
-         all_cores,
-         core_group_1,
-         core_group_2,
-         num_tile_rows_per_core_group_1,
-         num_tile_rows_per_core_group_2] = tt::tt_metal::split_work_to_cores(grid_size, num_tile_rows, true);
 
-    log_debug(tt::LogOp, "num_cores: {}", num_cores);
-    log_debug(tt::LogOp, "grid_size: {}", grid_size);
-    log_debug(tt::LogOp, "core_group_1: {}", core_group_1.str());
-    log_debug(tt::LogOp, "num_tile_rows_per_core_group_1: {}", num_tile_rows_per_core_group_1);
-    log_debug(tt::LogOp, "core_group_2: {}", core_group_2.str());
-    log_debug(tt::LogOp, "num_tile_rows_per_core_group_2: {}", num_tile_rows_per_core_group_2);
+    uint32_t max_cores_y = grid_size.y;
+    uint32_t max_cores_x = grid_size.x;
+    uint32_t cores_x = std::min(max_cores_y, num_tile_rows);
+    while (num_tile_rows % cores_x != 0 && cores_x > 1) {
+        cores_x--;
+    }
+    uint32_t tiles_per_core_x = num_tile_rows / cores_x;
+    uint32_t cores_y = std::min(max_cores_y, Wt);
+    while (Wt % cores_y != 0 && cores_y > 1) {
+        cores_y--;
+    }
+    uint32_t tiles_per_core_y = Wt / cores_y;
+
+    CoreRange all_cores_range({0, 0}, {cores_x - 1, cores_y - 1});
+    CoreRangeSet all_cores = CoreRangeSet(std::vector{all_cores_range});
+    auto cores = corerange_to_cores(all_cores, std::nullopt);
+
+    std::vector<CoreRange> merge_core_ranges_vec;  // Renamed to avoid conflict
+    for (uint32_t x = 0; x < cores_x; ++x) {
+        CoreCoord merge_core = {x, 0};
+        merge_core_ranges_vec.push_back(CoreRange(merge_core, merge_core));
+    }
+    CoreRangeSet merge_cores(merge_core_ranges_vec);
+
+    log_info(tt::LogOp, "all_cores: {}", all_cores);
+    log_info(tt::LogOp, "merge_cores: {}", merge_cores);
 
     ////////////////////////////////////////////////////////////////////////////
     //                      Application Setup
     ////////////////////////////////////////////////////////////////////////////
     Program program = CreateProgram();
+    auto reducer_semaphore_id = tt::tt_metal::CreateSemaphore(program, all_cores, 0);
 
     std::vector<uint32_t> reader_compile_time_args = {
         // interleaved accessor args
         (std::uint32_t)is_dram(a),
         (std::uint32_t)block_size,
+        (std::uint32_t)reducer_semaphore_id,
+        (std::uint32_t)cores_y,
     };
 
     std::vector<uint32_t> writer_compile_time_args = {// interleaved accessor args
@@ -200,10 +219,10 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
         program,
         "ttnn/cpp/ttnn/operations/normalization/layernorm_distributed/device/kernels/dataflow/"
         "writer_unary_interleaved_start_id_blocked.cpp",
-        all_cores,
+        merge_cores,
         tt::tt_metal::WriterDataMovementConfig(writer_compile_time_args));
 
-    std::vector<uint32_t> compute_args = {Wt, block_size};
+    std::vector<uint32_t> compute_args = {tiles_per_core_x, tiles_per_core_y, block_size, cores_y};
 
     auto compute_kernels_id = CreateKernel(
         program,
@@ -236,51 +255,69 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
             .set_page_size(tt::CBIndex::c_6, single_tile_size);
     CreateCircularBuffer(program, all_cores, cb_intermed0_config);
 
+    CircularBufferConfig cb_intermed1_config =
+        CircularBufferConfig(tiles_per_core_y * single_tile_size, {{tt::CBIndex::c_15, cb_data_format}})
+            .set_page_size(tt::CBIndex::c_15, single_tile_size);
+    CreateCircularBuffer(program, all_cores, cb_intermed1_config);
+
     CircularBufferConfig cb_out0_config =
         CircularBufferConfig(out0_tiles * out_single_tile_size, {{tt::CBIndex::c_14, out_data_format}})
             .set_page_size(tt::CBIndex::c_14, out_single_tile_size);
     CreateCircularBuffer(program, all_cores, cb_out0_config);
 
+    CircularBufferConfig cb_out_final_config =
+        CircularBufferConfig(out0_tiles * out_single_tile_size, {{tt::CBIndex::c_16, out_data_format}})
+            .set_page_size(tt::CBIndex::c_16, out_single_tile_size);
+    CreateCircularBuffer(program, merge_cores, cb_out_final_config);
+
     // Log all circular buffers with program.circular_buffers(), which returns
     // std::vector<std::shared_ptr<CircularBuffer>>
     for (const auto& cb : program.circular_buffers()) {
         for (const auto index : cb->buffer_indices()) {
-            log_debug(tt::LogOp, "cb_id {}", index);
-            log_debug(tt::LogOp, "page_size: {}", cb->page_size(index));
-            log_debug(tt::LogOp, "num_pages: {}", cb->num_pages(index));
-            log_debug(tt::LogOp, "data_format: {}", cb->data_format(index));
+            log_info(tt::LogOp, "cb_id {}", index);
+            log_info(tt::LogOp, "page_size: {}", cb->page_size(index));
+            log_info(tt::LogOp, "num_pages: {}", cb->num_pages(index));
+            log_info(tt::LogOp, "data_format: {}", cb->data_format(index));
         }
     }
 
-    uint32_t curr_row = 0;
     float winv = 1.0f;
     auto bfloat_winv_value = bfloat16(winv);
     uint32_t packed_winv_value = pack_two_bfloat16_into_uint32({bfloat_winv_value, bfloat_winv_value});
-    for (uint32_t i = 0; i < num_cores; ++i) {
-        CoreCoord core = {i % grid_size.x, i / grid_size.x};
+    for (uint32_t x = 0; x < cores_x; ++x) {
+        for (uint32_t y = 0; y < cores_y; ++y) {
+            CoreCoord core = {x, y};
+            bool is_merge_core = y == 0;
+            const auto merge_core = device->worker_core_from_logical_core({x, 0});
 
-        uint32_t num_tile_rows_per_core = 0;
-        if (core_group_1.contains(core)) {
-            num_tile_rows_per_core = num_tile_rows_per_core_group_1;
-        } else if (core_group_2.contains(core)) {
-            num_tile_rows_per_core = num_tile_rows_per_core_group_2;
-        } else {
-            TT_THROW("Core not in specified core ranges");
+            uint32_t num_tile_rows_per_core = tiles_per_core_x;
+
+            uint32_t in_tile_offset = x * Wt + y * tiles_per_core_y;
+            uint32_t out_tile_offset = x * out0_tiles;
+
+            SetRuntimeArgs(
+                program,
+                reader_kernels_id,
+                core,
+                {a_addr,
+                 tiles_per_core_x,
+                 tiles_per_core_y,
+                 in_tile_offset,
+                 is_merge_core,
+                 merge_core.x,
+                 merge_core.y,
+                 y,
+                 packed_winv_value});
+            SetRuntimeArgs(program, compute_kernels_id, core, {is_merge_core});
+            if (is_merge_core) {
+                SetRuntimeArgs(
+                    program, writer_kernels_id, core, {dst_addr, num_tile_rows_per_core * out0_tiles, out_tile_offset});
+            }
         }
-
-        uint32_t in_tile_offset = curr_row * Wt;
-        uint32_t out_tile_offset = curr_row * out0_tiles;
-
-        SetRuntimeArgs(
-            program, reader_kernels_id, core, {a_addr, num_tile_rows_per_core, Wt, in_tile_offset, packed_winv_value});
-        SetRuntimeArgs(program, compute_kernels_id, core, {num_tile_rows_per_core});
-        SetRuntimeArgs(
-            program, writer_kernels_id, core, {dst_addr, num_tile_rows_per_core * out0_tiles, out_tile_offset});
-        curr_row += num_tile_rows_per_core;
     }
 
     auto override_runtime_arguments_callback =
-        [reader_kernel_id = reader_kernels_id, writer_kernel_id = writer_kernels_id, num_cores, grid_size](
+        [reader_kernel_id = reader_kernels_id, writer_kernel_id = writer_kernels_id, cores](
             const void* operation,
             Program& program,
             const std::vector<Tensor>& input_tensors,
@@ -296,9 +333,7 @@ operation::ProgramWithCallbacks layernorm_pre_allgather_multi_core(
             auto& reader_runtime_args_by_core = GetRuntimeArgs(program, reader_kernel_id);
             auto& writer_runtime_args_by_core = GetRuntimeArgs(program, writer_kernel_id);
 
-            for (uint32_t i = 0; i < num_cores; ++i) {
-                const CoreCoord core = {i % grid_size.x, i / grid_size.x};
-
+            for (const auto& core : cores) {
                 {
                     auto& reader_args = reader_runtime_args_by_core.at(core.x).at(core.y);
 
