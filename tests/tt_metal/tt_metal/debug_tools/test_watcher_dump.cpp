@@ -88,6 +88,115 @@ namespace CMAKE_UNIQUE_NAMESPACE {
 }
 }
 
+//--------------------------------
+
+std::vector<std::string> expected = {
+    "debug_ring_buffer=",
+    "[0x00270028,0x00260027,0x00250026,0x00240025,0x00230024,0x00220023,0x00210022,0x00200021,",
+    " 0x001f0020,0x001e001f,0x001d001e,0x001c001d,0x001b001c,0x001a001b,0x0019001a,0x00180019,",
+    " 0x00170018,0x00160017,0x00150016,0x00140015,0x00130014,0x00120013,0x00110012,0x00100011,",
+    " 0x000f0010,0x000e000f,0x000d000e,0x000c000d,0x000b000c,0x000a000b,0x0009000a,0x00080009,",
+    "]"
+};
+
+namespace CMAKE_UNIQUE_NAMESPACE_2 {
+static void RunTest(WatcherFixture *fixture, IDevice* device, riscv_id_t riscv_type) {
+    // Set up program
+    Program program = Program();
+
+    // Depending on riscv type, choose one core to run the test on.
+    CoreCoord logical_core, virtual_core;
+    if (riscv_type == DebugErisc) {
+        if (device->get_active_ethernet_cores(true).empty()) {
+            log_info(LogTest, "Skipping this test since device has no active ethernet cores.");
+            GTEST_SKIP();
+        }
+        logical_core = *(device->get_active_ethernet_cores(true).begin());
+        virtual_core = device->ethernet_core_from_logical_core(logical_core);
+    } else if (riscv_type == DebugIErisc) {
+        if (device->get_inactive_ethernet_cores().empty()) {
+            log_info(LogTest, "Skipping this test since device has no inactive ethernet cores.");
+            GTEST_SKIP();
+        }
+        logical_core = *(device->get_inactive_ethernet_cores().begin());
+        virtual_core = device->ethernet_core_from_logical_core(logical_core);
+    } else {
+        logical_core = CoreCoord{0, 0};
+        virtual_core = device->worker_core_from_logical_core(logical_core);
+    }
+    log_info(LogTest, "Running test on device {} core {}[{}]...", device->id(), logical_core, virtual_core);
+
+    // Set up the kernel on the correct risc
+    switch(riscv_type) {
+        case DebugBrisc:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                DataMovementConfig{
+                    .processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default});
+            break;
+        case DebugNCrisc:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                DataMovementConfig{
+                    .processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default});
+            break;
+        case DebugTrisc0:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                ComputeConfig{.defines = {{"TRISC0", "1"}}});
+            break;
+        case DebugTrisc1:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                ComputeConfig{.defines = {{"TRISC1", "1"}}});
+            break;
+        case DebugTrisc2:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                ComputeConfig{.defines = {{"TRISC2", "1"}}});
+            break;
+        case DebugErisc:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                EthernetConfig{.noc = tt_metal::NOC::NOC_0});
+            break;
+        case DebugIErisc:
+            CreateKernel(
+                program,
+                "tests/tt_metal/tt_metal/test_kernels/misc/watcher_ringbuf.cpp",
+                logical_core,
+                EthernetConfig{.eth_mode = Eth::IDLE, .noc = tt_metal::NOC::NOC_0});
+            break;
+        default: log_info(tt::LogTest, "Unsupported risc type: {}, skipping test...", riscv_type); GTEST_SKIP();
+    }
+
+    // Run the program
+    fixture->RunProgram(device, program, true);
+
+    log_info(tt::LogTest, "Checking file: {}", fixture->log_file_name);
+
+    // Check log
+    EXPECT_TRUE(
+        FileContainsAllStringsInOrder(
+            fixture->log_file_name,
+            expected
+        )
+    );
+}
+}
+
 
 // Helper to get the directory of the currently running executable
 std::string get_executable_dir() {
@@ -141,6 +250,12 @@ TEST_F(DPrintFixture, TensixTestPrintHanging) {
     setenv("TT_METAL_WATCHER_KEEP_ERRORS", "1", 1);
 
     this->RunTestOnDevice(CMAKE_UNIQUE_NAMESPACE::RunTest, this->devices_[0]);
+    this->TearDown();
+
+    // Clear watcher state to ensure clean state between tests
+    if (MetalContext::instance().watcher_server()) {
+        MetalContext::instance().watcher_server()->clear_log();
+    }
 
     // Find watcher_dump executable
     std::string watcher_dump_path = find_watcher_dump(std::string(BUILD_ROOT_DIR) + "/tools");
@@ -170,10 +285,59 @@ TEST_F(DPrintFixture, TensixTestPrintHanging) {
     ASSERT_TRUE(found) << "Error: couldn't find expected string in watcher log after dump: " << expected_str;
 
     std::cout << "Tearing down and reinitializing" << std::endl;
-    this->ShutdownAllCores();
+
+    tt::tt_metal::MetalContext::instance().teardown();
 
     MetalContext::instance().reinitialize();
 
     // Clean up
-    //std::filesystem::remove(watcher_log_path);
+    std::filesystem::remove(watcher_log_path);
+    unsetenv("TT_METAL_WATCHER_KEEP_ERRORS");
+}
+
+
+TEST_F(WatcherFixture, TestWatcherRingBufferBrisc) {
+    using namespace CMAKE_UNIQUE_NAMESPACE_2;
+    for (IDevice* device : this->devices_) {
+        this->RunTestOnDevice(
+            [](WatcherFixture *fixture, IDevice* device){RunTest(fixture, device, DebugBrisc);},
+            device
+        );
+    }
+    this->TearDown();
+
+    // Find watcher_dump executable
+    std::string watcher_dump_path = find_watcher_dump(std::string(BUILD_ROOT_DIR) + "/tools");
+
+    // Run watcher_dump tool using filesystem
+    std::string command = watcher_dump_path + " -d=0 -w";
+    int result = std::system(command.c_str());
+    ASSERT_EQ(result, 0) << "watcher_dump failed with exit code: " << result;
+
+    std::cout << "we managed to get past the watcher_dump tool" << std::endl;
+
+    // Check watcher log file
+    std::string watcher_log_path = "generated/watcher/watcher.log";
+    std::ifstream watcher_log(watcher_log_path);
+    ASSERT_TRUE(watcher_log.is_open()) << "Failed to open watcher log: " << watcher_log_path;
+
+    std::string line;
+    bool found = false;
+    const std::string expected_str = "brisc highest stack usage:";
+    while (std::getline(watcher_log, line)) {
+        if (line.find(expected_str) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    watcher_log.close();
+    ASSERT_TRUE(found) << "Error: couldn't find expected string in watcher log after dump: " << expected_str;
+
+    std::cout << "Tearing down and reinitializing" << std::endl;
+    //this->ShutdownAllCores();
+
+    tt::tt_metal::MetalContext::instance().teardown();
+
+    MetalContext::instance().reinitialize();
+
 }

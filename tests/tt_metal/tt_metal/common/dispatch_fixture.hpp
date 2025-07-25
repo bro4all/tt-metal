@@ -16,6 +16,7 @@
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/device_pool.hpp>
 #include "llrt.hpp"
+#include <tt-logger/tt-logger.hpp>
 
 namespace tt::tt_metal {
 
