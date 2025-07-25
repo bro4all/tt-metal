@@ -18,6 +18,12 @@ runs:
         export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_${{ inputs.model_name }}_$(date +%Y_%m_%d).csv
         python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME ${{ inputs.model_name }}
         echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
+        exit 1
       shell: bash
       env:
         TRACY_NO_INVARIANT_CHECK: 1
+    - uses: ./.github/actions/slack-report
+      if: ${{ failure() }}
+      with:
+        slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        owner: U084DCKE0B0
