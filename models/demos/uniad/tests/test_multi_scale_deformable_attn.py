@@ -63,6 +63,7 @@ def multi_scale_deformable_attn_pytorch(
         w_l = int(w_l.item())
         value_l = value_list[lvl].permute(0, 2, 3, 1).reshape(bs * num_heads, head_dim, h_l, w_l)
         grid = sampling_grids[lvl].permute(0, 2, 1, 3, 4).reshape(bs * num_heads, num_queries * num_points, 1, 2)
+        # print("value_l.shape", value_l.shape, "grid.shape", grid.shape)
         sampled = F.grid_sample(value_l, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
         sampled = sampled.view(bs, num_heads, head_dim, num_queries, num_points).permute(0, 3, 1, 4, 2)
         attn = attention_weights[:, :, :, lvl, :].unsqueeze(-1)
@@ -117,8 +118,16 @@ def multi_scale_deformable_attn_ttnn(
         w_l = int(w_l.item())
         grid = sampling_locations_ttnn[:, :, :, lvl, :, :]
         grid = ttnn.clone(grid)
-        grid[..., 0] = grid[..., 0] / w_l * 2 - 1
-        grid[..., 1] = grid[..., 1] / h_l * 2 - 1
+        grid_slice_0 = grid[..., 0]
+        grid_slice_0 = ttnn.divide(grid_slice_0, w_l)
+        grid_slice_0 = ttnn.multiply(grid_slice_0, 2)
+        grid_slice_0 = ttnn.subtract(grid_slice_0, 1)
+        grid_slice_1 = grid[..., 1]
+        grid_slice_1 = ttnn.divide(grid_slice_1, h_l)
+        grid_slice_1 = ttnn.multiply(grid_slice_1, 2)
+        grid_slice_1 = ttnn.subtract(grid_slice_1, 1)
+        grid[..., 0] = grid_slice_0
+        grid[..., 1] = grid_slice_1
         sampling_grids.append(grid)
 
     # Create output tensor using ttnn
@@ -174,12 +183,25 @@ def test_multi_scale_deformable_attn_ttnn(device):
     """
     torch.manual_seed(0)
 
-    value = torch.randn(2, 40000, 8, 32)
-    spatial_shapes = torch.rand(1, 2)
-    level_start_index = torch.rand(1)
-    sampling_locations = torch.rand(2, 40000, 8, 1, 4, 2)
-    attention_weights = torch.rand(2, 40000, 8, 1, 4)
-    im2col_step = torch.rand(2)
+    # Create test spatial shapes - using a single level with 200x200 spatial dimensions to get 40000 total keys
+    spatial_shapes = torch.tensor([[200, 200]], dtype=torch.long)  # 200x200 = 40000
+    total_keys = 40000
+
+    # Create test tensors with exact expected shapes
+    value = torch.randn(2, total_keys, 8, 32, dtype=torch.float32)
+    level_start_index = torch.tensor([0], dtype=torch.long)  # Single level, so start index is 0
+    sampling_locations = torch.rand(2, total_keys, 8, 1, 4, 2, dtype=torch.float32)
+    attention_weights = torch.rand(2, total_keys, 8, 1, 4, dtype=torch.float32)
+    im2col_step = torch.tensor([64])
+
+    # Normalize attention weights to sum to 1
+    attention_weights = attention_weights / attention_weights.sum(dim=-1, keepdim=True).sum(dim=-2, keepdim=True)
+
+    # Scale sampling locations to valid ranges
+    for lvl in range(spatial_shapes.shape[0]):
+        h, w = spatial_shapes[lvl].tolist()
+        sampling_locations[:, :, :, lvl, :, 0] *= w
+        sampling_locations[:, :, :, lvl, :, 1] *= h
     print("value.shape", value.shape, "value.dtype", value.dtype)
 
     # Run PyTorch reference implementation
