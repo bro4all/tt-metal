@@ -106,6 +106,7 @@ void kernel_main() {
     size_t l1_read_addr = get_read_ptr(cb_compute_output_id);
 
     if (num_targets_in_direction) {
+        DPRINT << "LINE WRITER\n";
         for (volatile uint32_t x = 0; x < 5; ++x) {
             tt::tt_fabric::linear::to_noc_unicast_write(pkt_hdr, 0, intermediate_addrgen);
             dir_fabric_connection->wait_for_empty_write_slot();

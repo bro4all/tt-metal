@@ -31,6 +31,7 @@ FORCE_INLINE void to_noc_unicast_write(
     pkt_hdr->noc_send_type = NOC_UNICAST_WRITE;
 
     pkt_hdr->command_fields.unicast_write.noc_address = d.get_noc_addr(id, offset, edm_to_local_chip_noc);
+    // DPRINT << "noc_address: " << HEX() << (uint64_t)pkt_hdr->command_fields.unicast_write.noc_address << "\n";
     pkt_hdr->payload_size_bytes = addrgen_detail::get_page_size(d);
 }
 

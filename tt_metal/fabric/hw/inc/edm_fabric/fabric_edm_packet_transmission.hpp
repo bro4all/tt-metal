@@ -8,6 +8,7 @@
 #include "fabric_edm_packet_header.hpp"
 #include "edm_fabric_worker_adapters.hpp"
 #include "fabric_edm_types.hpp"
+#include "risc_common.h"
 #include "tt_metal/fabric/hw/inc/edm_fabric/1d_fabric_constants.hpp"
 #include <cstdint>
 
@@ -119,34 +120,49 @@ FORCE_INLINE void flush_write_to_noc_pipeline(uint8_t rx_channel_id) {
 
 // Since we unicast to local, we must omit the packet header
 // This function only does reads, and within scope there are no modifications to the packet header
-__attribute__((optimize("jump-tables")))
+// __attribute__((optimize("jump-tables")))
 #ifndef FABRIC_2D
-FORCE_INLINE
+// FORCE_INLINE
 #endif
-    void
-    execute_chip_unicast_to_local_chip(
-        tt_l1_ptr PACKET_HEADER_TYPE* const packet_start,
-        uint16_t payload_size_bytes,
-        uint32_t transaction_id,
-        uint8_t rx_channel_id) {
+void execute_chip_unicast_to_local_chip(
+    volatile tt_l1_ptr PACKET_HEADER_TYPE* const packet_start,
+    uint16_t payload_size_bytes,
+    uint32_t transaction_id,
+    uint8_t rx_channel_id) {
     const auto& header = *packet_start;
     uint32_t payload_start_address = reinterpret_cast<size_t>(packet_start) + sizeof(PACKET_HEADER_TYPE);
 
     tt::tt_fabric::NocSendType noc_send_type = header.noc_send_type;
-    if (noc_send_type > tt::tt_fabric::NocSendType::NOC_SEND_TYPE_LAST) {
-        __builtin_unreachable();
-    }
+    // if (noc_send_type > tt::tt_fabric::NocSendType::NOC_SEND_TYPE_LAST) {
+    //     __builtin_unreachable();
+    // }
     switch (noc_send_type) {
         case tt::tt_fabric::NocSendType::NOC_UNICAST_WRITE: {
-            const auto dest_address = header.command_fields.unicast_write.noc_address;
-            noc_async_write_one_packet_with_trid<false, false>(
-                payload_start_address,
-                dest_address,
-                payload_size_bytes,
-                transaction_id,
-                tt::tt_fabric::local_chip_data_cmd_buf,
-                tt::tt_fabric::edm_to_local_chip_noc,
-                tt::tt_fabric::forward_and_local_write_noc_vc);
+            auto dest_address = header.command_fields.unicast_write.noc_address;
+            invalidate_l1_cache();
+            bool conflict = false;
+            if (*reinterpret_cast<volatile uint32_t*>(dest_address) == 0xF0C0FFEE || conflict) {
+                // Commenting this out removes hang
+                // DPRINT << "dest_address: " << (uint64_t)dest_address << "\n";
+                // dest_address = get_noc_addr(3,3,1000000, tt::tt_fabric::edm_to_local_chip_noc);
+                conflict = true;
+            }
+            if (dest_address >> 32 == 0x3110) {
+                // Commenting this out does nothing
+
+                conflict = true;
+            }
+            if (!conflict) {
+                // DPRINT << "snd pkt\n";
+                noc_async_write_one_packet_with_trid<false, false>(
+                    payload_start_address,
+                    dest_address,
+                    payload_size_bytes,
+                    transaction_id,
+                    tt::tt_fabric::local_chip_data_cmd_buf,
+                    tt::tt_fabric::edm_to_local_chip_noc,
+                    tt::tt_fabric::forward_and_local_write_noc_vc);
+            }
         } break;
 
         case tt::tt_fabric::NocSendType::NOC_UNICAST_ATOMIC_INC: {

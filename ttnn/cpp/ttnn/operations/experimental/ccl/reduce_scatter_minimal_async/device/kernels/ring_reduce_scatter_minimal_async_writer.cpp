@@ -99,13 +99,21 @@ void kernel_main() {
     // DEBUGGING
     cb_reserve_back(cb_compute_output_id, tile_granularity);
     size_t l1_read_addr = get_read_ptr(cb_compute_output_id);
+    for (size_t i = 0; i < 32; ++i) {
+        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[0] = 0xF0C0FFEE;
+        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[1] = 0xF0C0FFEE;
+    }
 
+    DPRINT << "my_y: " << (uint32_t)my_y[0] << ", my_x: " << (uint32_t)my_x[0] << "\n";
+    // DPRINT << "RING WRITER\n";
     for (volatile uint32_t x = 0; x < 1000; ++x) {
         tt::tt_fabric::linear::to_noc_unicast_write(pkt_hdr, 0, intermediate_addrgen);
 
         fabric_direction_connection->wait_for_empty_write_slot();
+
         fabric_direction_connection->send_payload_without_header_non_blocking_from_address(
             l1_read_addr, intermediate_page_size);
+
         fabric_direction_connection->send_payload_flush_non_blocking_from_address(
             (uint32_t)pkt_hdr, sizeof(PACKET_HEADER_TYPE));
         noc_async_writes_flushed();
