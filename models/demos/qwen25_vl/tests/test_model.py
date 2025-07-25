@@ -11,6 +11,7 @@ import ttnn
 from models.demos.qwen25_vl.reference.functional import qwen2_5_vision_transformer_preprocess
 from models.demos.qwen25_vl.tt.model import VisionTransformer
 from models.demos.qwen25_vl.tt.model_config import VisionModelArgs
+from models.perf.benchmarking_utils import BenchmarkProfiler
 from models.tt_transformers.tt.load_checkpoints import (
     convert_hf_to_meta,
     convert_rope_style_hf_to_meta,
@@ -133,18 +134,23 @@ def test_vision_model_inference(
     tt_input = tt_model.prepare_input(patch_input, window_index)
 
     # Run TT model
+    cu_window_seqlens_tt = ttnn.from_torch(
+        cu_window_seqlens,
+        dtype=ttnn.uint32,
+        layout=ttnn.ROW_MAJOR_LAYOUT,
+        device=mesh_device,
+    )
+    profiler = BenchmarkProfiler()
+    profiler.start("run")
     tt_out = tt_model(
         tt_input,
         unpadded_seq_len=ref_seq_len,
         cu_seqlens=ttnn.from_torch(cu_seqlens, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT, device=mesh_device),
-        cu_window_seqlens=ttnn.from_torch(
-            cu_window_seqlens,
-            dtype=ttnn.uint32,
-            layout=ttnn.ROW_MAJOR_LAYOUT,
-            device=mesh_device,
-        ),
+        cu_window_seqlens=cu_window_seqlens_tt,
         rot_mats=rot_mats,
     )
+    profiler.end("run")
+    logger.info(f"tt_model.forward() time: {profiler.get_duration('run')}")
 
     # Run reference model
     reference_output = reference_model(pt_pixel_values, image_grid_thw)
