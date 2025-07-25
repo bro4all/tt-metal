@@ -141,4 +141,39 @@ TEST_F(DPrintFixture, TensixTestPrintHanging) {
     setenv("TT_METAL_WATCHER_KEEP_ERRORS", "1", 1);
 
     this->RunTestOnDevice(CMAKE_UNIQUE_NAMESPACE::RunTest, this->devices_[0]);
+
+    // Find watcher_dump executable
+    std::string watcher_dump_path = find_watcher_dump(std::string(BUILD_ROOT_DIR) + "/tools");
+
+    // Run watcher_dump tool using filesystem
+    std::string command = watcher_dump_path + " -d=0 -w -c";
+    int result = std::system(command.c_str());
+    ASSERT_EQ(result, 0) << "watcher_dump failed with exit code: " << result;
+
+    std::cout << "we managed to get past the watcher_dump tool" << std::endl;
+
+    // Check watcher log file
+    std::string watcher_log_path = "generated/watcher/watcher.log";
+    std::ifstream watcher_log(watcher_log_path);
+    ASSERT_TRUE(watcher_log.is_open()) << "Failed to open watcher log: " << watcher_log_path;
+
+    std::string line;
+    bool found = false;
+    const std::string expected_str = "tests/tt_metal/tt_metal/test_kernels/misc/print_hang.cpp";
+    while (std::getline(watcher_log, line)) {
+        if (line.find(expected_str) != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    watcher_log.close();
+    ASSERT_TRUE(found) << "Error: couldn't find expected string in watcher log after dump: " << expected_str;
+
+    std::cout << "Tearing down and reinitializing" << std::endl;
+    this->ShutdownAllCores();
+
+    MetalContext::instance().reinitialize();
+
+    // Clean up
+    //std::filesystem::remove(watcher_log_path);
 }
