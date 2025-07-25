@@ -179,15 +179,8 @@ void kernel_main() {
                                     pages_read_in_row = 0;
                                 }
 
-                                uint64_t remote_noc0_dest_noc_addr =
-                                    get_noc_addr(tile_id, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
-
                                 write_and_advance_local_read_address_for_fabric(
-                                    remote_noc0_dest_noc_addr,
-                                    pkt_hdr,
-                                    fabric_direction_connection,
-                                    l1_read_addr,
-                                    intermediate_page_size);
+                                    tile_id, intermediate_addrgen, pkt_hdr, fabric_direction_connection, l1_read_addr);
                                 tiles_read++;
                                 tiles_read_in_current_direction++;
                                 break;
