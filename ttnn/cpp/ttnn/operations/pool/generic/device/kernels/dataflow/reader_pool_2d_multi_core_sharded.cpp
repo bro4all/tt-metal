@@ -170,8 +170,11 @@ void kernel_main() {
         cb_push_back(in_scalar_cb_id_0, 1);
     }
 
-    for (uint32_t i = 0; i < 2; i++) {
-        fill_with_val(get_write_ptr(weight_cb_id), TILE_HEIGHT * TILE_WIDTH, 0x3f80);
+    if constexpr (reader_id == 0) {
+        fill_with_val(get_write_ptr(weight_cb_id), TILE_HEIGHT * TILE_WIDTH / 4, 0x3f80);
+    } else {
+        fill_with_val(
+            get_write_ptr(weight_cb_id) + (TILE_HEIGHT * TILE_WIDTH) / 4, TILE_HEIGHT * TILE_WIDTH / 4, 0x3f80);
     }
 
     constexpr uint32_t window_hw = window_h * window_w;

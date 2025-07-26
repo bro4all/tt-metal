@@ -25,21 +25,11 @@ inline void eltwise_mul_tiles(
     const uint32_t weight_cb_id,
     const uint32_t in_stick_index,
     const uint32_t mul_cb_id) {
-    DeviceZoneScopedN("eltwise_mul_tiles init");
-    // uint64_t start_cycles = read_wall_clock();
-    // PACK(( DPRINT << "start_cycles: " << start_cycles << ENDL() ));
     const uint32_t curr_in_cb_id = (split_reader && (in_stick_index & 0x1)) ? in_cb_id_1 : in_cb_id_0;
     cb_reserve_back(mul_cb_id, num_pages_to_8);  // packer zabo
-    {
-        DeviceZoneScopedN("eltwise_mul_tiles init");
-        UNPACK((llk_unpack_tilize_uninit(curr_in_cb_id)));
-        PACK((pack_untilize_uninit(mul_cb_id)));
-        mul_tiles_init(curr_in_cb_id, weight_cb_id);
-    }
-    // uint64_t end_cycles = read_wall_clock();
-    // uint64_t elapsed_cycles = end_cycles - start_cycles;
-    // PACK(( DPRINT << "end_cycles: " << end_cycles << ENDL() ));
-    // PACK(( DPRINT << "  Init took " << elapsed_cycles << " cycles" << ENDL() ));
+    UNPACK((llk_unpack_tilize_uninit(curr_in_cb_id)));
+    PACK((pack_untilize_uninit(mul_cb_id)));
+    mul_tiles_init(curr_in_cb_id, weight_cb_id);
 
     for (uint32_t j = 0; j < num_pages_to_8; j++) {
         // uint64_t start_cycles_loop = read_wall_clock();
@@ -47,34 +37,25 @@ inline void eltwise_mul_tiles(
             // uint64_t start_cycles_wait = read_wall_clock();
             cb_wait_front(curr_in_cb_id, 1);  // unpacker zabo
 
-            // UNPACK(( DPRINT << "now it is tile number: " << j << ENDL() ));
-            // UNPACK(( tt::compute::common::print_full_tile(weight_cb_id, 0) ));
-
             tile_regs_acquire();
 
-            // UNPACK(( tt::compute::common::print_full_tile(weight_cb_id, i) ));
             mul_tiles(curr_in_cb_id, weight_cb_id, 0, 0, j * num_tiles + i);
             tile_regs_commit();
 
             cb_pop_front(curr_in_cb_id, 1);
+        }
+    }
+
+    for (uint32_t j = 0; j < num_pages_to_8; j++) {
+        // uint64_t start_cycles_loop = read_wall_clock();
+        for (uint32_t i = 0; i < num_tiles; ++i) {
+            // uint64_t start_cycles_wait = read_wall_clock();
             tile_regs_wait();
             pack_tile(j * num_tiles + i, mul_cb_id, j * num_tiles + i);
             tile_regs_release();
-            cb_push_back(mul_cb_id, 1);
-            // uint64_t end_cycles_wait = read_wall_clock();
-            // uint64_t diff = end_cycles_wait - start_cycles_wait;
-            // PACK(( DPRINT << "  ***end_cycles_wait: " << end_cycles_wait << ENDL() ));
         }
-        // uint64_t end_cycles_loop = read_wall_clock();
-        // uint64_t elapsed_cycles_loop = end_cycles_loop - start_cycles_loop;
-        // DPRINT << "  ==== loop took " << elapsed_cycles_loop << " cycles" << ENDL();
     }
-    // end_cycles = read_wall_clock();
-
-    // PACK(( DPRINT << "end_cycles: " << elapsed_cycles_loop << ENDL() ));
-    // elapsed_cycles = end_cycles - start_cycles;
-
-    // DPRINT << "Operation took " << elapsed_cycles << " cycles" << ENDL();
+    cb_push_back(mul_cb_id, num_pages_to_8);
 }
 
 template <
@@ -93,7 +74,6 @@ inline void reduce_h_fused(
     const uint32_t in_stick_index,
     const uint32_t out_cb_id,
     const uint32_t mul_cb_id) {
-    DeviceZoneScopedN("reduce_h_fused");
     constexpr uint32_t num_out_rows = 1;
 
     constexpr uint32_t num_output_faces = (is_partial_tile ? 1 : 2);
@@ -102,60 +82,35 @@ inline void reduce_h_fused(
 
     cb_wait_front(curr_in_cb_id, num_pages_to_8);
 
-    // for (uint32_t i = 0; i < num_pages_to_8; i++) {
-    //     UNPACK(( DPRINT << "now it is tile number: " << i << ENDL() ));
-    //     UNPACK(( tt::compute::common::print_full_tile(curr_in_cb_id, i) ));
-    // }
+    UNPACK((llk_unpack_tilizeA_B_init<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
+        mul_cb_id, in_scalar_cb_id, num_output_tiles, num_faces_in_tile, unpA_face_r_dim, 1)));
+    MATH((llk_math_reduce_init<REDUCE_OP, REDUCE_DIM, MATH_FIDELITY>()));
+    PACK((llk_pack_untilize_init<num_output_tiles, num_output_tiles, false, false, TILE_C_DIM>(
+        out_cb_id, num_out_rows, num_faces_in_tile)));
+    PACK((llk_init_packer_dest_offset_registers<true, false>()));
 
-    // tilize krece od pocetka cb-a i ne moze da se offsetuje
-    // obican unpack moze
-    // obican tilize moze
-    // u kombinaciji ne moze
-    {
-        DeviceZoneScopedN("reduce init");
-        UNPACK((llk_unpack_tilizeA_B_init<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
-            mul_cb_id, in_scalar_cb_id, num_output_tiles, num_faces_in_tile, unpA_face_r_dim, 1)));
-        MATH((llk_math_reduce_init<REDUCE_OP, REDUCE_DIM, MATH_FIDELITY>()));
-        PACK((llk_pack_untilize_init<num_output_tiles, num_output_tiles, false, false, TILE_C_DIM>(
-            out_cb_id, num_out_rows, num_faces_in_tile)));
-        PACK((llk_init_packer_dest_offset_registers<true, false>()));
-    }
-
-    tile_regs_acquire();
     for (uint32_t j = 0; j < num_pages_to_8; j++) {
         cb_reserve_back(out_cb_id, 1);
-        // UNPACK(( DPRINT << "now it is tile number: " << j << ENDL() ));
-        // UNPACK(( tt::compute::common::print_full_tile(curr_in_cb_id, j) ));
-        {
-            DeviceZoneScopedN("unpack reduce");
-            unpack_tilizeA_B_block<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
-                curr_in_cb_id, in_scalar_cb_id, num_output_tiles, 0, num_faces_in_tile, unpA_face_r_dim);
-            for (uint32_t c_i = 0; c_i < num_output_tiles; ++c_i) {
-                reduce_tile_math(j, num_faces_in_tile);
-            }
+
+        unpack_tilizeA_B_block<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
+            curr_in_cb_id, in_scalar_cb_id, num_output_tiles, 0, num_faces_in_tile, unpA_face_r_dim);
+        tile_regs_acquire();
+        for (uint32_t c_i = 0; c_i < num_output_tiles; ++c_i) {
+            reduce_tile_math(j, num_faces_in_tile);
         }
+        tile_regs_commit();
 
         cb_pop_front(curr_in_cb_id, 1);
     }
-    tile_regs_wait();
-
-    tensix_sync();
-    // dprint_tensix_dest_reg(5);
-    tile_regs_commit();
 
     // num_output_tiles takodje govori koja je sirina tensora
     for (uint32_t i = 0; i < num_pages_to_8; i++) {
-        // PACK(( DPRINT << "pack_untilize_dest: " << i << ENDL() ));
+        tile_regs_wait();
         pack_untilize_dest<num_output_tiles>(
             out_cb_id, 1 /*out_subblock_h*/, 0, num_out_rows, num_output_faces, i); /* pack 1 row (1x16 or 1x32) */
-        // PACK(( tt::compute::common::print_full_tile(out_cb_id, 0) ));
+        tile_regs_release();
         cb_push_back(out_cb_id, 1);
     }
-    // for (uint32_t i = 0; i < num_pages_to_8; i++) {
-    //     PACK(( DPRINT << "now it is tile number: " << i << ENDL() ));
-    //     PACK(( tt::compute::common::print_full_tile(out_cb_id, i) ));
-    // }
-    tile_regs_release();
 }
 
 namespace NAMESPACE {
