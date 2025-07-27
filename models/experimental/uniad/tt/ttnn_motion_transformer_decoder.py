@@ -9,7 +9,13 @@ import warnings
 import ttnn
 
 from models.experimental.uniad.tt.ttnn_deformable_attention import multi_scale_deformable_attn_pytorch
+from models.experimental.uniad.tt.ttnn_uniad_utils import trajectory_coordinate_transform, norm_points, pos2posemb2d
 from models.experimental.uniad.tt.ttnn_ffn import TtFFN
+from models.experimental.uniad.tt.ttnn_interaction import (
+    TtIntentionInteraction,
+    TtMapInteraction,
+    TtTrackAgentInteraction,
+)
 
 
 class TtMotionDeformableAttention:
@@ -238,10 +244,10 @@ class TtMotionDeformableAttention:
             reference_trajs_ego.append(batch_reference_trajs)
         return ttnn.stack(reference_trajs_ego, dim=0)
 
-    def rot_2d(self, yaw):
-        sy, cy = torch.sin(yaw), torch.cos(yaw)
-        out = torch.stack([torch.stack([cy, -sy]), torch.stack([sy, cy])]).permute([2, 0, 1])
-        return out
+    # def rot_2d(self, yaw):
+    #     sy, cy = torch.sin(yaw), torch.cos(yaw)
+    #     out = torch.stack([torch.stack([cy, -sy]), torch.stack([sy, cy])]).permute([2, 0, 1])
+    #     return out
 
 
 class TtMotionTransformerAttentionLayer:
@@ -411,3 +417,325 @@ class TtMotionTransformerAttentionLayer:
                 ffn_index += 1
 
         return query
+
+
+class TtMotionTransformerDecoder:
+    """Implements the decoder in DETR3D transformer.
+    Args:
+        return_intermediate (bool): Whether to return intermediate outputs.
+        coder_norm_cfg (dict): Config of last normalization layer. Default：
+            `LN`.
+    """
+
+    def __init__(
+        self, parameters, device, pc_range=None, embed_dims=256, transformerlayers=None, num_layers=3, **kwargs
+    ):
+        self.parameters = parameters
+        self.device = device
+        self.pc_range = pc_range
+        self.embed_dims = embed_dims
+        self.num_layers = num_layers
+        self.intention_interaction_layers = TtIntentionInteraction(
+            parameters=parameters.intention_interaction_layers, device=device
+        )
+        self.track_agent_interaction_layers = [
+            TtTrackAgentInteraction(parameters=parameters.track_agent_interaction_layers[i], device=device)
+            for i in range(self.num_layers)
+        ]
+        self.map_interaction_layers = [
+            TtMapInteraction(parameters=parameters.map_interaction_layers[i], device=device)
+            for i in range(self.num_layers)
+        ]
+        self.bev_interaction_layers = [
+            TtMotionTransformerAttentionLayer(
+                parameters=parameters.bev_interaction_layers[i],
+                device=device,
+                batch_first=True,
+                attn_cfgs=[
+                    {
+                        "type": "MotionDeformableAttention",
+                        "num_steps": 12,
+                        "embed_dims": 256,
+                        "num_levels": 1,
+                        "num_heads": 8,
+                        "num_points": 4,
+                        "sample_index": -1,
+                    }
+                ],
+                feedforward_channels=512,
+                ffn_dropout=0.1,
+                operation_order=("cross_attn", "norm", "ffn", "norm"),
+            )
+            for i in range(self.num_layers)
+        ]
+
+        self.static_dynamic_fuser = [
+            ttnn.linear,
+            ttnn.relu,
+            ttnn.linear,
+        ]
+        self.dynamic_embed_fuser = [
+            ttnn.linear,
+            ttnn.relu,
+            ttnn.linear,
+        ]
+        self.in_query_fuser = [
+            ttnn.linear,
+            ttnn.relu,
+            ttnn.linear,
+        ]
+        self.out_query_fuser = [
+            ttnn.linear,
+            ttnn.relu,
+            ttnn.linear,
+        ]
+
+    def __call__(
+        self,
+        track_query,
+        lane_query,
+        track_query_pos=None,
+        lane_query_pos=None,
+        track_bbox_results=None,
+        bev_embed=None,
+        reference_trajs=None,
+        traj_reg_branches=None,
+        agent_level_embedding=None,
+        scene_level_ego_embedding=None,
+        scene_level_offset_embedding=None,
+        learnable_embed=None,
+        agent_level_embedding_layer=None,
+        scene_level_ego_embedding_layer=None,
+        scene_level_offset_embedding_layer=None,
+        **kwargs,
+    ):
+        if kwargs["spatial_shapes"].dtype != ttnn.bfloat16:
+            kwargs["spatial_shapes"] = ttnn.from_device(kwargs["spatial_shapes"])
+            kwargs["spatial_shapes"] = ttnn.to_dtype(kwargs["spatial_shapes"], dtype=ttnn.bfloat16)
+            kwargs["spatial_shapes"] = ttnn.to_device(kwargs["spatial_shapes"], device=self.device)
+
+        intermediate = []
+        intermediate_reference_trajs = []
+
+        B, _, P, D = agent_level_embedding.shape
+        track_query_bc = ttnn.concat(
+            [ttnn.unsqueeze(track_query, 2) for i in range(P)], dim=-2
+        )  # .expand(-1, -1, P, -1)  # (B, A, P, D)
+        track_query_pos_bc = ttnn.concat(
+            [ttnn.unsqueeze(track_query_pos, 2) for i in range(P)], dim=-2
+        )  # .expand(-1, -1, P, -1)  # (B, A, P, D)
+
+        # static intention embedding, which is imutable throughout all layers
+        agent_level_embedding = self.intention_interaction_layers(agent_level_embedding)
+        static_intention_embed = agent_level_embedding + scene_level_offset_embedding + learnable_embed
+        reference_trajs_input = ttnn.unsqueeze(reference_trajs, 4)
+
+        query_embed = ttnn.zeros(
+            static_intention_embed.shape,
+            dtype=static_intention_embed.dtype,
+            device=self.device,
+            layout=ttnn.TILE_LAYOUT,
+        )
+        for lid in range(self.num_layers):
+            # fuse static and dynamic intention embedding
+            # the dynamic intention embedding is the output of the previous layer, which is initialized with anchor embedding
+
+            for index, layer in enumerate(self.dynamic_embed_fuser):
+                if index == 0:
+                    dynamic_query_embed = layer(
+                        ttnn.concat(
+                            [agent_level_embedding, scene_level_offset_embedding, scene_level_ego_embedding], dim=-1
+                        ),
+                        self.parameters.dynamic_embed_fuser[index].weight,
+                        bias=self.parameters.dynamic_embed_fuser[index].bias,
+                        dtype=ttnn.bfloat16,
+                    )
+                else:
+                    if layer == ttnn.relu:
+                        dynamic_query_embed = layer(dynamic_query_embed)
+                    else:
+                        dynamic_query_embed = layer(
+                            dynamic_query_embed,
+                            self.parameters.dynamic_embed_fuser[index].weight,
+                            bias=self.parameters.dynamic_embed_fuser[index].bias,
+                            dtype=ttnn.bfloat16,
+                        )
+
+            # fuse static and dynamic intention embedding
+            # query_embed_intention = self.static_dynamic_fuser(
+            #     torch.cat([static_intention_embed, dynamic_query_embed], dim=-1)
+            # )  # (B, A, P, D)
+
+            for index, layer in enumerate(self.static_dynamic_fuser):
+                if index == 0:
+                    query_embed_intention = layer(
+                        ttnn.concat([static_intention_embed, dynamic_query_embed], dim=-1),
+                        self.parameters.static_dynamic_fuser[index].weight,
+                        bias=self.parameters.static_dynamic_fuser[index].bias,
+                        dtype=ttnn.bfloat16,
+                    )
+                else:
+                    if layer == ttnn.relu:
+                        query_embed_intention = layer(query_embed_intention)
+                    else:
+                        query_embed_intention = layer(
+                            query_embed_intention,
+                            self.parameters.static_dynamic_fuser[index].weight,
+                            bias=self.parameters.static_dynamic_fuser[index].bias,
+                            dtype=ttnn.bfloat16,
+                        )
+
+            # # fuse intention embedding with query embedding
+            # query_embed = self.in_query_fuser(torch.cat([query_embed, query_embed_intention], dim=-1))
+
+            for index, layer in enumerate(self.in_query_fuser):
+                if index == 0:
+                    query_embed = layer(
+                        ttnn.concat([query_embed, query_embed_intention], dim=-1),
+                        self.parameters.in_query_fuser[index].weight,
+                        bias=self.parameters.in_query_fuser[index].bias,
+                        dtype=ttnn.bfloat16,
+                    )
+                else:
+                    if layer == ttnn.relu:
+                        query_embed = layer(query_embed)
+                    else:
+                        query_embed = layer(
+                            query_embed,
+                            self.parameters.in_query_fuser[index].weight,
+                            bias=self.parameters.in_query_fuser[index].bias,
+                            dtype=ttnn.bfloat16,
+                        )
+
+            # interaction between agents
+            track_query_embed = self.track_agent_interaction_layers[lid](
+                query_embed, track_query, query_pos=track_query_pos_bc, key_pos=track_query_pos
+            )
+
+            # interaction between agents and map
+            map_query_embed = self.map_interaction_layers[lid](
+                query_embed, lane_query, query_pos=track_query_pos_bc, key_pos=lane_query_pos
+            )
+
+            # interaction between agents and bev, ie. interaction between agents and goals
+            # implemented with deformable transformer
+            bev_query_embed = self.bev_interaction_layers[lid](
+                query_embed,
+                value=bev_embed,
+                query_pos=track_query_pos_bc,
+                bbox_results=track_bbox_results,
+                reference_trajs=reference_trajs_input,
+                **kwargs,
+            )
+
+            # fusing the embeddings from different interaction layers
+            query_embed = [track_query_embed, map_query_embed, bev_query_embed, track_query_bc + track_query_pos_bc]
+            query_embed = ttnn.concat(query_embed, dim=-1)
+            # query_embed = self.out_query_fuser(query_embed)
+
+            for index, layer in enumerate(self.out_query_fuser):
+                if layer == ttnn.relu:
+                    query_embed = layer(query_embed)
+                else:
+                    query_embed = layer(
+                        query_embed,
+                        self.parameters.out_query_fuser[index].weight,
+                        bias=self.parameters.out_query_fuser[index].bias,
+                        dtype=ttnn.bfloat16,
+                    )
+
+            if traj_reg_branches is not None:
+                # update reference trajectory
+                tmp = ttnn.clone(query_embed)
+                for index in range(len(traj_reg_branches[lid])):
+                    if index % 2 == 0:
+                        tmp = ttnn.linear(
+                            tmp,
+                            traj_reg_branches[lid][index]["weight"],
+                            bias=traj_reg_branches[lid][index]["bias"],
+                            dtype=ttnn.bfloat16,
+                        )
+                    else:
+                        tmp = ttnn.relu(tmp)
+
+                # tmp = traj_reg_branches[lid](query_embed)
+                bs, n_agent, n_modes, n_steps, _ = reference_trajs.shape
+                tmp = ttnn.reshape(tmp, (bs, n_agent, n_modes, n_steps, -1))
+
+                # we predict speed of trajectory and use cumsum trick to get the trajectory
+                tmp_a = ttnn.clone(tmp[..., :2])
+                tmp_b = ttnn.clone(tmp[..., 2:])
+                tmp_a = ttnn.cumsum(tmp_a, dim=3)
+                tmp = ttnn.concat([tmp_a, tmp_b], dim=-1)
+                ttnn.deallocate(tmp_a)
+                ttnn.deallocate(tmp_b)
+
+                new_reference_trajs = ttnn.zeros(
+                    reference_trajs.shape, dtype=reference_trajs.dtype, layout=ttnn.TILE_LAYOUT, device=self.device
+                )
+                new_reference_trajs = tmp[..., :2]
+                reference_trajs = new_reference_trajs
+                reference_trajs_input = ttnn.unsqueeze(reference_trajs, 4)  # BS NUM_AGENT NUM_MODE 12 NUM_LEVEL  2
+
+                # update embedding, which is used in the next layer
+                # only update the embedding of the last step, i.e. the goal
+                ep_offset_embed = ttnn.clone(reference_trajs)
+                ep_ego_embed = ttnn.squeeze(
+                    trajectory_coordinate_transform(
+                        ttnn.unsqueeze(reference_trajs, 2),
+                        track_bbox_results,
+                        with_translation_transform=True,
+                        with_rotation_transform=False,
+                    ),
+                    2,
+                )
+                ep_agent_embed = ttnn.squeeze(
+                    trajectory_coordinate_transform(
+                        ttnn.unsqueeze(reference_trajs, 2),
+                        track_bbox_results,
+                        with_translation_transform=False,
+                        with_rotation_transform=True,
+                    ),
+                    2,
+                )
+
+                agent_level_embedding = pos2posemb2d(norm_points(ep_agent_embed[..., -1, :], self.pc_range))
+                for index in range(len(agent_level_embedding_layer)):
+                    if index % 2 == 0:
+                        agent_level_embedding = ttnn.linear(
+                            agent_level_embedding,
+                            agent_level_embedding_layer[index]["weight"],
+                            bias=agent_level_embedding_layer[index]["bias"],
+                            dtype=ttnn.bfloat16,
+                        )
+                    else:
+                        agent_level_embedding = ttnn.relu(agent_level_embedding)
+
+                scene_level_ego_embedding = pos2posemb2d(norm_points(ep_ego_embed[..., -1, :], self.pc_range))
+                for index in range(len(scene_level_ego_embedding_layer)):
+                    if index % 2 == 0:
+                        scene_level_ego_embedding = ttnn.linear(
+                            scene_level_ego_embedding,
+                            scene_level_ego_embedding_layer[index]["weight"],
+                            bias=scene_level_ego_embedding_layer[index]["bias"],
+                            dtype=ttnn.bfloat16,
+                        )
+                    else:
+                        scene_level_ego_embedding = ttnn.relu(scene_level_ego_embedding)
+
+                scene_level_offset_embedding = pos2posemb2d(norm_points(ep_offset_embed[..., -1, :], self.pc_range))
+                for index in range(len(scene_level_ego_embedding_layer)):
+                    if index % 2 == 0:
+                        scene_level_offset_embedding = ttnn.linear(
+                            scene_level_offset_embedding,
+                            scene_level_ego_embedding_layer[index]["weight"],
+                            bias=scene_level_ego_embedding_layer[index]["bias"],
+                            dtype=ttnn.bfloat16,
+                        )
+                    else:
+                        scene_level_offset_embedding = ttnn.relu(scene_level_offset_embedding)
+
+                intermediate.append(query_embed)
+                intermediate_reference_trajs.append(reference_trajs)
+
+        return ttnn.stack(intermediate, dim=0), ttnn.stack(intermediate_reference_trajs, dim=0)
