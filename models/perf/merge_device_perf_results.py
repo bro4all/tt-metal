@@ -63,5 +63,6 @@ if __name__ == "__main__":
     assert (
         args.output_filename
     ), f"Expected user to provide an output filename for merged report (arguments provided were {args})"
-    merge_perf_files(args.output_filename, f"device_perf_{args.devperf}", expected_cols)
+    prefix = "device_perf" if str(args.devperf) == "" else f"device_perf_{args.devperf}"
+    merge_perf_files(args.output_filename, prefix, expected_cols)
     check_device_perf_results(args.output_filename, expected_cols, check_cols)
