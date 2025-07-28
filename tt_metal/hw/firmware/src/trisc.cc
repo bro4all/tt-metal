@@ -39,6 +39,12 @@ uint8_t my_logical_y_ __attribute__((used));
 uint8_t my_relative_x_ __attribute__((used));
 uint8_t my_relative_y_ __attribute__((used));
 
+uint32_t noc_reads_num_issued[NUM_NOCS] __attribute__((used));
+uint32_t noc_nonposted_writes_num_issued[NUM_NOCS] __attribute__((used));
+uint32_t noc_nonposted_writes_acked[NUM_NOCS] __attribute__((used));
+uint32_t noc_nonposted_atomics_acked[NUM_NOCS] __attribute__((used));
+uint32_t noc_posted_writes_num_issued[NUM_NOCS] __attribute__((used));
+
 namespace ckernel {
 
 enum class ttRiscCores : std::uint32_t { Unpack = 0, Math = 1, Pack = 2, Brisc = 3, Nrisc = 4 };
