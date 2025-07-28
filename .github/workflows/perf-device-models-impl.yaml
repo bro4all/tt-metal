@@ -55,13 +55,13 @@ jobs:
         working-directory: /work # https://github.com/actions/runner/issues/878
     steps:
       - name: ⬇️  Setup Job
-        uses: tenstorrent/tt-metal/.github/actions/setup-job@jobs-by-teams-devperf
+        uses: tenstorrent/tt-metal/.github/actions/setup-job@kkabilar-jobs-by-teams-devperf
         timeout-minutes: 10
         with:
           build-artifact-name: ${{ inputs.build-artifact-name }}
           wheel-artifact-name: ${{ inputs.wheel-artifact-name }}
       - name: non-civ2 tests
-        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@jobs-by-teams-devperf
+        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-jobs-by-teams-devperf
         with:
           model_name: "non-civ2_tests"
           commands: |
@@ -73,7 +73,7 @@ jobs:
         timeout-minutes: ${{ matrix.test-info.timeout }}
 
       - name: yolov11 tests
-        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@jobs-by-teams-devperf
+        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-jobs-by-teams-devperf
         with:
           model_name: "yolov11"
           commands: |
