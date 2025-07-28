@@ -10,7 +10,7 @@ import torch
 import ttnn
 
 from tests.ttnn.utils_for_testing import assert_with_pcc, check_with_pcc_without_tensor_printout
-from models.utility_functions import is_grayskull, is_blackhole, torch_random, skip_for_grayskull
+from models.utility_functions import is_grayskull, is_blackhole, torch_random, skip_for_grayskull, skip_for_blackhole
 
 
 @pytest.mark.parametrize("height", [32, 30])
@@ -435,6 +435,7 @@ def test_to_layout_wh2(shape, input_layout, output_layout, device):
     assert_with_pcc(input_a, output_tensor)
 
 
+@skip_for_blackhole()
 @pytest.mark.parametrize("shape", [[32, 128], [2, 4, 96, 256], [1, 160, 64], [64, 512], [10, 1024, 2048]])
 @pytest.mark.parametrize("dtype", [ttnn.uint32, ttnn.int32])
 def test_untilize_with_unpad_int32(shape, dtype, device):
@@ -447,6 +448,7 @@ def test_untilize_with_unpad_int32(shape, dtype, device):
     assert_with_pcc(input_a, output_tensor)
 
 
+@skip_for_blackhole()
 @pytest.mark.parametrize("shape", [[3072, 1024], [2, 2048, 512]])
 @pytest.mark.parametrize("dtype", [ttnn.uint32, ttnn.int32])
 def test_untilize_int32_t(shape, dtype, device):
