@@ -270,7 +270,7 @@ void BinaryDeviceOperation ::BroadcastHeightMultiCoreShardedOptimized::override_
     uint32_t ncores = shard_spec.num_cores();
     uint32_t Wt = 0, Ht = 0;
     const auto ashape = input_tensor_a.padded_shape();
-    TT_ASSERT(ashape.rank() <= 4, "Input tensor A must have rank <= 4");
+    TT_FATAL(ashape.rank() <= 4, "Input tensor A must have rank <= 4");
     uint32_t N = ashape[0], C = ashape[1], H = ashape[2], W = ashape[3];
     uint32_t bN = input_tensor_b->padded_shape()[0];
     uint32_t NC = N * C;
