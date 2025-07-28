@@ -679,7 +679,13 @@ std::string get_compute_kernel_path(
     UnaryOpType op_type, const std::string& compute_root, std::optional<DataType> input_dtype) {
     switch (op_type) {
         case UnaryOpType::MISH: return fmt::format("{}/{}", compute_root, "mish_kernel.cpp");
-        case UnaryOpType::TANHSHRINK: return fmt::format("{}/{}", compute_root, "tanhshrink_kernel.cpp");
+        case UnaryOpType::TANHSHRINK:
+            if (input_dtype.has_value() && input_dtype.value() == DataType::FLOAT32) {
+                return fmt::format("{}/{}", compute_root, "tanhshrink_kernel_sfpu.cpp");
+            } else {
+                return fmt::format("{}/{}", compute_root, "tanhshrink_kernel.cpp");
+            }
+            return fmt::format("{}/{}", compute_root, "tanhshrink_kernel.cpp");
         case UnaryOpType::IDENTITY: return fmt::format("{}/{}", compute_root, "eltwise_identity_kernel.cpp");
         case UnaryOpType::HARDSHRINK:
             if (input_dtype.has_value() && input_dtype.value() == DataType::FLOAT32) {
