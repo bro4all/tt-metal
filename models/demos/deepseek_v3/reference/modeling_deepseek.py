@@ -612,6 +612,13 @@ class DeepseekV3Attention(nn.Module):
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
 
+    def init_weights_with_random(self):
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                print(f"Initializing {name} with torch.randn")
+                with torch.no_grad():
+                    param.copy_(torch.randn_like(param))
+
     def _init_rope(self):
         if self.config.rope_scaling is None:
             self.rotary_emb = DeepseekV3RotaryEmbedding(
@@ -737,6 +744,104 @@ class DeepseekV3Attention(nn.Module):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
+
+        if attn_output.size() != (bsz, self.num_heads, q_len, self.v_head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.v_head_dim)}, but is"
+                f" {attn_output.size()}"
+            )
+
+        attn_output = attn_output.transpose(1, 2).contiguous()
+
+        attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.v_head_dim)
+
+        attn_output = self.o_proj(attn_output)
+
+        if not output_attentions:
+            attn_weights = None
+
+        return attn_output, attn_weights, past_key_value
+
+    def forward_mla(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        if "padding_mask" in kwargs:
+            warnings.warn(
+                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+            )
+        bsz, q_len, _ = hidden_states.size()
+
+        if self.q_lora_rank is None:
+            q = self.q_proj(hidden_states)
+        else:
+            q = self.q_b_proj(self.q_a_layernorm(self.q_a_proj(hidden_states)))
+        q = q.view(bsz, q_len, self.num_heads, self.q_head_dim).transpose(1, 2)
+        q_nope, q_pe = torch.split(q, [self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1)
+
+        kv_b1_proj = self.kv_b_proj.weight.view(self.num_heads, -1, self.kv_lora_rank)[:, : self.qk_nope_head_dim]
+        q_nope = torch.matmul(q_nope, kv_b1_proj)
+
+        compressed_kv = self.kv_a_proj_with_mqa(hidden_states)
+        compressed_kv, k_pe = torch.split(compressed_kv, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
+        k_pe = k_pe.view(bsz, q_len, 1, self.qk_rope_head_dim).transpose(1, 2)
+        k_nope = self.kv_a_layernorm(compressed_kv).view(bsz, 1, q_len, self.kv_lora_rank)
+
+        kv_seq_len = k_nope.shape[-2]
+        # if past_key_value is not None:
+        #     if self.layer_idx is None:
+        #         raise ValueError(
+        #             f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
+        #             "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
+        #             "with a layer index."
+        #         )
+        #     kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+        cos, sin = self.rotary_emb(k_nope, seq_len=kv_seq_len)
+
+        q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids)
+
+        query_states = k_pe.new_empty(bsz, self.num_heads, q_len, self.kv_lora_rank + self.qk_rope_head_dim)
+        query_states[:, :, :, : self.kv_lora_rank] = q_nope
+        query_states[:, :, :, self.kv_lora_rank :] = q_pe
+
+        key_states = k_pe.new_empty(bsz, 1, q_len, self.kv_lora_rank + self.qk_rope_head_dim)
+        key_states[:, :, :, : self.kv_lora_rank] = k_nope
+        key_states[:, :, :, self.kv_lora_rank :] = k_pe
+        # if past_key_value is not None:
+        #     cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
+        #     key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.softmax_scale
+
+        if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
+            raise ValueError(
+                f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
+                f" {attn_weights.size()}"
+            )
+        assert attention_mask is not None
+        if attention_mask is not None:
+            if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
+                raise ValueError(
+                    f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
+                )
+            attn_weights = attn_weights + attention_mask
+
+        # upcast attention to fp32
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+
+        value_states = key_states[:, :, :, : self.kv_lora_rank]
+        attn_output = torch.matmul(attn_weights, value_states)
+
+        kv_b2_proj = self.kv_b_proj.weight.view(self.num_heads, -1, self.kv_lora_rank)[:, -self.v_head_dim :].transpose(
+            1, 2
+        )
+        attn_output = torch.matmul(attn_output, kv_b2_proj)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.v_head_dim):
             raise ValueError(
