@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from models.perf.device_perf_utils import check_device_perf_results
-from models.perf.perf_utils import merge_perf_files2, today
+from models.perf.perf_utils import merge_perf_files, today
 
 DEFAULT_FILENAME = f"Models_Device_Perf_{today}.csv"
 
@@ -63,5 +63,5 @@ if __name__ == "__main__":
     assert (
         args.output_filename
     ), f"Expected user to provide an output filename for merged report (arguments provided were {args})"
-    merge_perf_files2(args.output_filename, f"device_perf_{args.devperf}", expected_cols)
+    merge_perf_files(args.output_filename, f"device_perf_{args.devperf}", expected_cols)
     check_device_perf_results(args.output_filename, expected_cols, check_cols)
