@@ -153,6 +153,7 @@ void sub_exp_block_bcast_cols_inplace_reduce(uint32_t in1_cb, uint32_t reduce_cb
     }
 }
 
+/*
 void mul_block_bcast_cols_inplace(uint32_t in0_cb, uint32_t in1_cb, uint32_t rows, uint32_t cols) {
     // Precondition: in0_cb has rows*cols produced
     // Precondition: in1_cb has rows produced
@@ -176,7 +177,41 @@ void mul_block_bcast_cols_inplace(uint32_t in0_cb, uint32_t in1_cb, uint32_t row
     }
     cb_pop_front(in1_cb, rows);
 }
+*/
 
+void mul_block_bcast_cols_inplace(uint32_t in0_cb, uint32_t in1_cb, uint32_t rows, uint32_t cols) {
+    // Precondition: in0_cb has rows*cols produced
+    // Precondition: in1_cb has rows produced
+    // Postcondition: in0_cb has rows*cols produced
+    // Postcondition: in1_cb has rows consumed
+
+    uint32_t num_tiles = rows * cols;
+    uint32_t dst_tiles = DHT_GRANULARITY;
+    uint32_t granularity = cols >> LOG2_DHT_GRANULARITY;
+    mul_bcast_cols_init_short(in0_cb, in1_cb);
+    cb_wait_front(in0_cb, num_tiles);
+    cb_wait_front(in1_cb, rows);
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t u = 0; u < granularity; ++u) {
+            tile_regs_acquire();
+            for (uint32_t j = 0; j < dst_tiles; ++j) {
+                mul_tiles_bcast_cols(in0_cb, in1_cb, j, i, j);
+            }
+            tile_regs_commit();
+            cb_pop_front(in0_cb, dst_tiles);
+            cb_reserve_back(in0_cb, dst_tiles);
+            tile_regs_wait();
+            for (uint32_t j = 0; j < dst_tiles; ++j) {
+                pack_tile(j, in0_cb);
+            }
+            cb_push_back(in0_cb, dst_tiles);
+            tile_regs_release();
+        }
+    }
+    cb_pop_front(in1_cb, rows);
+}
+
+/*
 void mul_block_bcast_cols(uint32_t in0_cb, uint32_t in1_cb, uint32_t out_cb, uint32_t rows, uint32_t cols) {
     // Precondition: in0_cb has rows*cols produced
     // Precondition: in1_cb has rows produced
@@ -200,6 +235,103 @@ void mul_block_bcast_cols(uint32_t in0_cb, uint32_t in1_cb, uint32_t out_cb, uin
         }
     }
     cb_pop_front(in1_cb, rows);
+}
+*/
+
+void mul_block_bcast_cols(
+    uint32_t in0_cb, uint32_t in1_cb, uint32_t out_cb, uint32_t rows, uint32_t cols, bool pack_accumulate = false) {
+    // Precondition: in0_cb has rows*cols produced
+    // Precondition: in1_cb has rows produced
+    // Precondition: out_cb has rows*cols produced
+    // Postcondition: in0_cb empty
+    // Postcondition: in1_cb empty
+    // Postcondition: out_cb has rows*cols produced
+
+    uint32_t num_tiles = rows * cols;
+    uint32_t dst_tiles = DHT_GRANULARITY;
+    uint32_t granularity = cols >> LOG2_DHT_GRANULARITY;
+    mul_bcast_cols_init_short(in0_cb, in1_cb);
+    PACK((llk_pack_reconfig_l1_acc(pack_accumulate)));
+    cb_wait_front(in0_cb, num_tiles);
+    cb_wait_front(in1_cb, rows);
+    if (!pack_accumulate) {
+        cb_reserve_back(out_cb, num_tiles);
+    }
+    uint32_t in0_index = 0;
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t u = 0; u < granularity; ++u) {
+            tile_regs_acquire();
+            for (uint32_t j = 0; j < dst_tiles; ++j) {
+                mul_tiles_bcast_cols(in0_cb, in1_cb, in0_index, i, j);
+                in0_index++;
+            }
+            tile_regs_commit();
+            tile_regs_wait();
+            for (uint32_t j = 0; j < dst_tiles; ++j) {
+                pack_tile(j, out_cb);
+            }
+            tile_regs_release();
+        }
+    }
+    PACK((llk_pack_reconfig_l1_acc(false)));
+    cb_pop_front(in1_cb, rows);
+    cb_pop_front(in0_cb, num_tiles);
+    if (!pack_accumulate) {
+        cb_push_back(out_cb, num_tiles);
+    } else {
+        cb_pop_front(out_cb, num_tiles);
+        cb_reserve_back(out_cb, num_tiles);
+        cb_push_back(out_cb, num_tiles);
+    }
+}
+
+template <uint32_t M>
+void matmul_reduce(uint32_t in1_cb, const uint32_t& out_cb) {
+    // precondition: in0_cb has M*K produced
+    // preconditino: in1_cb has K*N produced
+    // postcondition: in0_cb is full, in1_cb is empty
+    // postcondition: out_cb has M*N produced
+
+    constexpr uint32_t N = 1;  // Result of reduce is 1 column
+    constexpr uint32_t in0_block_w = N;
+    constexpr uint32_t subblock_w = N;
+    // Reuse the Sq_chunk_t granularity chosen for sub_exp_block
+    constexpr uint32_t subblock_h = DHT_GRANULARITY;
+    constexpr uint32_t in0_num_subblocks = M >> LOG2_DHT_GRANULARITY;
+
+    /**
+     * Use matmul on Mx1 input to reduce rows within tile to produce Mx1 output.
+     */
+
+    mm_block_init_short(
+        out_cb, in1_cb, 0 /*transpose*/, subblock_w /*ct_dim*/, subblock_h /*rt_dim*/, in0_block_w /*kt_dim*/);
+
+    constexpr uint32_t output_num_tiles = M * N;
+    constexpr uint32_t out_subblock_num_tiles = subblock_h * subblock_w;
+
+    reconfig_data_format(in1_cb, out_cb);
+    cb_wait_front(in1_cb, N);
+    cb_wait_front(out_cb, M);
+
+    for (uint32_t in0_subblock = 0; in0_subblock < in0_num_subblocks; ++in0_subblock) {
+        tile_regs_acquire();
+
+        uint32_t dst_index = 0;
+        uint32_t in0_index = 0;
+        uint32_t in1_index = 0;
+
+        matmul_block(out_cb, in1_cb, in0_index, in1_index, dst_index, 0, subblock_w, subblock_h, in0_block_w);
+
+        tile_regs_commit();
+        cb_pop_front(out_cb, subblock_h);
+
+        tile_regs_wait();
+        for (uint32_t i = 0; i < subblock_h; i++) {
+            pack_tile(i, out_cb);
+        }
+        tile_regs_release();
+        cb_push_back(out_cb, subblock_h);
+    }
 }
 
 template <bool pop_in1>

@@ -338,7 +338,6 @@ void MAIN {
 
                 reconfig_data_format_srca(cb_out_im);
                 cb_pop_front(cb_qk_im, qk_chunk_tiles_dynamic);
-
                 /* OUT_ACC += OUT_IM */
                 if (k_chunk == k_chunk_start) {
                     cb_out_mm = cb_out_im;
@@ -354,18 +353,18 @@ void MAIN {
 
                     /* cb_out_accumulate_im *= cb_exp_max_diff */
                     reconfig_data_format(cb_out_accumulate_im, cb_exp_max_diff);  // DEBUG
+                    // reconfig_data_format(cb_out_accumulate_im, cb_out_im);
                     pack_reconfig_data_format(cb_out_accumulate_im);
-                    mul_block_bcast_cols(cb_out_accumulate_im, cb_exp_max_diff, cb_out_accumulate_im, Sq_chunk_t, vDHt);
+                    mul_block_bcast_cols(cb_out_accumulate_im, cb_exp_max_diff, cb_out_im, Sq_chunk_t, vDHt, true);
 
                     /* cb_cur_sum += cb_prev_sum */
                     reconfig_data_format(cb_cur_sum, cb_prev_sum);  // DEBUG
                     pack_reconfig_data_format(cb_cur_sum);
                     add_block_inplace<true>(cb_cur_sum, cb_prev_sum, Sq_chunk_t);
-
                     /* cb_out_accumulate_im += cb_out_im */
-                    reconfig_data_format(cb_out_accumulate_im, cb_out_im);  // DEBUG
-                    pack_reconfig_data_format(cb_out_accumulate_im);
-                    add_block_inplace<true>(cb_out_accumulate_im, cb_out_im, out_chunk_tiles);
+                    // reconfig_data_format(cb_out_accumulate_im, cb_out_im);  // DEBUG
+                    // pack_reconfig_data_format(cb_out_accumulate_im);
+                    // add_block_inplace<true>(cb_out_accumulate_im, cb_out_im, out_chunk_tiles);
                 }
 
                 if (k_chunk < k_chunk_end - 1 || do_reduce) {
@@ -420,8 +419,10 @@ void MAIN {
                     move_block<true>(cb_cur_sum, cb_prev_sum, Sq_chunk_t);
                 }
             }
-            /* cb_cur_sum = 1.0 / cb_cur_sum */
+            /* final reduction using L1*/
+            matmul_reduce<Sq_chunk_t>(cb_col_identity, cb_prev_sum);
 
+            /* cb_cur_sum = 1.0 / cb_cur_sum */
             reconfig_data_format(cb_prev_sum, cb_prev_sum);  // DEBUG
             pack_reconfig_data_format(cb_prev_sum);
             recip_block_inplace<vector_mode>(cb_prev_sum, Sq_chunk_t);
