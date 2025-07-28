@@ -132,6 +132,7 @@ void execute_chip_unicast_to_local_chip(
     const auto& header = *packet_start;
     uint32_t payload_start_address = reinterpret_cast<size_t>(packet_start) + sizeof(PACKET_HEADER_TYPE);
 
+    return;
     tt::tt_fabric::NocSendType noc_send_type = header.noc_send_type;
     // if (noc_send_type > tt::tt_fabric::NocSendType::NOC_SEND_TYPE_LAST) {
     //     __builtin_unreachable();
@@ -141,27 +142,29 @@ void execute_chip_unicast_to_local_chip(
             auto dest_address = header.command_fields.unicast_write.noc_address;
             invalidate_l1_cache();
             bool conflict = false;
-            if (*reinterpret_cast<volatile uint32_t*>(payload_start_address) == 0xF0C0FFEE || conflict) {
-                // Commenting this out removes hang
-                // DPRINT << "dest_address: " << (uint64_t)dest_address << "\n";
-                // dest_address = get_noc_addr(3,3,1000000, tt::tt_fabric::edm_to_local_chip_noc);
-                conflict = true;
-            }
             if (dest_address >> 32 == 0x3110) {
                 // Commenting this out does nothing
-
+                // DPRINT << "conflict\n";
+                while (1);
+                // conflict = true;
+            }
+            if (*reinterpret_cast<volatile uint32_t*>(payload_start_address) == 0x10C0FFEE) {
+                // Commenting this out removes hang
+                dest_address = get_noc_addr(3, 3, 1000000, tt::tt_fabric::edm_to_local_chip_noc);
                 conflict = true;
             }
             if (!conflict) {
                 // DPRINT << "snd pkt\n";
-                noc_async_write_one_packet_with_trid<false, false>(
-                    payload_start_address,
-                    dest_address,
-                    payload_size_bytes,
-                    transaction_id,
-                    tt::tt_fabric::local_chip_data_cmd_buf,
-                    tt::tt_fabric::edm_to_local_chip_noc,
-                    tt::tt_fabric::forward_and_local_write_noc_vc);
+                DPRINT << "noc=" << (uint32_t)tt::tt_fabric::edm_to_local_chip_noc << " dest_address: " << HEX()
+                       << (uint64_t)dest_address << "\n";
+                // noc_async_write_one_packet_with_trid<false, false>(
+                //     payload_start_address,
+                //     dest_address,
+                //     payload_size_bytes,
+                //     transaction_id,
+                //     tt::tt_fabric::local_chip_data_cmd_buf,
+                //     tt::tt_fabric::edm_to_local_chip_noc,
+                //     tt::tt_fabric::forward_and_local_write_noc_vc);
             }
         } break;
 
@@ -170,6 +173,12 @@ void execute_chip_unicast_to_local_chip(
             const auto increment = header.command_fields.unicast_seminc.val;
             if (header.command_fields.unicast_seminc.flush) {
                 flush_write_to_noc_pipeline(rx_channel_id);
+            }
+            if (dest_address >> 32 == 0x3110) {
+                // Commenting this out does nothing
+                DPRINT << "conflict\n";
+                while (1);
+                // conflict = true;
             }
             noc_semaphore_inc<true>(
                 dest_address,
@@ -182,6 +191,12 @@ void execute_chip_unicast_to_local_chip(
         case tt::tt_fabric::NocSendType::NOC_UNICAST_INLINE_WRITE: {
             const auto dest_address = header.command_fields.unicast_inline_write.noc_address;
             const auto value = header.command_fields.unicast_inline_write.value;
+            if (dest_address >> 32 == 0x3110) {
+                // Commenting this out does nothing
+                DPRINT << "conflict\n";
+                while (1);
+                // conflict = true;
+            }
             noc_inline_dw_write<false, true>(
                 dest_address,
                 value,
@@ -192,6 +207,12 @@ void execute_chip_unicast_to_local_chip(
 
         case tt::tt_fabric::NocSendType::NOC_FUSED_UNICAST_ATOMIC_INC: {
             const auto dest_address = header.command_fields.unicast_seminc_fused.noc_address;
+            if (dest_address >> 32 == 0x3110) {
+                // Commenting this out does nothing
+                DPRINT << "conflict\n";
+                while (1);
+                // conflict = true;
+            }
             noc_async_write_one_packet_with_trid<false, false>(
                 payload_start_address,
                 dest_address,
@@ -223,6 +244,12 @@ void execute_chip_unicast_to_local_chip(
                     chunk_size = header.command_fields.unicast_scatter_write.chunk_size[i];
                 }
                 const auto dest_address = header.command_fields.unicast_scatter_write.noc_address[i];
+                if (dest_address >> 32 == 0x3110) {
+                    // Commenting this out does nothing
+                    DPRINT << "conflict\n";
+                    while (1);
+                    // conflict = true;
+                }
                 noc_async_write_one_packet_with_trid<false, false>(
                     payload_start_address + offset,
                     dest_address,
@@ -319,6 +346,7 @@ void forward_payload_to_downstream_edm(
     if constexpr (increment_pointers) {
         update_packet_header_for_next_hop(packet_header, cached_routing_fields);
     }
+    DPRINT << "fwd pkt\n";
     downstream_edm_interface.template send_payload_non_blocking_from_address_with_trid<
         enable_ring_support,
         tt::tt_fabric::edm_to_downstream_noc,

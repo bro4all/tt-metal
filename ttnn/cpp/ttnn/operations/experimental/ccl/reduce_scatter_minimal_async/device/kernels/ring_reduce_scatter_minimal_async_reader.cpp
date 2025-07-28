@@ -72,10 +72,15 @@ void kernel_main() {
     // DEBUGGING
     cb_reserve_back(cb_input_id, tile_granularity);
     uint32_t l1_write_addr = get_write_ptr(cb_input_id);
-    for (volatile uint32_t x = 0; x < 1000; ++x) {
+    reinterpret_cast<volatile uint32_t*>(1000000)[10] = 0x10C0FFEE;
+    reinterpret_cast<volatile uint32_t*>(1000000)[12] = 0;
+    reinterpret_cast<volatile uint32_t*>(1000000)[11] = 0;
+    for (uint32_t x = 0; x < 1000; ++x) {
         // DPRINT << "noc_address: " << HEX() << (uint64_t)input_tensor_addrgen.get_noc_addr(0) << "\n";
+        reinterpret_cast<volatile uint32_t*>(1000000)[11] = x;
         noc_async_read_tile(0, input_tensor_addrgen, l1_write_addr);
     }
+    reinterpret_cast<volatile uint32_t*>(1000000)[12] = 0xD0C0FFEE;
 
     return;
     // DEBUGGING

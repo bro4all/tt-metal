@@ -99,15 +99,22 @@ void kernel_main() {
     // DEBUGGING
     cb_reserve_back(cb_compute_output_id, tile_granularity);
     size_t l1_read_addr = get_read_ptr(cb_compute_output_id);
-    for (size_t i = 0; i < 32; ++i) {
-        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[0] = 0xF0C0FFEE;
-        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[1] = 0xF0C0FFEE;
+    reinterpret_cast<volatile uint32_t*>(l1_read_addr)[0] = 0x10C0FFEE;
+    for (size_t i = 1; i < 4; ++i) {
+        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[i] = 0;
     }
+    reinterpret_cast<volatile uint32_t*>(1000000)[0] = 0x10C0FFEE;
+    reinterpret_cast<volatile uint32_t*>(1000000)[5] = 0;
+    reinterpret_cast<volatile uint32_t*>(l1_read_addr)[2] = (uint32_t)0;
 
     DPRINT << "my_y: " << (uint32_t)my_y[0] << ", my_x: " << (uint32_t)my_x[0] << "\n";
     // DPRINT << "RING WRITER\n";
-    for (volatile uint32_t x = 0; x < 1000; ++x) {
+    invalidate_l1_cache();
+    for (uint32_t x = 0; x < 1000; ++x) {
+        reinterpret_cast<volatile uint32_t*>(1000000)[1] = 0x10C0FFEE;
         tt::tt_fabric::linear::to_noc_unicast_write(pkt_hdr, 0, intermediate_addrgen);
+        reinterpret_cast<volatile uint32_t*>(1000000)[2] = x;
+        reinterpret_cast<volatile uint32_t*>(l1_read_addr)[2] = (uint32_t)x;
 
         fabric_direction_connection->wait_for_empty_write_slot();
 
@@ -118,6 +125,7 @@ void kernel_main() {
             (uint32_t)pkt_hdr, sizeof(PACKET_HEADER_TYPE));
         noc_async_writes_flushed();
     }
+    reinterpret_cast<volatile uint32_t*>(1000000)[5] = 0xD0C0FFEE;
 
     if (fabric_connection.is_logically_connected()) {
         fabric_connection.close();
