@@ -60,11 +60,11 @@ jobs:
         with:
           build-artifact-name: ${{ inputs.build-artifact-name }}
           wheel-artifact-name: ${{ inputs.wheel-artifact-name }}
-      - name: Setup report
-        run: |
-          touch Models_Device_Perf_$(date +%Y_%m_%d).csv
-          > Models_Device_Perf_$(date +%Y_%m_%d).csv
-          export DEVICE_PERF_REPORT_FINAL=Models_Device_Perf_$(date +%Y_%m_%d).csv
+      # - name: Setup report
+      #   run: |
+      #     touch Models_Device_Perf_$(date +%Y_%m_%d).csv
+      #     > Models_Device_Perf_$(date +%Y_%m_%d).csv
+      #     export DEVICE_PERF_REPORT_FINAL=Models_Device_Perf_$(date +%Y_%m_%d).csv
       - name: non-civ2 tests
         uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
         with:
@@ -208,30 +208,32 @@ jobs:
       #   if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
       #   timeout-minutes: ${{ matrix.test-info.timeout }}
 
-      # - name: run tests
-      #   id: generate-device-perf-report
-      #   env:
-      #     TRACY_NO_INVARIANT_CHECK: 1
-      #   run: |
-      #     set -x
-      #     export MAGIC_ENV=wormhole_b0_80_arch_eth_dispatch.yaml
+      - name: run tests
+        id: generate-device-perf-report
+        env:
+          TRACY_NO_INVARIANT_CHECK: 1
+        run: |
+          set -x
+          export MAGIC_ENV=wormhole_b0_80_arch_eth_dispatch.yaml
 
-      #     WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/yolov4/tests -m models_device_performance_bare_metal
-      #     WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/wormhole/vit/demo/test_vit_device_perf.py -m models_device_performance_bare_metal
+          WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/yolov4/tests -m models_device_performance_bare_metal
+          WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/wormhole/vit/demo/test_vit_device_perf.py -m models_device_performance_bare_metal
 
-      #     export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_$(date +%Y_%m_%d).csv
-      #     python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME
-      #     echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
-      #     cat Models_Device_Perf_$(date +%Y_%m_%d).csv
+          export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_$(date +%Y_%m_%d).csv
+          python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME
+          ls -lrt Models_Device_Perf_$(date +%Y_%m_%d).csv
+          cat Models_Device_Perf_$(date +%Y_%m_%d).csv
+          echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
+          
 
-      - name: yolov4 tests
-        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
-        with:
-          model_name: "yolov4"
-          commands: |
-            WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/yolov4/tests -m models_device_performance_bare_metal
-        if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
-        timeout-minutes: ${{ matrix.test-info.timeout }}
+      # - name: yolov4 tests
+      #   uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
+      #   with:
+      #     model_name: "yolov4"
+      #     commands: |
+      #       WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/yolov4/tests -m models_device_performance_bare_metal
+      #   if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
+      #   timeout-minutes: ${{ matrix.test-info.timeout }}
 
       # - name: mobilenetv2 tests
       #   uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
@@ -262,14 +264,14 @@ jobs:
       #   if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
       #   timeout-minutes: ${{ matrix.test-info.timeout }}
 
-      - name: vit tests
-        uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
-        with:
-          model_name: "vit"
-          commands: |
-            WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/wormhole/vit/demo/test_vit_device_perf.py -m models_device_performance_bare_metal
-        if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
-        timeout-minutes: ${{ matrix.test-info.timeout }}
+      # - name: vit tests
+      #   uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
+      #   with:
+      #     model_name: "vit"
+      #     commands: |
+      #       WH_ARCH_YAML=$MAGIC_ENV pytest models/demos/wormhole/vit/demo/test_vit_device_perf.py -m models_device_performance_bare_metal
+      #   if: ${{ !cancelled() && matrix.test-info.civ2-compatible && !matrix.test-info.job-set1 }}
+      #   timeout-minutes: ${{ matrix.test-info.timeout }}
 
       # - name: yolov6l tests
       #   uses: tenstorrent/tt-metal/.github/actions/device-perf-test@kkabilar-report-devperf
