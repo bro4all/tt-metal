@@ -17,9 +17,7 @@ runs:
 
         export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_${{ inputs.model_name }}_$(date +%Y_%m_%d).csv
         python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME ${{ inputs.model_name }}
-        export DEVICE_PERF_REPORT_FINAL=Models_Device_Perf_$(date +%Y_%m_%d).csv
-        python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FINAL
-        # cat Models_Device_Perf_${{ inputs.model_name }}_$(date +%Y_%m_%d).csv >> Models_Device_Perf_$(date +%Y_%m_%d).csv
+        tail -n +3 Models_Device_Perf_${{ inputs.model_name }}_$(date +%Y_%m_%d).csv >> Models_Device_Perf_$(date +%Y_%m_%d).csv
         ls -lrt Models_Device_Perf_$(date +%Y_%m_%d).csv
         cat Models_Device_Perf_$(date +%Y_%m_%d).csv
         echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
