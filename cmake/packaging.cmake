@@ -162,4 +162,5 @@ cpack_add_component(
 )
 cpack_add_component(ttnn-validation GROUP nn-validation)
 
+set(CPACK_THREADS 0) # Use all cores
 include(CPack)
