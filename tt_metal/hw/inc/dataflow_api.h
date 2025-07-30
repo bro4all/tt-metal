@@ -197,6 +197,24 @@ void cb_push_back(const int32_t operand, const int32_t num_pages) {
     }
 }
 
+FORCE_INLINE
+void cb_push_back_df(const int32_t operand, const int32_t num_pages) {
+    uint32_t num_words = num_pages * get_local_cb_interface(operand).fifo_page_size;
+
+    volatile tt_reg_ptr uint32_t* pages_received_ptr = get_cb_tiles_received_ptr(operand);
+    pages_received_ptr[0] += num_pages;
+
+    get_local_cb_interface(operand).fifo_wr_ptr += num_words;
+
+    // this will basically reset fifo_wr_ptr to fifo_addr -- no other wrap is legal
+    // producer always writes into contiguous memory, it cannot wrap
+    ASSERT(get_local_cb_interface(operand).fifo_wr_ptr <= get_local_cb_interface(operand).fifo_limit);
+    if (get_local_cb_interface(operand).fifo_wr_ptr == get_local_cb_interface(operand).fifo_limit) {
+        // TODO: change this to fifo_wr_ptr
+        get_local_cb_interface(operand).fifo_wr_ptr -= get_local_cb_interface(operand).fifo_size;
+    }
+}
+
 // clang-format off
 /**
  * Pops a specified number of tiles from the front of the specified CB. This
@@ -370,6 +388,28 @@ bool cb_pages_reservable_at_back(int32_t operand, int32_t num_pages) {
 // clang-format on
 FORCE_INLINE
 void cb_reserve_back(int32_t operand, int32_t num_pages) {
+    uint32_t pages_acked_ptr = (uint32_t)get_cb_tiles_acked_ptr(operand);
+
+    // while the producer (write-side interface) is waiting for space to free up "tiles_pushed" is not changing
+    // "tiles_pushed" is updated by the producer only when the tiles are pushed
+    uint32_t pages_received = get_cb_tiles_received_ptr(operand)[0];
+
+    int32_t free_space_pages;
+    WAYPOINT("CRBW");
+    do {
+        // uint16_t's here because Tensix updates the val at tiles_acked_ptr as uint16 in llk_pop_tiles
+        // TODO: I think we could have TRISC update tiles_acked_ptr, and we wouldn't need uint16 here
+        invalidate_l1_cache();
+        uint16_t pages_acked = (uint16_t)reg_read(pages_acked_ptr);
+        uint16_t free_space_pages_wrap =
+            get_local_cb_interface(operand).fifo_num_pages - (pages_received - pages_acked);
+        free_space_pages = (int32_t)free_space_pages_wrap;
+    } while (free_space_pages < num_pages);
+    WAYPOINT("CRBD");
+}
+
+FORCE_INLINE
+void cb_reserve_back_df(int32_t operand, int32_t num_pages) {
     uint32_t pages_acked_ptr = (uint32_t)get_cb_tiles_acked_ptr(operand);
 
     // while the producer (write-side interface) is waiting for space to free up "tiles_pushed" is not changing
