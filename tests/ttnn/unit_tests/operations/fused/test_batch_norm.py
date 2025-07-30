@@ -524,3 +524,100 @@ def test_batch_norm_compute_config(input_shapes, training, weight, bias, device)
     assert all(
         high > low for high, low in zip(pccs_high, pccs_low)
     ), "High-accuracy config should have higher PCC than low-accuracy config"
+
+
+@pytest.mark.parametrize(
+    "input_shapes, training, momentum, eps",
+    [
+        (torch.Size([1, 1024, 32, 64]), False, 0.1, 1e-05),
+        (torch.Size([1, 128, 128, 256]), False, 0.1, 1e-05),
+        (torch.Size([1, 128, 256, 512]), False, 0.1, 1e-05),
+        (torch.Size([1, 128, 64, 128]), False, 0.1, 1e-05),
+        (torch.Size([1, 2048, 32, 64]), False, 0.1, 1e-05),
+        (torch.Size([1, 256, 128, 256]), False, 0.1, 1e-05),
+        (torch.Size([1, 256, 32, 64]), False, 0.1, 1e-05),
+        (torch.Size([1, 256, 64, 128]), False, 0.1, 1e-05),
+        (torch.Size([1, 32, 128, 256]), False, 0.1, 1e-05),
+        (torch.Size([1, 512, 32, 64]), False, 0.1, 1e-05),
+        (torch.Size([1, 512, 64, 128]), False, 0.1, 1e-05),
+        (torch.Size([1, 64, 128, 256]), False, 0.1, 1e-05),
+        (torch.Size([1, 64, 256, 512]), False, 0.1, 1e-05),
+        (torch.Size([1, 64, 64, 128]), False, 0.1, 1e-05),
+    ],
+)
+def test_batch_norm_lab(input_shapes, training, momentum, eps, device):
+    N, H, W, C = input_shapes
+    d_type = "float32"
+    torch.manual_seed(0)
+
+    # Generate inputs
+    torch_input_tensor, tt_input_tensor = data_gen_with_range_batch_norm(
+        input_shapes, 5, 10, device, is_input=True, testing_dtype=d_type
+    )
+
+    mean_data, mean_tensor = data_gen_with_range_batch_norm(input_shapes, 4, 10, device, testing_dtype=d_type)
+    var_data, var_tensor = data_gen_with_range_batch_norm(input_shapes, 4, 20, device, testing_dtype=d_type)
+
+    weight_data, weight_tensor = data_gen_with_range_batch_norm(input_shapes, 4, 10, device, testing_dtype=d_type)
+    bias_data, bias_tensor = data_gen_with_range_batch_norm(input_shapes, 4, 10, device, testing_dtype=d_type)
+
+    # Torch reference
+    torch_output_tensor = torch.nn.functional.batch_norm(
+        input=torch_input_tensor,
+        running_mean=mean_data,
+        running_var=var_data,
+        weight=weight_data,
+        bias=bias_data,
+        training=training,
+        momentum=momentum,
+        eps=eps,
+    )
+
+    def compute_pccs_for_tensors(torch_tensors, tt_tensors):
+        pccs = []
+        for torch_tensor, tt_tensor in zip(torch_tensors, tt_tensors):
+            _, pcc = comp_pcc(torch_tensor, tt_tensor)
+            pccs.append(pcc)
+        return pccs
+
+    def do_batch_norm_for_config(compute_config):
+        tt_mean = ttnn.clone(mean_tensor)
+        tt_var = ttnn.clone(var_tensor)
+        tt_output_tensor = ttnn.batch_norm(
+            input=tt_input_tensor,
+            running_mean=tt_mean,
+            running_var=tt_var,
+            training=training,
+            weight=weight_tensor,
+            bias=bias_tensor,
+            compute_kernel_config=compute_config,
+            momentum=momentum,
+            eps=eps,
+        )
+        tt_torch_output = ttnn.to_torch(tt_output_tensor)
+        return torch_output_tensor, tt_torch_output
+
+    # Low-acc config
+    config_low = ttnn.init_device_compute_kernel_config(
+        device.arch(),
+        math_fidelity=ttnn.MathFidelity.HiFi4,
+        math_approx_mode=False,
+        fp32_dest_acc_en=False,
+    )
+    torch_out, tt_out = do_batch_norm_for_config(config_low)
+    pccs_low = compute_pccs_for_tensors(torch_out, tt_out)
+
+    # Hi-acc config
+    config_high = ttnn.init_device_compute_kernel_config(
+        device.arch(),
+        math_fidelity=ttnn.MathFidelity.HiFi4,
+        math_approx_mode=False,
+        fp32_dest_acc_en=True,
+    )
+
+    torch_out, tt_out = do_batch_norm_for_config(config_high)
+    pccs_high = compute_pccs_for_tensors(torch_out, tt_out)
+
+    assert all(
+        high > low for high, low in zip(pccs_high, pccs_low)
+    ), "High-accuracy config should have higher PCC than low-accuracy config"

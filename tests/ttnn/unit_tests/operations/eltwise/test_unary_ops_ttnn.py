@@ -667,6 +667,14 @@ def test_unary_neg_ttnn(input_shapes, device, ttnn_dtype):
         (torch.Size([1, 1, 32, 32])),
         (torch.Size([1, 1, 320, 384])),
         (torch.Size([1, 3, 320, 384])),
+        (torch.Size([1, 128, 128, 256])),
+        (torch.Size([1, 128, 64, 128])),
+        (torch.Size([1, 256, 1, 1])),
+        (torch.Size([1, 256, 128, 256])),
+        (torch.Size([1, 256, 32, 64])),
+        (torch.Size([1, 256, 64, 128])),
+        (torch.Size([1, 32, 128, 256])),
+        (torch.Size([1, 64, 64, 128])),
     ),
 )
 def test_unary_relu_ttnn(input_shapes, device):

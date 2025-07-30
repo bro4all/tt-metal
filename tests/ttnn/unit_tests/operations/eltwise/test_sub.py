@@ -121,3 +121,21 @@ def test_rsub_4D(device, n, c, h, w):
     output = ttnn.to_torch(output)
 
     assert_with_pcc(torch_output_tensor, output, 0.9999)
+
+
+@pytest.mark.parametrize(
+    "input_shapeA, input_shapeB",
+    [
+        ((3, 512, 1024), (3, 1, 1)),
+    ],
+)
+def test_sub_broadcasting_panoptics(device, input_shapeA, input_shapeB):
+    a = torch.rand(input_shapeA, dtype=torch.float32)
+    b = torch.rand(input_shapeB, dtype=torch.float32)
+    golden = torch.sub(a, b)
+    ta = ttnn.from_torch(a, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+    tb = ttnn.from_torch(b, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+    tout = ttnn.sub(ta, tb)
+    tout = ttnn.to_torch(tout)
+
+    assert_with_pcc(golden, tout, 0.9999)

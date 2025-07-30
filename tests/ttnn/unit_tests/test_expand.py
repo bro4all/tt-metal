@@ -15,6 +15,9 @@ import pytest
         [(1, 32), (64, 32)],
         [(8, 1), (8, 8)],
         [(8, 1), (-1, 32)],
+        [(1, 512, 1024), (1, 1, 512, 1024)],
+        [(19, 512, 1024), (1, 19, 512, 1024)],
+        [(2, 512, 1024), (1, 2, 512, 1024)],
     ],
 )
 @pytest.mark.parametrize(
@@ -51,3 +54,30 @@ def test_expand_callback(tensor_layout, device):
 
     assert num_program_cache_entries_list[0] > 0
     assert num_program_cache_entries_list[0] == num_program_cache_entries_list[1]
+
+
+@pytest.mark.parametrize(
+    "input_shape, output_shape",
+    [
+        [(1, 512, 1024), (1, 1, 512, 1024)],
+        [(19, 512, 1024), (1, 19, 512, 1024)],
+        [(2, 512, 1024), (1, 2, 512, 1024)],
+    ],
+)
+@pytest.mark.parametrize(
+    "tensor_layout",
+    [
+        ttnn.ROW_MAJOR_LAYOUT,
+        ttnn.TILE_LAYOUT,
+    ],
+)
+def test_expand_panoptic(input_shape, output_shape, tensor_layout, device):
+    torch.manual_seed(2024)
+    torch_input_tensor = torch.rand(input_shape, dtype=torch.float32)
+    torch_output_tensor = torch_input_tensor.expand(output_shape)
+
+    input_tensor = ttnn.from_torch(torch_input_tensor, layout=tensor_layout, device=device)
+    output_tensor = ttnn.expand(input_tensor, output_shape)
+
+    output_tensor = ttnn.to_torch(output_tensor)
+    assert torch.allclose(torch_output_tensor, output_tensor, atol=1e-1, rtol=1e-2)

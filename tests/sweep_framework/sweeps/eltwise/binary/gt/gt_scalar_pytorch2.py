@@ -5,6 +5,7 @@
 from typing import Optional, Tuple
 from functools import partial
 
+import pytest
 import torch
 import ttnn
 from tests.sweep_framework.sweep_utils.utils import gen_shapes
@@ -20,45 +21,118 @@ from models.utility_functions import torch_random
 # They are defined as dict-type suites that contain the arguments to the run function as keys, and lists of possible inputs as values.
 # Each suite has a key name (in this case "suite_1" and "suite_2") which will associate the test vectors to this specific suite of inputs.
 # Developers can create their own generator functions and pass them to the parameters as inputs.
-parameters = {
-    "nightly": {
-        "input_shape": [
-            [10, 10],
-            [15, 15],
-            [],
-        ],
-        "scalar": [0, 0],
-        "input_a_dtype": [ttnn.bfloat16],
-        "input_a_layout": [ttnn.TILE_LAYOUT],
-        "input_a_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
-        "output_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
-    },
-}
+# parameters = {
+#     "nightly": {
+#         "input_shape": [
+#             [10, 10],
+#             [15, 15],
+#             [],
+#             [1, 512, 1024],
+#         ],
+#         "scalar": [0, 0],
+#         "input_a_dtype": [ttnn.bfloat16,ttnn.uint32],
+#         "input_a_layout": [ttnn.TILE_LAYOUT],
+#         "input_a_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
+#         "output_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
+#     },
+# }
 
 
-# This is the run instructions for the test, defined by the developer.
-# The run function must take the above-defined parameters as inputs.
-# The runner will call this run function with each test vector, and the returned results from this function will be stored.
-# If you defined a mesh_device_fixture above, the object you yielded will be passed into this function as 'device'. Otherwise, it will be the default ttnn device opened by the infra.
-def run(
-    input_shape,
-    scalar,
-    input_a_dtype,
-    input_a_layout,
-    input_a_memory_config,
-    output_memory_config,
-    *,
-    device,
-) -> list:
+# # This is the run instructions for the test, defined by the developer.
+# # The run function must take the above-defined parameters as inputs.
+# # The runner will call this run function with each test vector, and the returned results from this function will be stored.
+# # If you defined a mesh_device_fixture above, the object you yielded will be passed into this function as 'device'. Otherwise, it will be the default ttnn device opened by the infra.
+# def run(
+#     input_shape,
+#     scalar,
+#     input_a_dtype,
+#     input_a_layout,
+#     input_a_memory_config,
+#     output_memory_config,
+#     *,
+#     device,
+# ) -> list:
+#     torch.manual_seed(0)
+
+#     torch_input_tensor_a = gen_func_with_cast_tt(
+#         partial(torch_random, low=-100, high=100, dtype=torch.float32), input_a_dtype
+#     )(input_shape)
+
+#     golden_function = ttnn.get_golden_function(ttnn.gt)
+#     torch_output_tensor = golden_function(torch_input_tensor_a, scalar)
+
+#     input_tensor_a = ttnn.from_torch(
+#         torch_input_tensor_a,
+#         dtype=input_a_dtype,
+#         layout=input_a_layout,
+#         device=device,
+#         memory_config=input_a_memory_config,
+#     )
+
+#     start_time = start_measuring_time()
+#     output_tensor = ttnn.gt(input_tensor_a, scalar, memory_config=output_memory_config)
+#     output_tensor = ttnn.to_torch(output_tensor)
+#     e2e_perf = stop_measuring_time(start_time)
+
+#     return [check_with_pcc(torch_output_tensor, output_tensor, 0.999), e2e_perf]
+
+
+@pytest.fixture(scope="module")
+def tensor_map():
+    tensor_map = {}
+
+    return tensor_map
+
+
+@pytest.mark.parametrize(
+    "input_shape",
+    [
+        [1, 512, 1024],  # <--- your custom test case
+        [512, 1024],
+    ],
+)
+@pytest.mark.parametrize(
+    "scalar",
+    [
+        0,
+        # Add more if desired
+    ],
+)
+@pytest.mark.parametrize(
+    "input_a_dtype",
+    [
+        ttnn.uint32,
+        ttnn.float32,
+        # torch.int64,  # If supported
+    ],
+)
+@pytest.mark.parametrize(
+    "input_a_layout",
+    [
+        ttnn.TILE_LAYOUT,
+    ],
+)
+@pytest.mark.parametrize(
+    "input_a_memory_config",
+    [
+        ttnn.DRAM_MEMORY_CONFIG,
+        ttnn.L1_MEMORY_CONFIG,
+    ],
+)
+@pytest.mark.parametrize(
+    "output_memory_config",
+    [
+        ttnn.DRAM_MEMORY_CONFIG,
+        ttnn.L1_MEMORY_CONFIG,
+    ],
+)
+def test_run(device, input_shape, scalar, input_a_dtype, input_a_layout, input_a_memory_config, output_memory_config):
     torch.manual_seed(0)
-
     torch_input_tensor_a = gen_func_with_cast_tt(
         partial(torch_random, low=-100, high=100, dtype=torch.float32), input_a_dtype
     )(input_shape)
-
     golden_function = ttnn.get_golden_function(ttnn.gt)
     torch_output_tensor = golden_function(torch_input_tensor_a, scalar)
-
     input_tensor_a = ttnn.from_torch(
         torch_input_tensor_a,
         dtype=input_a_dtype,
@@ -66,10 +140,8 @@ def run(
         device=device,
         memory_config=input_a_memory_config,
     )
-
     start_time = start_measuring_time()
     output_tensor = ttnn.gt(input_tensor_a, scalar, memory_config=output_memory_config)
     output_tensor = ttnn.to_torch(output_tensor)
     e2e_perf = stop_measuring_time(start_time)
-
-    return [check_with_pcc(torch_output_tensor, output_tensor, 0.999), e2e_perf]
+    assert check_with_pcc(torch_output_tensor, output_tensor, 0.999)

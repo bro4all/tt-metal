@@ -217,3 +217,24 @@ def test_topk_large_2d_shapes(N, C, H, W, dim, k, dtype, sorted, largest, device
     if dim == 0 or dim == 1:
         pytest.skip()
     run_topk_test(N, C, H, W, k, dtype, dim, sorted, largest, device, sub_core_grids, pass_indices_tensor)
+
+
+@pytest.mark.parametrize(
+    "N, C, H, W, dim, k",
+    ((1, 1, 512, 1024, 3, 200),),
+)
+@pytest.mark.parametrize(
+    "dtype",
+    (ttnn.bfloat16,),
+    ids=[
+        "BFLOAT16_B",
+    ],
+)
+def test_topk_panoptic(N, C, H, W, dim, k, dtype, device):
+    if dim == 0 or dim == 1:
+        # As of now, when we try to get top-k for dim = 0 or 1, we get following error from transpose_op.cpp's validate():
+        # input_tensor.get_dtype() == DataType::BFLOAT16 || input_tensor.get_dtype() == DataType::FLOAT32
+        # this is because, transpose.cpp always typecasts bf8 to bf16
+        # and when dim = 0 or 1, transpose converts it into TransposeOpDim::HC & this dim doesnt support bf16 or fp32
+        pytest.skip()
+    run_topk_test(N, C, H, W, k, dtype, dim, True, True, device, None)

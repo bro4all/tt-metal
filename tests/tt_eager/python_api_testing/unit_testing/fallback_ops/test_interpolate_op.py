@@ -20,6 +20,16 @@ import pytest
         (torch.Size([1, 3, 6, 4]), (5, 10), None, "nearest", None, False, False),
         (torch.Size([1, 3, 6, 4]), None, (2, 3), "bilinear", True, True, True),
         (torch.Size([2, 4, 32, 56]), 8, None, "nearest", None, None, False),
+        (torch.Size([1, 1, 128, 256]), None, 4, "bilinear", False, None, False),
+        (torch.Size([1, 1, 512, 1024]), [512, 1024], None, "bilinear", False, None, False),
+        (torch.Size([1, 128, 64, 128]), [128, 256], None, "bilinear", False, None, False),
+        (torch.Size([1, 19, 128, 256]), None, 4, "bilinear", False, None, False),
+        (torch.Size([1, 19, 512, 1024]), [512, 1024], None, "bilinear", False, None, False),
+        (torch.Size([1, 2, 128, 256]), None, 4, "bilinear", False, None, False),
+        (torch.Size([1, 2, 512, 1024]), [512, 1024], None, "bilinear", False, None, False),
+        (torch.Size([1, 256, 1, 1]), [32, 64], None, "bilinear", False, None, False),
+        (torch.Size([1, 256, 32, 64]), [64, 128], None, "bilinear", False, None, False),
+        (torch.Size([1, 256, 64, 128]), [128, 256], None, "bilinear", False, None, False),
     ),
 )
 @pytest.mark.parametrize("on_device", [True, False])

@@ -168,3 +168,25 @@ def test_tensor_conversion_with_python_dtype(python_lib, shape, python_dtype_str
 
     passing = allclose(py_tensor, py_tensor_after_round_trip, **allclose_kwargs)
     assert passing
+
+
+@pytest.mark.parametrize("convert_to_device", [True])
+@pytest.mark.parametrize("tt_dtype", [ttnn.bfloat16])  # Only bfloat16
+@pytest.mark.parametrize("shape", [(1, 1, 512, 1024)])
+def test_tensor_conversion_panoptic(shape, tt_dtype, convert_to_device, device):
+    torch.manual_seed(0)
+    dtype = tt_dtype_to_torch_dtype[tt_dtype]  # Should be torch.bfloat16
+    py_tensor = torch.rand(shape, dtype=dtype)
+    tt_tensor = ttnn.Tensor(py_tensor, tt_dtype)
+
+    # Optional check for layout if you want:
+    # assert tt_tensor.layout == ttnn.ROW_MAJOR_LAYOUT
+
+    if convert_to_device:
+        tt_tensor = tt_tensor.to(device)
+        tt_tensor = tt_tensor.cpu()
+
+    py_tensor_after_round_trip = tt_tensor.to_torch()
+    assert py_tensor.dtype == py_tensor_after_round_trip.dtype
+    assert py_tensor.shape == py_tensor_after_round_trip.shape
+    assert torch.allclose(py_tensor, py_tensor_after_round_trip)

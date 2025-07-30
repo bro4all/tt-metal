@@ -252,7 +252,16 @@ def test_add_and_apply_activations(device, shape, activations):
     assert output_tensor.shape == shape
 
 
-@pytest.mark.parametrize("shape", [(1, 1, 32, 32)])
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 1, 32, 32),
+        (1, 1024, 32, 64),
+        (1, 2048, 32, 64),
+        (1, 256, 128, 256),
+        (1, 512, 64, 128),
+    ],
+)
 @pytest.mark.parametrize("activations", [[], [ttnn.UnaryWithParam(ttnn.UnaryOpType.RELU)]])
 def test_in_place_add_and_apply_activations(device, shape, activations):
     torch.manual_seed(0)
@@ -585,3 +594,24 @@ def test_add_with_sub_devices(device, input_a_sharded, input_b_sharded, out_shar
     output_tensor = ttnn.to_torch(output_tensor)
     assert ttnn.pearson_correlation_coefficient(torch_output_tensor, output_tensor) >= 0.99988
     assert output_tensor.shape == shape
+
+
+@pytest.mark.parametrize("scalar", [-1])
+@pytest.mark.parametrize("size", [(1, 512, 1024)])
+def test_add_int_tensor_and_scalar(device, scalar, size):
+    torch.manual_seed(0)
+    torch_input_tensor = torch.randint(low=-100, high=100, size=size, dtype=torch.int64)
+    torch_output_tensor = torch_input_tensor + scalar
+
+    # If TTNN supports int64 (unlikely):
+    # input_tensor = ttnn.from_torch(torch_input_tensor, layout=ttnn.TILE_LAYOUT, device=device)
+    # If not, convert to bfloat16:
+    torch_input_tensor_fp = torch_input_tensor.to(torch.bfloat16)
+    torch_output_tensor_fp = torch_input_tensor_fp + scalar  # Scalar gets cast
+
+    input_tensor = ttnn.from_torch(torch_input_tensor_fp, layout=ttnn.TILE_LAYOUT, device=device)
+    output_tensor = input_tensor + scalar
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert ttnn.pearson_correlation_coefficient(torch_output_tensor_fp, output_tensor) >= 0.99988
+    assert output_tensor.shape == size

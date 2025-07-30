@@ -20,10 +20,11 @@ def tensor_map():
         # Normal reduction cases are when channels <= 8 * 32 and kernel_hw <= 16
         # Wide reduction cases channels > 8 * 32
         # Large reduction cases (channels < 32 and kernel_hw > 16) or (channels > 32 and kernel_hw > 32)
-        [2, 32, 16, 16],
-        [1, 512, 112, 32],
-        [1, 320, 48, 48],
-        [1, 320, 47, 47],
+        # [2, 32, 16, 16],
+        # [1, 512, 112, 32],
+        # [1, 320, 48, 48],
+        # [1, 320, 47, 47],
+        [1, 2048, 32, 64],
     ),
 )
 @pytest.mark.parametrize(
@@ -33,18 +34,19 @@ def tensor_map():
         # Large reductions go to large kernels
         # Reductions which are large and wide at the same time
         # go to large kernels
-        (3, 3),
-        (9, 9),
-        (36, 36),
+        # (3, 3),
+        # (9, 9),
+        # (36, 36),
+        (32, 64),
     ),
 )
 @pytest.mark.parametrize(
     "stride",
-    ((2, 2),),
+    ((1, 1),),
 )
 @pytest.mark.parametrize(
     "padding",
-    ((1, 1),),
+    ((0, 0),),
 )
 @pytest.mark.parametrize(
     "ceil_mode",

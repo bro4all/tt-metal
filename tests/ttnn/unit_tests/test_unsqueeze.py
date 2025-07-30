@@ -24,6 +24,14 @@ import ttnn
         ((8732,), 1, ttnn.ROW_MAJOR_LAYOUT),
         ((8732,), -1, ttnn.ROW_MAJOR_LAYOUT),
         ((8732,), 0, ttnn.ROW_MAJOR_LAYOUT),
+        ((0, 2), 0, ttnn.ROW_MAJOR_LAYOUT),
+        ((0, 2), 0, ttnn.TILE_LAYOUT),
+        ((1, 512, 1024), 0, ttnn.ROW_MAJOR_LAYOUT),
+        ((1, 512, 1024), 0, ttnn.TILE_LAYOUT),
+        ((19, 512, 1024), 0, ttnn.ROW_MAJOR_LAYOUT),
+        ((19, 512, 1024), 0, ttnn.TILE_LAYOUT),
+        ((2, 512, 1024), 0, ttnn.ROW_MAJOR_LAYOUT),
+        ((2, 512, 1024), 0, ttnn.TILE_LAYOUT),
     ],
 )
 def test_unsqueeze(device, input_shape, dim, layout):

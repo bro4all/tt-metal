@@ -41,6 +41,7 @@ from tests.ttnn.utils_for_testing import check_with_pcc
         ([50, 100, 200], -1, True, True, torch.int32),
         ([25, 50, 100], -1, False, True, torch.uint8),
         ([12, 24, 48, 96], -1, True, False, torch.bfloat16),
+        ([19, 512, 1024], 0, True, True, torch.float32),
     ],
 )
 def test_argmax(device, tensor_shape, dim, keepdim, use_multicore, dtype):

@@ -27,6 +27,7 @@ from tests.ttnn.utils_for_testing import tt_dtype_to_torch_dtype
     [
         (16, 3),
         (32, 6),
+        (1024, 512),
     ],
 )
 @pytest.mark.parametrize(

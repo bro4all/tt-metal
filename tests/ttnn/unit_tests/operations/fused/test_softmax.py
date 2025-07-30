@@ -249,10 +249,10 @@ def test_softmax_sharded_stable_with_program_cache(
     assert device.num_program_cache_entries() == 1
 
 
-@pytest.mark.parametrize("batch_size", [1, 16])
-@pytest.mark.parametrize("h", [32, 64])
-@pytest.mark.parametrize("w", [32, 64])
-@pytest.mark.parametrize("dim", [-1, -2, -3])
+@pytest.mark.parametrize("batch_size", [1, 16, 19])
+@pytest.mark.parametrize("h", [32, 64, 512])
+@pytest.mark.parametrize("w", [32, 64, 1024])
+@pytest.mark.parametrize("dim", [-1, -2, -3, 0])
 def test_softmax(device, batch_size, h, w, dim):
     torch.manual_seed(0)
 
