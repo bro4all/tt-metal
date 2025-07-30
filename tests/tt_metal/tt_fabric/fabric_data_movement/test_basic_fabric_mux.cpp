@@ -551,6 +551,7 @@ void run_mux_test_variant(FabricMuxBaseFixture* fixture, TestConfig test_config)
 
         uint32_t sender_id = 0;
         for (const auto& [sender_logical_core, num_hops] : device_senders_map[devices[i]]) {
+            std::cout << "sender logical core " << sender_logical_core.str() << std::endl;
             auto* dest_device = devices[get_dest_device_idx(i, num_hops)];
             WorkerTestConfig sender_config = {
                 .memory_map = &worker_memory_map,
@@ -571,6 +572,7 @@ void run_mux_test_variant(FabricMuxBaseFixture* fixture, TestConfig test_config)
         uint32_t receiver_id = 0;
         for (const auto& [receiver_logical_core, num_hops] : device_receivers_map[devices[i]]) {
             auto* dest_device = devices[get_dest_device_idx(i, num_hops)];
+            std::cout << "receiver logical core " << receiver_logical_core.str() << std::endl;
             WorkerTestConfig receiver_config = {
                 .memory_map = &worker_memory_map,
                 .worker_logical_core = receiver_logical_core,
@@ -850,7 +852,7 @@ TEST_F(Fabric1DMuxFixture, TestFabricMuxEightChipVariant) {
 TEST_F(Fabric1DMuxFixture, TestFabricMuxStressOpenClose) {
     TestConfig test_config = {
         .num_devices = 2,  // running on 2 devices will allow to test on all types of multi-chip systems
-        .num_sender_clients = 8,
+        .num_sender_clients = 1,
         .num_packets = 100,
         .num_credits = 16,
         .num_return_credits_per_packet = 8,

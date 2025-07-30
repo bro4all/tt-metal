@@ -494,4 +494,36 @@ TEST_F(DeviceFixture, TensixInlineWriteDynamicNoc) {
     }
 }
 
+TEST_F(DeviceFixture, TensixStressInlineWrite) {
+    CoreCoord writer_core{0, 0};
+    CoreCoord receiver_core(0, 1);
+
+    auto device = this->devices_.at(0);
+
+    // CoreCoord virtual_receiver_core = device->worker_core_from_logical_core(receiver_core);
+    CoreCoord virtual_receiver_core = device->ethernet_core_from_logical_core(receiver_core);
+    std::cout << "virtual_receiver_core: " << virtual_receiver_core.str() << std::endl;
+
+    // uint32_t receiver_addr0 = device->allocator()->get_base_allocator_addr(tt_metal::HalMemType::L1);
+    uint32_t receiver_addr0 = tt::tt_metal::hal::get_erisc_l1_unreserved_base();
+    uint32_t l1_alignment = MetalContext::instance().hal().get_alignment(HalMemType::L1);
+    uint32_t receiver_addr1 = receiver_addr0 + l1_alignment;
+
+    tt_metal::Program program = tt_metal::CreateProgram();
+    tt_metal::KernelHandle kernel0 = tt_metal::CreateKernel(
+        program,
+        "tests/tt_metal/tt_metal/test_kernels/dataflow/stress_b2b_inline_writer.cpp",
+        writer_core,
+        tt_metal::DataMovementConfig{
+            .processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::NOC_1});
+
+    tt_metal::SetRuntimeArgs(
+        program,
+        kernel0,
+        writer_core,
+        {virtual_receiver_core.x, virtual_receiver_core.y, receiver_addr0, receiver_addr1, 100});
+
+    tt_metal::detail::LaunchProgram(device, program);
+}
+
 }  // namespace tt::tt_metal

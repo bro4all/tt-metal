@@ -472,12 +472,14 @@ struct WorkerToFabricEdmSenderImpl {
         // buffer index stored at location after handshake addr
         if (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
             const uint64_t remote_buffer_index_addr = dest_noc_addr_coord_only | edm_copy_of_wr_counter_addr;
+            DPRINT << "remote_buffer_index_addr: " << HEX() << remote_buffer_index_addr << DEC() << ENDL();
             noc_inline_dw_write(remote_buffer_index_addr, this->buffer_slot_write_counter.counter);
         } else {
             const uint64_t remote_buffer_index_addr = dest_noc_addr_coord_only | edm_copy_of_wr_counter_addr;
             noc_inline_dw_write(remote_buffer_index_addr, this->get_buffer_slot_index());
         }
         const uint64_t dest_edm_connection_state_addr = dest_noc_addr_coord_only | edm_connection_handshake_l1_addr;
+        DPRINT << "dest_edm_connection_state_addr: " << HEX() << dest_edm_connection_state_addr << DEC() << ENDL();
         noc_inline_dw_write(dest_edm_connection_state_addr, close_connection_request_value);
     }
 

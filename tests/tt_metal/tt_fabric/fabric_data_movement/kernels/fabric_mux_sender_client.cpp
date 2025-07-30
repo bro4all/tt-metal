@@ -107,6 +107,7 @@ void kernel_main() {
     tt::tt_fabric::wait_for_fabric_endpoint_ready(
         fabric_mux_x, fabric_mux_y, fabric_mux_status_address, local_fabric_mux_status_address);
 
+    // tt::tt_fabric::fabric_client_connect(mux_connection_handle);
     for (uint32_t iter = 0; iter < num_open_close_iters; iter++) {
         tt::tt_fabric::fabric_client_connect(mux_connection_handle);
 
@@ -144,6 +145,7 @@ void kernel_main() {
         }
         tt::tt_fabric::fabric_client_disconnect(mux_connection_handle);
     }
+    // tt::tt_fabric::fabric_client_disconnect(mux_connection_handle);
 
     if constexpr (terminate_from_kernel) {
         if constexpr (is_termination_master) {
