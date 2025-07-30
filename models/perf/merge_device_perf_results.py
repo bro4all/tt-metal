@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         nargs="?",
         default="",
-        help="model name",
+        help="Enter 'REPORT' to only merge devperf reports and not check results",
     )
     return parser.parse_args()
 
@@ -63,5 +63,8 @@ if __name__ == "__main__":
     assert (
         args.output_filename
     ), f"Expected user to provide an output filename for merged report (arguments provided were {args})"
-    merge_perf_files(args.output_filename, f"device_perf", expected_cols)
-    check_device_perf_results(args.output_filename, expected_cols, check_cols)
+    if str(args.devperf) == "REPORT":
+        merge_perf_files(args.output_filename, f"device_perf", expected_cols)
+    else:
+        merge_perf_files(args.output_filename, f"device_perf", expected_cols)
+        check_device_perf_results(args.output_filename, expected_cols, check_cols)
