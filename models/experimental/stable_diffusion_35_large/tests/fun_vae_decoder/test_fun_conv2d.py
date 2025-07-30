@@ -27,7 +27,7 @@ def print_stats(label, data: torch.Tensor, device=None):
 @pytest.mark.parametrize(
     "mesh_device, cfg, sp, tp, topology",
     [
-        [(1, 2), (2, 1), (2, 0), (2, 1), ttnn.Topology.Linear],
+        [(2, 4), (2, 1), (2, 0), (2, 1), ttnn.Topology.Linear],
         # [(4, 8), (2, 1), (4, 0), (4, 1), ttnn.Topology.Linear],
     ],
     ids=[
@@ -46,19 +46,16 @@ def print_stats(label, data: torch.Tensor, device=None):
 @pytest.mark.parametrize(
     ("batch", "height", "width", "in_channels", "out_channels"),
     [
-        # (1, 256, 256, 512, 512)
-        # (1, 128, 128, 16, 512), #slice -> 8
-        # (1, 128, 128, 512, 512), #slice -> 4
-        # (1, 256, 256, 512, 512), #slice -> 4, (8)
-        # (1, 512, 512, 512, 512), #(16) - 64. How does data Move affect?
-        # (1, 512, 512, 512, 512), #(16) - 64. How does data Move affect?
-        # (1, 512, 512, 512, 256), #16
-        # (1, 512, 512, 256, 256), #(4),8
-        # (1, 1024, 1024, 256, 256), #16 Need to try height activation override. Data will be significant to move
-        # (1, 1024, 1024, 256, 128), #16
-        # (1, 1024, 1024, 128, 128), #16. Verify this
+        (1, 128, 128, 16, 512),
+        (1, 128, 128, 512, 512),
+        (1, 256, 256, 512, 512),
+        (1, 512, 512, 512, 512),
+        (1, 512, 512, 512, 256),
+        (1, 512, 512, 256, 256),
+        (1, 1024, 1024, 256, 256),  # 16 Need to try height activation override. Data will be significant to move
+        (1, 1024, 1024, 256, 128),
+        (1, 1024, 1024, 128, 128),
         (1, 1024, 1024, 128, 3),  # (8) 16
-        # (1, 1024, 1024, 128, 3), #(8) 16
     ],
 )
 def test_fun_conv2d(
@@ -159,11 +156,10 @@ def test_fun_conv2d(
     tt_final_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
     result, output = comp_pcc(out, tt_final_out_torch)
     logger.info(f"Comparison result Pass:{result}, Output {output}")
-    # assert_quality(torch_final, out, pcc=0.94, ccc=0.94)
     assert_quality(tt_final_out_torch, out, pcc=0.94, ccc=0.94)
 
     total_time = 0
-    num_itr = 10
+    num_itr = 2
     for _ in range(num_itr):
         tt_inp = ttnn.from_torch(torch_input_padded.clone().detach(), dtype=ttnn_dtype, device=device)
         start_time = time.time()
@@ -172,6 +168,3 @@ def test_fun_conv2d(
         logger.info(f"time: {(time.time() - start_time)}")
 
     logger.info(f" conv time: {total_time/num_itr}")
-
-    # print(f" in sem: {ccl_semaphore_handles}")
-    print([i for i in mesh_device.get_device_ids()])
