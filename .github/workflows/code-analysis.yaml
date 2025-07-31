@@ -189,6 +189,9 @@ jobs:
         run: |
           nice -n 19 cmake --build --preset clang-tidy
 
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Workflow Status:** ${{ needs.setup-and-test.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Duration:** ${{ github.event.workflow_run.duration || 'N/A' }} seconds" >> $GITHUB_STEP_SUMMARY
+      - name: Publish Ccache summary
+        run: |
+          echo '## CCache Summary' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ccache -s >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
