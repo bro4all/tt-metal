@@ -1623,7 +1623,7 @@ void noc_semaphore_set(volatile tt_l1_ptr uint32_t* sem_addr, uint32_t val) {
 template <bool write_to_stream_reg = false, bool posted = false>
 FORCE_INLINE void noc_inline_dw_write(
     uint64_t addr, uint32_t val, uint8_t be = 0xF, uint8_t noc = noc_index, uint8_t vc = NOC_UNICAST_WRITE_VC) {
-    WAYPOINT("NWIW");
+    // WAYPOINT("NWIW");
     DEBUG_SANITIZE_NOC_ADDR(noc, addr, 4);
     DEBUG_SANITIZE_NO_DRAM_ADDR(noc, addr, 4);
 #ifdef ARCH_BLACKHOLE
@@ -1633,6 +1633,7 @@ FORCE_INLINE void noc_inline_dw_write(
     // Blackhole by writing the value to be written to local L1 first and then issue a noc async write.
     ASSERT((addr & 0x3) == 0);
     if constexpr (write_to_stream_reg) {
+        ASSERT((addr & 0xFFFFFFFF) >= 0xFFB40000);
         noc_fast_write_dw_inline<noc_mode>(
             noc,
             write_at_cmd_buf,

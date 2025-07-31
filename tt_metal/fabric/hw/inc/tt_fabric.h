@@ -600,6 +600,7 @@ struct fvc_inbound_push_state_t {
             advance_remote_wrptr(1, remote_wrptr_direction);
             advance_out_rdptr<fvc_mode>(1);
             uint64_t push_addr = get_noc_addr_helper(dest_addr, router_push_addr);
+            WAYPOINT("NWI3");
             noc_inline_dw_write<true, true>(push_addr, 1 << REMOTE_DEST_BUF_WORDS_FREE_INC);
 
             *update_router_space = (-1) << REMOTE_DEST_BUF_WORDS_FREE_INC;
@@ -642,6 +643,7 @@ struct fvc_inbound_push_state_t {
         noc_async_write_one_packet(get_local_buffer_read_addr(), buffer_wr_addr, FABRIC_ROUTER_BUF_SLOT_SIZE);
         advance_remote_wrptr(1, direction);
         uint64_t push_addr = get_noc_addr_helper(mcast_router_noc_xy[direction], router_push_addr);
+        WAYPOINT("NWI4");
         noc_inline_dw_write<true, true>(push_addr, 1 << REMOTE_DEST_BUF_WORDS_FREE_INC);
         *update_router_space = (-1) << REMOTE_DEST_BUF_WORDS_FREE_INC;
     }
@@ -771,6 +773,7 @@ struct fvc_inbound_push_state_t {
         advance_remote_wrptr(1);
         advance_out_rdptr<fvc_mode>(1);
         uint64_t push_addr = get_noc_addr_helper(dest_addr, router_push_addr);
+        WAYPOINT("NWI4");
         noc_inline_dw_write<true>(push_addr, 1 << REMOTE_DEST_BUF_WORDS_FREE_INC);
 
         *update_router_space = (-1) << REMOTE_DEST_BUF_WORDS_FREE_INC;

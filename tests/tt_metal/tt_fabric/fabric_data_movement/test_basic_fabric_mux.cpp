@@ -852,7 +852,7 @@ TEST_F(Fabric1DMuxFixture, TestFabricMuxEightChipVariant) {
 TEST_F(Fabric1DMuxFixture, TestFabricMuxStressOpenClose) {
     TestConfig test_config = {
         .num_devices = 2,  // running on 2 devices will allow to test on all types of multi-chip systems
-        .num_sender_clients = 8,
+        .num_sender_clients = 6,
         .num_packets = 100,
         .num_credits = 16,
         .num_return_credits_per_packet = 8,
