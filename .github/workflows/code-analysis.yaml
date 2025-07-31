@@ -203,7 +203,7 @@ jobs:
               
               # Wait and get run ID
               sleep 10
-              local run_id=$(gh run list --workflow "$workflow" --branch "${{ env.PARENT_BRANCH_NAME }}" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
+              run_id=$(gh run list --workflow "$workflow" --branch "${{ env.PARENT_BRANCH_NAME }}" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
               
               if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
                 run_ids["$workflow"]="$run_id"
@@ -218,7 +218,7 @@ jobs:
           done
           
           # Wait for all background processes
-          local exit_code=0
+          exit_code=0
           for workflow in "${!pids[@]}"; do
             if wait "${pids[$workflow]}"; then
               echo "✅ $workflow completed successfully"
