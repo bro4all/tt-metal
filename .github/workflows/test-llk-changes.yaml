@@ -103,21 +103,12 @@ jobs:
 
           # Setup test branch in submodule
           cd ${{ env.SUBMODULE_PATH }}
-          git push origin --delete "$TEST_BRANCH_NAME" 2>/dev/null || true
-          git branch -D "$TEST_BRANCH_NAME" 2>/dev/null || true
           git checkout -b "$TEST_BRANCH_NAME" "origin/$MIRRORED_BRANCH"
           git push origin "$TEST_BRANCH_NAME"
 
-          # Setup parent repository
+          # Setup parent repository with submodule reference
           cd ${{ github.workspace }}
-          git push origin --delete "${{ env.PARENT_BRANCH_NAME }}" 2>/dev/null || true
-          git branch -D "${{ env.PARENT_BRANCH_NAME }}" 2>/dev/null || true
           git checkout -b "${{ env.PARENT_BRANCH_NAME }}"
-
-          # Update submodule reference
-          cd ${{ env.SUBMODULE_PATH }}
-          git checkout "$TEST_BRANCH_NAME"
-          cd ${{ github.workspace }}
           git add ${{ env.SUBMODULE_PATH }}
           git commit -m "test: update LLK submodule to test branch $TEST_BRANCH_NAME from mirrored branch ${{ inputs.mirrored_branch }}"
           git push origin "${{ env.PARENT_BRANCH_NAME }}"
@@ -233,10 +224,7 @@ jobs:
               exit_code=1
             fi
           done
-
           exit $exit_code
-
-
 
   cleanup:
     needs: setup-and-test
