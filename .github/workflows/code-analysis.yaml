@@ -45,7 +45,7 @@ on:
         default: 240
 
 env:
-  PARENT_BRANCH_NAME: test-mirrored-branch-${{ github.run_id }}
+  PARENT_BRANCH_NAME: test-llk-parent-${{ inputs.mirrored_branch }}-${{ github.run_id }}
   SUBMODULE_PATH: tt_metal/third_party/tt_llk
   WORKFLOW_TIMEOUT: ${{ inputs.workflow_timeout || 240 }}
   MAX_RETRIES: 3
