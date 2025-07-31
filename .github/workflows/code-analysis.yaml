@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TEMP_METAL_PAT }}
           fetch-depth: 0
           ref: main
           clean: true
@@ -121,7 +121,7 @@ jobs:
           steps.check-branch.outputs.branch-exists == 'true' &&
           (inputs.run_all_post_commit == true || inputs.run_blackhole_post_commit == true)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TEMP_METAL_PAT }}
           WORKFLOW_TIMEOUT: ${{ env.WORKFLOW_TIMEOUT }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
           POLL_INTERVAL: ${{ env.POLL_INTERVAL }}
@@ -235,12 +235,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TEMP_METAL_PAT }}
 
       - name: Cleanup test branches
         if: needs.setup-and-test.outputs.branch-exists == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TEMP_METAL_PAT }}
           SUBMODULE_PATH: ${{ env.SUBMODULE_PATH }}
         run: |
           TEST_BRANCH_NAME="${{ needs.setup-and-test.outputs.test-branch-name }}"
