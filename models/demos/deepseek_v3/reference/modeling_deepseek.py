@@ -377,10 +377,11 @@ class MoEGate(nn.Module):
             self.e_score_correction_bias = nn.Parameter(torch.empty((self.n_routed_experts)))
         self.reset_parameters()
         # initatialize whether to use bitonic topk or torch.topk
-        self.use_bitonic_sort = True
+        self.use_bitonic_sort = False
         self.topk_fn = torch.topk
         if self.use_bitonic_sort:
             self.topk_fn = topk_bitonic
+        # self.scoring_func = "softmax"
 
     def reset_parameters(self) -> None:
         import torch.nn.init as init
@@ -391,9 +392,11 @@ class MoEGate(nn.Module):
         bsz, seq_len, h = hidden_states.shape
         ### compute gating score
         hidden_states = hidden_states.view(-1, h)
-        logits = F.linear(hidden_states.type(torch.float32), self.weight.type(torch.float32), None)
+        logits = F.linear(hidden_states, self.weight, None)
         if self.scoring_func == "sigmoid":
             scores = logits.sigmoid()
+        elif self.scoring_func == "softmax":
+            scores = logits.softmax(dim=-1)
         else:
             raise NotImplementedError(f"insupportable scoring function for MoE gating: {self.scoring_func}")
 
@@ -401,9 +404,10 @@ class MoEGate(nn.Module):
         if self.topk_method == "noaux_tc":
             assert not self.training
             scores_for_choice = scores.view(bsz * seq_len, -1) + self.e_score_correction_bias.unsqueeze(0)
-            group_scores = topk_bitonic(scores_for_choice.view(bsz * seq_len, self.n_group, -1), k=2, dim=-1)[0].sum(
-                dim=-1
-            )  # [n, n_group]
+            group_scores, group_idxs = self.topk_fn(
+                scores_for_choice.view(bsz * seq_len, self.n_group, -1), k=2, dim=-1, sorted=True
+            )
+            group_scores = group_scores.sum(dim=-1)  # [n, n_group]
 
             group_idx = self.topk_fn(group_scores, k=self.topk_group, dim=-1, sorted=True)[1]  # [n, top_k_group]
             group_mask = torch.zeros_like(group_scores)  # [n, n_group]

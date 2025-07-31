@@ -227,6 +227,15 @@ class TopKConfig(OpConfigBase):
 
 
 @dataclass
+class TopKFallbackConfig(OpConfigBase):
+    """Common parameters for a ttnn.topk_fallback op"""
+
+    mesh_device: ttnn.Device
+    dtype: ttnn.DataType
+    memory_config: ttnn.MemoryConfig
+
+
+@dataclass
 class ScatterConfig(OpConfigBase):
     """Common parameters for a ttnn.experimental.scatter op"""
 

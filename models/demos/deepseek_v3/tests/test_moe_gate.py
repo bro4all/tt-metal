@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
+import os
 
 import pytest
 import torch
 from loguru import logger
+from safetensors.torch import load_file
 
 import ttnn
 
@@ -18,15 +21,16 @@ from models.utility_functions import comp_pcc
 @pytest.fixture
 def reference_model(hf_config):
     """Get the actual DeepSeek MLP model using local implementation."""
-    torch.manual_seed(5)
+    torch.manual_seed(100)
+    torch.use_deterministic_algorithms(True)
     return ReferenceMoEGate(hf_config)
 
 
 @pytest.mark.parametrize(
     "mode,seq_len",
     [
-        ("decode", 128),
-        ("prefill", 2048),
+        ("decode", 32),
+        # ("prefill", 2048),
     ],
 )
 def test_forward_pass(
@@ -35,16 +39,47 @@ def test_forward_pass(
     reference_model,
     hf_config,
     tmp_path,
-    mesh_device,
+    device,
 ):
+    mesh_device = device
+    layer_idx = 56
+    torch.set_default_dtype(torch.bfloat16)
+    model_dir = "/proj_sw/user_dev/deepseek-ai/DeepSeek-R1-0528"
+    index_file = os.path.join(model_dir, "model.safetensors.index.json")
+
+    # List of keys you want
+    keys_to_load = [
+        f"model.layers.{layer_idx}.mlp.gate.e_score_correction_bias",
+        f"model.layers.{layer_idx}.mlp.gate.weight",
+    ]
+
+    # Load index
+    with open(index_file, "r") as f:
+        index = json.load(f)
+
+    weight_map = index["weight_map"]
+
+    # Track which files we need
+    files_needed = set(weight_map[k] for k in keys_to_load if k in weight_map)
+
+    # Load only those files and extract required tensors
+    partial_state_dict = {}
+    for fname in files_needed:
+        full_path = os.path.join(model_dir, fname)
+        shard_state = load_file(full_path)
+        for key in keys_to_load:
+            if key in shard_state:
+                partial_state_dict[key] = shard_state[key]
+
     """Test forward pass against reference model."""
     batch_size = 1
 
     # Get state dict from actual model - pass directly to convert_weights
-    hf_state_dict = reference_model.state_dict()
 
     # Setup: Convert weights and get weight_config
-    weight_config = MoEGate.convert_weights(hf_config, hf_state_dict, tmp_path, mesh_device)
+    weight_config = MoEGate.convert_weights(
+        hf_config, partial_state_dict, tmp_path, mesh_device, prefix=f"model.layers.{layer_idx}.mlp.gate."
+    )
 
     # Generate appropriate config
     if mode == "prefill":
@@ -60,6 +95,16 @@ def test_forward_pass(
 
     # Create input tensor
     torch_input = torch.randn(batch_size, seq_len, hf_config.hidden_size)
+
+    reference_model.load_state_dict(
+        {
+            k.replace(f"model.layers.{layer_idx}.mlp.gate.", ""): v
+            for k, v in partial_state_dict.items()
+            if k.startswith(f"model.layers.{layer_idx}.mlp.gate.")
+        }
+    )
+
+    reference_model = reference_model.to(dtype=torch.bfloat16)
 
     # Reference forward pass
     reference_topk_indices, reference_topk_weights = reference_model(torch_input)

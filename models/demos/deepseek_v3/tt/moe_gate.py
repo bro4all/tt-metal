@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import torch
+from loguru import logger
 from transformers.configuration_utils import PretrainedConfig
 
 import ttnn
@@ -17,13 +18,9 @@ from models.demos.deepseek_v3.utils.config_dataclass import (
     ReshapeConfig,
     ScatterConfig,
     TopKConfig,
+    TopKFallbackConfig,
 )
-from models.demos.deepseek_v3.utils.config_helpers import (
-    COMPUTE_KERNEL_CONFIG_HIFI2,
-    TOPK_MIN_WIDTH,
-    even_int_div,
-    save_and_get_path,
-)
+from models.demos.deepseek_v3.utils.config_helpers import COMPUTE_KERNEL_CONFIG_HIFI2, even_int_div, save_and_get_path
 from models.demos.deepseek_v3.utils.run_config import (
     ModelDecodeConfig,
     ModelPrefillConfig,
@@ -211,6 +208,13 @@ class MoEGate(AbstractModule):
                 k=hf_config.num_experts_per_tok,
                 dim=3,
             ),
+            "topk_fallback": True,
+            "topk_fallback_config": TopKFallbackConfig(
+                mesh_device=mesh_device,
+                dtype=ttnn.bfloat16,
+                memory_config=memory_config,
+            ),
+            "mesh_device": mesh_device,
             "input_memory_config": memory_config,
             "output_memory_config": memory_config,
         }
@@ -231,6 +235,7 @@ class MoEGate(AbstractModule):
         logits = ttnn.linear(x, **cfg["gate_proj"])
         # Sigmoid activation
         scores = ttnn.sigmoid(logits)
+        # scores = ttnn.softmax(logits, dim=3)
         ttnn.deallocate(logits)
         # Add score correction bias
         # Expand bias to match scores shape(dynamic shape)
@@ -247,17 +252,22 @@ class MoEGate(AbstractModule):
         expert_scores_grouped = ttnn.reshape(scores_with_bias, **cfg["reshape_scores"])
         num_experts_per_group = expert_scores_grouped.shape[3]
 
-        if expert_scores_grouped.shape[3] < TOPK_MIN_WIDTH:
-            # Pad to 64 for topk op
-            expert_scores_grouped = ttnn.pad(
-                expert_scores_grouped,
-                [(0, 0), (0, 0), (0, 0), (0, TOPK_MIN_WIDTH - expert_scores_grouped.shape[3])],
-                value=-float("inf"),
-            )
+        # if expert_scores_grouped.shape[3] < TOPK_MIN_WIDTH:
+        #     # Pad to 64 for topk op
+        #     expert_scores_grouped = ttnn.pad(
+        #         expert_scores_grouped,
+        #         [(0, 0), (0, 0), (0, 0), (0, TOPK_MIN_WIDTH - expert_scores_grouped.shape[3])],
+        #         value=-float("inf"),
+        #     )
         # calculate top-2 scores with expert groups
-        topk_scores_within_expert_groups, topk_indices_within_expert_groups = ttnn.topk(
-            expert_scores_grouped, **cfg["topk_within_expert_groups"]
-        )
+        if cfg["topk_fallback"]:
+            topk_scores_within_expert_groups, topk_indices_within_expert_groups = cls.topk_fallback_op(
+                expert_scores_grouped, **cfg["topk_fallback_config"], **cfg["topk_within_expert_groups"]
+            )
+        else:
+            topk_scores_within_expert_groups, topk_indices_within_expert_groups = ttnn.topk(
+                expert_scores_grouped, **cfg["topk_within_expert_groups"]
+            )
         ttnn.deallocate(expert_scores_grouped)
         ttnn.deallocate(topk_indices_within_expert_groups)
         # sum top-2 scores within expert groups
@@ -266,16 +276,21 @@ class MoEGate(AbstractModule):
         # reshape to 4D tensor
         expert_group_scores = ttnn.unsqueeze(expert_group_scores, dim=0)
 
-        if expert_group_scores.shape[3] < TOPK_MIN_WIDTH:
-            expert_group_scores = ttnn.pad(
-                expert_group_scores,
-                [(0, 0), (0, 0), (0, 0), (0, TOPK_MIN_WIDTH - expert_group_scores.shape[3])],
-                value=-float("inf"),
-            )
+        # if expert_group_scores.shape[3] < TOPK_MIN_WIDTH:
+        #     expert_group_scores = ttnn.pad(
+        #         expert_group_scores,
+        #         [(0, 0), (0, 0), (0, 0), (0, TOPK_MIN_WIDTH - expert_group_scores.shape[3])],
+        #         value=-float("inf"),
+        #     )
         # calculate top-k expert groups
-        topk_expert_groups_scores, topk_expert_groups_indices = ttnn.topk(
-            expert_group_scores, **cfg["topk_expert_groups"]
-        )
+        if cfg["topk_fallback"]:
+            topk_expert_groups_scores, topk_expert_groups_indices = cls.topk_fallback_op(
+                expert_group_scores, **cfg["topk_fallback_config"], **cfg["topk_expert_groups"]
+            )
+        else:
+            topk_expert_groups_scores, topk_expert_groups_indices = ttnn.topk(
+                expert_group_scores, **cfg["topk_expert_groups"]
+            )
         ttnn.deallocate(expert_group_scores)
         ttnn.deallocate(topk_expert_groups_scores)
 
@@ -306,7 +321,14 @@ class MoEGate(AbstractModule):
         ttnn.deallocate(active_experts_mask)
 
         # calculate top-k experts
-        topk_experts_scores_with_bias, topk_experts_indices = ttnn.topk(active_experts_scores, **cfg["topk_experts"])
+        if cfg["topk_fallback"]:
+            topk_experts_scores_with_bias, topk_experts_indices = cls.topk_fallback_op(
+                active_experts_scores, **cfg["topk_fallback_config"], **cfg["topk_experts"]
+            )
+        else:
+            topk_experts_scores_with_bias, topk_experts_indices = ttnn.topk(
+                active_experts_scores, **cfg["topk_experts"]
+            )
         ttnn.deallocate(active_experts_scores)
         ttnn.deallocate(topk_experts_scores_with_bias)
 
@@ -355,3 +377,44 @@ class MoEGate(AbstractModule):
     @classmethod
     def forward_decode(cls, x: ttnn.Tensor, cfg: RunDecodeConfig) -> tuple[ttnn.Tensor, ttnn.Tensor]:
         return cls.forward(x, cfg)
+
+    @classmethod
+    def topk_fallback_op(
+        cls,
+        input: ttnn.Tensor,
+        mesh_device: ttnn.Device,
+        dtype: ttnn.DataType,
+        memory_config: ttnn.MemoryConfig,
+        k: int,
+        dim: int,
+        largest: bool,
+        sorted: bool,
+    ) -> tuple[ttnn.Tensor, ttnn.Tensor]:
+        # convert ttnn mesh tensor to torch tensor
+        logger.info(f"topk_fallback_op: input shape: {input.shape}")
+        torch_input = ttnn.to_torch(
+            input,
+            mesh_composer=ttnn.ConcatMesh2dToTensor(mesh_device, dims=(-2, 0), mesh_shape=tuple(mesh_device.shape)),
+        )[0].unsqueeze(0)
+        # use torch topk
+        torch_topk_scores, torch_topk_indices = torch.topk(torch_input, k=k, dim=dim, largest=largest, sorted=sorted)
+
+        ttnn_topk_scores = ttnn.from_torch(
+            torch_topk_scores,
+            device=mesh_device,
+            mesh_mapper=ttnn.ShardTensor2dMesh(mesh_device, dims=(-2, None), mesh_shape=tuple(mesh_device.shape)),
+            dtype=dtype,
+            memory_config=memory_config,
+            layout=ttnn.TILE_LAYOUT,
+        )
+
+        ttnn_topk_indices = ttnn.from_torch(
+            torch_topk_indices,
+            device=mesh_device,
+            mesh_mapper=ttnn.ShardTensor2dMesh(mesh_device, dims=(-2, None), mesh_shape=tuple(mesh_device.shape)),
+            dtype=ttnn.uint16,
+            memory_config=memory_config,
+            layout=ttnn.TILE_LAYOUT,
+        )
+
+        return ttnn_topk_scores, ttnn_topk_indices
