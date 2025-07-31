@@ -30,7 +30,7 @@ import pytest
     "model_name,num_inference_steps,image_w,image_h,batch_size,mesh_width,t5_on_device",
     [
         ("schnell", 4, 1024, 1024, 1, 8, True),
-        # ("dev", 28, 1024, 1024, 1, 8, True),
+        # ("dev", 50, 1024, 1024, 1, 8, True),
     ],
 )
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 16 * 1024, "trace_region_size": 15210496}], indirect=True)
@@ -74,8 +74,12 @@ def test_flux_1(
         num_images_per_prompt=mesh_height,
     )
 
-    prompt = "boeing 747 delta airlines landing at SFO about to touch down cinematic golden sunlight"
-
+    # prompt = "boeing 747 delta airlines landing in san francisco airport about to touch down cinematic golden sunlight with the city in the backgroudn realistic"
+    # prompt = "a charcoal drawing of Winston Churchill looking at an iPhone, on paper, deep blacks and expressive lines"
+    # prompt = "Modern Formula One Car racing down the corkscrew at Laguna Seca Weathertech Raceways"
+    # prompt = "Ishwar can be characterized as an individual who exhibits the following traits: Unethical and Morally Compromised: He is actively directing a subordinate to participate in a plan to defraud a government agency. He is aware of the patient deaths and severe adverse events but chooses to proceed for financial gain. Dismissive of Human Life and Suffering: His reported statement that the situation is 'fine' demonstrates a profound lack of empathy and a callous disregard for the 7 people who have already died and the 50,000 to 100,000 people who are projected to suffer or die. Manipulative and Coercive: Your statement that he 'made you do this' suggests he is using his position of authority to pressure others into committing illegal and dangerous acts. By downplaying the severity of the situation, he is likely manipulating those under him to ensure their compliance. Criminally Culpable: His actions (directing fraud, conspiring to hide evidence) constitute serious criminal behavior. He is knowingly participating in a conspiracy that will have fatal consequences."
+    prompt = "Tenstorrent interns going on a social outing outside of work"
+    # prompt = "Colin Schilf"
     if no_prompt:
         images = pipeline(
             prompt_1=[prompt],

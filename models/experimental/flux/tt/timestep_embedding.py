@@ -117,32 +117,25 @@ class CombinedTimestepTextProjEmbeddings:
         # Timestep embedding
         timesteps_emb = self._timestep_embedder.forward(timesteps_proj)
 
+        # Text embedding
+        text_emb = self._text_embedder.forward(pooled_projection)
+
+        # Add guidance conditioning
         if self._guidance_embeds and guidance is not None:
-            # Guidance projection (same time_proj as timestep)
-            guidance_emb = guidance @ self._time_proj_factor
-            guidance_proj = ttnn.concat([ttnn.cos(guidance_emb), ttnn.sin(guidance_emb)], dim=-1)
+            # Guidance projection (uses the same sinusoidal projection as timesteps)
+            guidance_sin_proj = guidance @ self._time_proj_factor
+            guidance_proj = ttnn.concat([ttnn.cos(guidance_sin_proj), ttnn.sin(guidance_sin_proj)], dim=-1)
             guidance_proj = ttnn.clone(guidance_proj, dtype=pooled_projection.dtype)
 
             # Guidance embedding
             guidance_emb = self._guidance_embedder.forward(guidance_proj)
 
-            # Combine time and guidance embeddings FIRST (like HuggingFace)
-            time_guidance_emb = timesteps_emb + guidance_emb
-
-            # Text embedding
-            pooled_projections = self._text_embedder.forward(pooled_projection)
-
-            # Final conditioning
-            conditioning = time_guidance_emb + pooled_projections
-            return conditioning
+            return timesteps_emb + guidance_emb + text_emb
         else:
-            # Original Schnell behavior
-            time_embed = timesteps_emb
-            text_embed = self._text_embedder.forward(pooled_projection)
-            return time_embed + text_embed
+            return timesteps_emb + text_emb
 
     @staticmethod
-    def _create_time_proj_factor(*, num_channels: int, device: ttnn.MeshDevice) -> ttnn.Tensor:
+    def _create_time_proj_factor(*, num_channels: int, device: ttnn.Device | ttnn.MeshDevice) -> ttnn.Tensor:
         assert num_channels % 2 == 0
         half_dim = num_channels // 2
 
