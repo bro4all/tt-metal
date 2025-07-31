@@ -7,12 +7,14 @@ from typing import Any, final
 
 import torch
 import ttnn.experimental
+from loguru import logger
 from transformers.configuration_utils import PretrainedConfig
 
 import ttnn
 from models.demos.deepseek_v3.tt.ccl_1d import CCL1D
 from models.demos.deepseek_v3.utils.abstract_module import AbstractModule
 from models.demos.deepseek_v3.utils.config_dataclass import (
+    AllGatherAsyncConfig,
     FromWeightConfig,
     LinearConfig,
     MeshDeviceStub,
@@ -186,6 +188,13 @@ class MLP1D(AbstractModule):
 
         # Construct the config
         return {
+            "all_gather": AllGatherAsyncConfig(
+                mesh_device=MeshDeviceStub(mesh_device.shape),
+                cluster_axis=1,
+                dim=-1,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                topology=ttnn.Topology.Linear,  # One row of Galaxy does not form a ring
+            ),
             "max_rows": SEQ_LEN_CHUNK_SIZE,  # NOTE: should be 512 for blackhole (in case of future bring-up)
             "linear_pc_gen": MLP1D.MLPProgramConfigData(
                 dim=dim, hidden_dim=hidden_dim, num_devices=mesh_width, core_grid_size=matmul_core_grid_size
@@ -264,6 +273,13 @@ class MLP1D(AbstractModule):
 
         # Construct the config
         return {
+            "all_gather": AllGatherAsyncConfig(
+                mesh_device=MeshDeviceStub(mesh_device.shape),
+                cluster_axis=1,
+                dim=-1,
+                memory_config=input_memory_config,
+                topology=ttnn.Topology.Linear,  # One row of Galaxy does not form a ring
+            ),
             "w1": LinearConfig(
                 input_tensor_b=FromWeightConfig(MeshDeviceStub(mesh_device.shape)),
                 memory_config=ttnn.L1_WIDTH_SHARDED_MEMORY_CONFIG,
@@ -358,6 +374,10 @@ class MLP1D(AbstractModule):
         """
         return {
             MESH_DEVICE_STATE_DICT_KEY: mesh_device,
+            "all_gather": {
+                "multi_device_global_semaphore": ccl.get_semaphore(1),
+                "num_links": ccl.get_max_links(1),
+            },
             "reduce_scatter_async": {
                 "from_remote_multi_device_global_semaphore": ccl.get_semaphore(1),
                 "to_remote_multi_device_global_semaphore": ccl.get_semaphore(1),
@@ -396,10 +416,17 @@ class MLP1D(AbstractModule):
 
     @classmethod
     def forward_prefill(cls, x: ttnn.Tensor, cfg: RunPrefillConfig) -> ttnn.Tensor:
-        assert x.memory_config() == cfg["input_memory_config"]
+        if x.memory_config() != cfg["input_memory_config"]:
+            logger.warning(
+                "Input tensor memory config does not match expected input memory config. Performance may be slower due to reshards."
+            )
 
         num_layers, _, seq_len, _ = x.shape
 
+        # All gather for efficient matmuls
+        ttnn.experimental.all_gather_async(x, **cfg["all_gather"])
+
+        # Chunk the input if needed
         if seq_len > cfg["max_rows"]:  # For large sequence lengths, process the input in chunks
             x = ttnn.reshape(x, [num_layers, even_int_div(seq_len, cfg["max_rows"]), cfg["max_rows"], -1])
             seq_len = cfg["max_rows"]
@@ -439,7 +466,13 @@ class MLP1D(AbstractModule):
 
     @classmethod
     def forward_decode(cls, x: ttnn.Tensor, cfg: RunDecodeConfig) -> ttnn.Tensor:
-        assert x.memory_config() == cfg["input_memory_config"]
+        if x.memory_config() != cfg["input_memory_config"]:
+            logger.warning(
+                "Input tensor memory config does not match expected input memory config. Performance may be slower due to reshards."
+            )
+
+        # All gather for efficient matmuls
+        ttnn.experimental.all_gather_async(x, **cfg["all_gather"])
 
         # Gate and up projections
         w1_out = ttnn.linear(x, **cfg["w1"])
