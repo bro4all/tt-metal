@@ -1,10 +1,10 @@
-name: Test Forked LLK Branches
+name: Test LLK Branches
 
 on:
   workflow_dispatch:
     inputs:
       mirrored_branch:
-        description: 'Mirrored branch name (e.g., mirror/username/branch-name)'
+        description: 'Mirrored branch name (e.g., mirror/branch-name)'
         required: true
         type: string
       run_all_post_commit:
@@ -25,7 +25,7 @@ on:
   workflow_call:
     inputs:
       mirrored_branch:
-        description: 'Mirrored branch name (e.g., mirror/username/branch-name)'
+        description: 'Mirrored branch name (e.g., mirror/branch-name)'
         required: true
         type: string
       run_all_post_commit:
@@ -45,10 +45,11 @@ on:
         default: 240
 
 env:
-  PARENT_BRANCH_NAME: test-mirrored-branch-${{ github.run_id }}
+  PARENT_BRANCH_NAME: test-llk-${{ inputs.mirrored_branch }}-${{ github.run_id }}
   SUBMODULE_PATH: tt_metal/third_party/tt_llk
-  WORKFLOW_TIMEOUT: 240
+  WORKFLOW_TIMEOUT: ${{ inputs.workflow_timeout || 240 }}
   MAX_RETRIES: 3
+  POLL_INTERVAL: 120
 
 permissions:
   contents: write
@@ -58,11 +59,12 @@ permissions:
   checks: read
 
 jobs:
-  setup-test-branch:
+  setup-and-test:
     runs-on: ubuntu-latest
     outputs:
       branch-exists: ${{ steps.check-branch.outputs.branch-exists }}
       test-branch-name: ${{ steps.setup-branch.outputs.test-branch-name }}
+      parent-branch-name: ${{ env.PARENT_BRANCH_NAME }}
     steps:
       - name: Setup
         uses: actions/checkout@v4
@@ -82,15 +84,9 @@ jobs:
         id: check-branch
         run: |
           MIRRORED_BRANCH="${{ inputs.mirrored_branch }}"
-
-          # Navigate to submodule
           cd ${{ env.SUBMODULE_PATH }}
 
-          # Fetch all branches
-          git fetch origin
-
-          # Check if the mirrored branch exists
-          if git show-ref --verify --quiet "refs/remotes/origin/$MIRRORED_BRANCH"; then
+          if git fetch origin "$MIRRORED_BRANCH" 2>/dev/null; then
             echo "branch-exists=true" >> $GITHUB_OUTPUT
             echo "✅ Mirrored branch '$MIRRORED_BRANCH' exists in submodule"
           else
@@ -98,194 +94,152 @@ jobs:
             echo "❌ Mirrored branch '$MIRRORED_BRANCH' does not exist in submodule"
           fi
 
-      - name: Setup test branch from submodule
+      - name: Setup test branch and parent repository
         id: setup-branch
         if: steps.check-branch.outputs.branch-exists == 'true'
         run: |
           MIRRORED_BRANCH="${{ inputs.mirrored_branch }}"
-          TEST_BRANCH_NAME="test-mirrored-$(date +%s)"
+          TEST_BRANCH_NAME="test-llk-$MIRRORED_BRANCH-$(date +%s)"
 
-          # Navigate to submodule
+          # Setup test branch in submodule
           cd ${{ env.SUBMODULE_PATH }}
-
-          # Delete existing test branch if it exists
           git push origin --delete "$TEST_BRANCH_NAME" 2>/dev/null || true
           git branch -D "$TEST_BRANCH_NAME" 2>/dev/null || true
-
-          # Create test branch from mirrored branch
           git checkout -b "$TEST_BRANCH_NAME" "origin/$MIRRORED_BRANCH"
-
-          # Push the test branch
           git push origin "$TEST_BRANCH_NAME"
 
-          echo "test-branch-name=$TEST_BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "✅ Created test branch '$TEST_BRANCH_NAME' from mirrored branch '$MIRRORED_BRANCH'"
-
-      - name: Update parent repository with submodule changes
-        if: steps.check-branch.outputs.branch-exists == 'true'
-        run: |
-          TEST_BRANCH_NAME="${{ steps.setup-branch.outputs.test-branch-name }}"
-
-          # Go back to parent repository
+          # Setup parent repository
           cd ${{ github.workspace }}
-
-          # Delete existing parent branch if it exists
           git push origin --delete "${{ env.PARENT_BRANCH_NAME }}" 2>/dev/null || true
           git branch -D "${{ env.PARENT_BRANCH_NAME }}" 2>/dev/null || true
-
-          # Create a fresh branch from main
           git checkout -b "${{ env.PARENT_BRANCH_NAME }}"
 
-          # Update submodule to point to our test branch
+          # Update submodule reference
           cd ${{ env.SUBMODULE_PATH }}
           git checkout "$TEST_BRANCH_NAME"
           cd ${{ github.workspace }}
-
-          # Commit the submodule change
           git add ${{ env.SUBMODULE_PATH }}
           git commit -m "test: update LLK submodule to test branch $TEST_BRANCH_NAME from mirrored branch ${{ inputs.mirrored_branch }}"
-
-          # Push the parent branch
           git push origin "${{ env.PARENT_BRANCH_NAME }}"
 
-  run-tests:
-    needs: setup-test-branch
-    if: |
-      needs.setup-test-branch.outputs.branch-exists == 'true' &&
-      (inputs.run_all_post_commit == true || inputs.run_blackhole_post_commit == true)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - workflow: "all-post-commit-workflows.yaml"
-            name: "All Post Commit Workflows"
-            should-run: ${{ inputs.run_all_post_commit }}
-          - workflow: "blackhole-post-commit.yaml"
-            name: "Blackhole Post Commit"
-            should-run: ${{ inputs.run_blackhole_post_commit }}
-    steps:
-      - name: Checkout
-        if: matrix.should-run == true
-        uses: actions/checkout@v4
+          echo "test-branch-name=$TEST_BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "✅ Created test branch '$TEST_BRANCH_NAME' and updated parent repository"
 
-      - name: Trigger and monitor workflow
-        if: matrix.should-run == true
+      - name: Run selected tests
+        if: |
+          steps.check-branch.outputs.branch-exists == 'true' &&
+          (inputs.run_all_post_commit == true || inputs.run_blackhole_post_commit == true)
         env:
           GH_TOKEN: ${{ secrets.TEMP_METAL_PAT }}
+          WORKFLOW_TIMEOUT: ${{ env.WORKFLOW_TIMEOUT }}
+          MAX_RETRIES: ${{ env.MAX_RETRIES }}
+          POLL_INTERVAL: ${{ env.POLL_INTERVAL }}
+          PARENT_BRANCH_NAME: ${{ env.PARENT_BRANCH_NAME }}
+          SUBMODULE_PATH: ${{ env.SUBMODULE_PATH }}
         run: |
-          WORKFLOW="${{ matrix.workflow }}"
-          DISPLAY_NAME="${{ matrix.name }}"
-          TIMEOUT_MINUTES="${{ inputs.workflow_timeout || env.WORKFLOW_TIMEOUT }}"
+          # Define test configurations
+          declare -A TEST_CONFIGS
+          TEST_CONFIGS["all-post-commit-workflows.yaml"]="${{ inputs.run_all_post_commit }}"
+          TEST_CONFIGS["blackhole-post-commit.yaml"]="${{ inputs.run_blackhole_post_commit }}"
 
           # Helper function for workflow monitoring
           monitor_workflow() {
             local run_id=$1
+            local workflow_name=$2
             local retries=0
+            local timeout_seconds=$((WORKFLOW_TIMEOUT * 60))
+            local elapsed=0
 
-            while [ $retries -lt ${{ env.MAX_RETRIES }} ]; do
-              # Wait for completion with timeout
-              local elapsed=0
-              local timeout_seconds=$((TIMEOUT_MINUTES * 60))
+            local run_url="https://github.com/${{ github.repository }}/actions/runs/$run_id"
+            echo "🚀 Monitoring $workflow_name (run ID: $run_id) - $run_url"
 
+            while [ $retries -lt $MAX_RETRIES ]; do
               while [ $elapsed -lt $timeout_seconds ]; do
-                local status=$(gh run view "$run_id" --json status,conclusion --jq '{status: .status, conclusion: .conclusion}' 2>/dev/null || echo '{"status": "unknown"}')
-                local run_status=$(echo "$status" | jq -r '.status // "unknown"')
-                local conclusion=$(echo "$status" | jq -r '.conclusion // "unknown"')
+                # Use more efficient status check
+                local status=$(gh run view "$run_id" --json status,conclusion --jq '.status + ":" + (.conclusion // "unknown")' 2>/dev/null || echo "unknown:unknown")
+                local run_status=$(echo "$status" | cut -d: -f1)
+                local conclusion=$(echo "$status" | cut -d: -f2)
 
                 if [ "$run_status" = "completed" ]; then
                   local run_url="https://github.com/${{ github.repository }}/actions/runs/$run_id"
-
                   if [ "$conclusion" = "success" ]; then
-                    echo "✅ **$DISPLAY_NAME** passed: $run_url"
+                    echo "✅ $workflow_name passed: $run_url"
                     return 0
                   else
-                    echo "❌ **$DISPLAY_NAME** failed (attempt $((retries + 1))): $run_url"
+                    echo "❌ $workflow_name failed (attempt $((retries + 1))): $run_url"
                     break
                   fi
                 fi
 
-                sleep 300  # 5 minutes
-                elapsed=$((elapsed + 300))
+                sleep $POLL_INTERVAL
+                elapsed=$((elapsed + POLL_INTERVAL))
               done
 
-              # Handle timeout or failure
+              # Handle timeout
               if [ $elapsed -ge $timeout_seconds ]; then
                 local run_url="https://github.com/${{ github.repository }}/actions/runs/$run_id"
-                echo "⏰ **$DISPLAY_NAME** timed out after ${TIMEOUT_MINUTES}m: $run_url"
+                echo "⏰ $workflow_name timed out after ${WORKFLOW_TIMEOUT}m: $run_url"
                 return 1
               fi
 
-              # Retry failed run
+              # Retry logic
               retries=$((retries + 1))
-              if [ $retries -lt ${{ env.MAX_RETRIES }} ]; then
-                echo "Retrying $DISPLAY_NAME (attempt $((retries + 1))/${{ env.MAX_RETRIES }})"
+              if [ $retries -lt $MAX_RETRIES ]; then
+                echo "🔄 Retrying $workflow_name (attempt $((retries + 1))/$MAX_RETRIES)"
                 if gh run rerun "$run_id" --failed --repo "${{ github.repository }}"; then
-                  echo "✅ Retry triggered successfully for run ID: $run_id"
-                  # Wait a bit for the rerun to start, then continue monitoring the same run_id
+                  echo "✅ Retry triggered for $workflow_name"
                   sleep 30
+                  elapsed=0  # Reset timer for retry
                 else
-                  echo "❌ Failed to trigger retry"
+                  echo "❌ Failed to trigger retry for $workflow_name"
                   break
                 fi
               fi
             done
-
             return 1
           }
 
-          # Record trigger time before triggering workflow
-          TRIGGER_TIME=$(date +%s)
-          echo "Trigger timestamp: $TRIGGER_TIME"
+          declare -A pids
+          declare -A run_ids
 
-          # Trigger workflow with appropriate inputs
-          echo "Triggering $WORKFLOW..."
-          gh workflow run "$WORKFLOW" --ref "${{ env.PARENT_BRANCH_NAME }}" --repo "${{ github.repository }}"
+          for workflow in "${!TEST_CONFIGS[@]}"; do
+            if [ "${TEST_CONFIGS[$workflow]}" = "true" ]; then
+              echo "Triggering $workflow..."
+              gh workflow run "$workflow" --ref "$PARENT_BRANCH_NAME" --repo "${{ github.repository }}"
 
-          # Wait for the new run to appear and ensure it's created after trigger time
-          run_id=""
-          for i in {1..20}; do
-            sleep 10
+              # Wait and get run ID
+              sleep 10
+              run_id=$(gh run list --workflow "$workflow" --branch "$PARENT_BRANCH_NAME" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
 
-            # Get runs created after trigger time
-            RUNS_DATA=$(gh run list --workflow "$WORKFLOW" --branch "${{ env.PARENT_BRANCH_NAME }}" --limit 5 --json databaseId,createdAt,status --repo "${{ github.repository }}")
-
-            # Find the newest run created after our trigger timestamp
-            NEW_RUN_ID=$(echo "$RUNS_DATA" | jq -r --argjson trigger_time "$TRIGGER_TIME" '
-              map(select(
-                (.createdAt | fromdateiso8601) >= $trigger_time
-              )) |
-              sort_by(.createdAt) |
-              reverse |
-              .[0].databaseId // empty
-            ')
-
-            if [ -n "$NEW_RUN_ID" ] && [ "$NEW_RUN_ID" != "empty" ]; then
-              run_id="$NEW_RUN_ID"
-              echo "✅ Found new run ID: $run_id (created after trigger time)"
-              break
+              if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+                run_ids["$workflow"]="$run_id"
+                # Start monitoring in background
+                monitor_workflow "$run_id" "$workflow" &
+                pids["$workflow"]=$!
+              else
+                echo "❌ Failed to get run ID for $workflow"
+                exit 1
+              fi
             fi
-
-            echo "Attempt $i: Waiting for new workflow run to appear..."
           done
 
-          if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
-            run_url="https://github.com/${{ github.repository }}/actions/runs/$run_id"
-            echo "🚀 **$DISPLAY_NAME** triggered: $run_url"
-
-            if monitor_workflow "$run_id"; then
-              echo "✅ $DISPLAY_NAME completed successfully"
+          # Wait for all background processes
+          exit_code=0
+          for workflow in "${!pids[@]}"; do
+            if wait "${pids[$workflow]}"; then
+              echo "✅ $workflow completed successfully"
             else
-              echo "❌ $DISPLAY_NAME failed or timed out"
-              exit 1
+              echo "❌ $workflow failed"
+              exit_code=1
             fi
-          else
-            echo "❌ Failed to find run ID for $WORKFLOW"
-            exit 1
-          fi
+          done
+
+          exit $exit_code
+
+
 
   cleanup:
-    needs: [setup-test-branch, run-tests]
+    needs: setup-and-test
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -296,37 +250,40 @@ jobs:
           token: ${{ secrets.TEMP_METAL_PAT }}
 
       - name: Cleanup test branches
+        if: needs.setup-and-test.outputs.branch-exists == 'true'
         env:
           GH_TOKEN: ${{ secrets.TEMP_METAL_PAT }}
+          SUBMODULE_PATH: ${{ env.SUBMODULE_PATH }}
         run: |
-          if [ "${{ needs.setup-test-branch.outputs.branch-exists }}" = "true" ]; then
-            TEST_BRANCH_NAME="${{ needs.setup-test-branch.outputs.test-branch-name }}"
+          TEST_BRANCH_NAME="${{ needs.setup-and-test.outputs.test-branch-name }}"
+          PARENT_BRANCH_NAME="${{ needs.setup-and-test.outputs.parent-branch-name }}"
 
-            # Clean up test branch in submodule
-            cd ${{ env.SUBMODULE_PATH }}
-            git push origin --delete "$TEST_BRANCH_NAME" 2>/dev/null || echo "Test branch already deleted or doesn't exist"
+          # Clean up test branch in submodule
+          cd $SUBMODULE_PATH
+          git push origin --delete "$TEST_BRANCH_NAME" 2>/dev/null || echo "Test branch already deleted or doesn't exist"
 
-            # Clean up parent branch
-            cd ${{ github.workspace }}
-            git push origin --delete "${{ env.PARENT_BRANCH_NAME }}" 2>/dev/null || echo "Parent branch already deleted or doesn't exist"
+          # Clean up parent branch
+          cd ${{ github.workspace }}
+          git push origin --delete "$PARENT_BRANCH_NAME" 2>/dev/null || echo "Parent branch already deleted or doesn't exist"
 
-            echo "✅ Cleaned up test branches"
-          fi
+          echo "✅ Cleaned up test branches"
 
   report-results:
-    needs: [setup-test-branch, run-tests, cleanup]
+    needs: [setup-and-test, cleanup]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Report test results
+      - name: Generate test report
         run: |
           echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Mirrored Branch:** ${{ inputs.mirrored_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.setup-test-branch.outputs.branch-exists }}" = "true" ]; then
+          if [ "${{ needs.setup-and-test.outputs.branch-exists }}" = "true" ]; then
             echo "✅ **Branch Setup:** Successfully created test branch from mirrored branch" >> $GITHUB_STEP_SUMMARY
+            echo "**Test Branch:** ${{ needs.setup-and-test.outputs.test-branch-name }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
             echo "**Test Configuration:**" >> $GITHUB_STEP_SUMMARY
@@ -334,9 +291,9 @@ jobs:
             echo "- Blackhole Post-Commit Tests: ${{ inputs.run_blackhole_post_commit && '✅ Enabled' || '❌ Disabled' }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "${{ needs.run-tests.result }}" = "success" ]; then
+            if [ "${{ needs.setup-and-test.result }}" = "success" ]; then
               echo "✅ **Test Execution:** All selected tests completed successfully" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ needs.run-tests.result }}" = "skipped" ]; then
+            elif [ "${{ needs.setup-and-test.result }}" = "skipped" ]; then
               echo "ℹ️ **Test Execution:** No tests were selected to run" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ **Test Execution:** Some tests failed" >> $GITHUB_STEP_SUMMARY
@@ -348,26 +305,5 @@ jobs:
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Workflow Status:** ${{ needs.run-tests.result }}" >> $GITHUB_STEP_SUMMARY
-
-  error-handling:
-    needs: [setup-test-branch, run-tests]
-    if: |
-      always() &&
-      (needs.setup-test-branch.result == 'failure' ||
-       (needs.run-tests.result == 'failure' && needs.setup-test-branch.outputs.branch-exists == 'true'))
-    runs-on: ubuntu-latest
-    steps:
-      - name: Handle errors
-        run: |
-          if [ "${{ needs.setup-test-branch.result }}" = "failure" ]; then
-            if [ "${{ needs.setup-test-branch.outputs.branch-exists }}" = "false" ]; then
-              echo "❌ Error: Mirrored branch '${{ inputs.mirrored_branch }}' does not exist in submodule"
-              echo "Please ensure the branch has been mirrored using the mirror workflow first."
-            else
-              echo "❌ Error: Failed to set up test branch"
-            fi
-          elif [ "${{ needs.run-tests.result }}" = "failure" ]; then
-            echo "❌ Error: Some test workflows failed"
-            echo "Please check the workflow runs for more details."
-          fi
+          echo "**Workflow Status:** ${{ needs.setup-and-test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Duration:** ${{ github.event.workflow_run.duration || 'N/A' }} seconds" >> $GITHUB_STEP_SUMMARY
