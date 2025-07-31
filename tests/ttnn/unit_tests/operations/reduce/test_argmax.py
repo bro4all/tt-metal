@@ -13,7 +13,6 @@ from tests.ttnn.utils_for_testing import check_with_pcc
 @pytest.mark.parametrize(
     argnames="tensor_shape, dim, keepdim, use_multicore, dtype",
     argvalues=[
-<<<<<<< HEAD
         ([], None, True, True, torch.bfloat16),
         ([32], -1, False, False, torch.float32),
         ([32, 0], 1, True, True, torch.bfloat16),
@@ -42,21 +41,7 @@ from tests.ttnn.utils_for_testing import check_with_pcc
         ([50, 100, 200], -1, True, True, torch.int32),
         ([25, 50, 100], -1, False, True, torch.uint8),
         ([12, 24, 48, 96], -1, True, False, torch.bfloat16),
-        ([19, 512, 1024], 0, True, True, torch.float32),
-=======
-        ([], None, True, True),
-        ([32], -1, False, False),
-        ([32, 0], 1, True, True),
-        ([64], -1, True, False),
-        ([1, 512], -1, True, True),
-        ([1, 1024], -1, True, True),
-        ([1, 65], -1, True, True),
-        ([8, 10, 129], 2, True, False),
-        ([1, 8, 160], -1, False, True),
-        ([1, 256, 1024 * 8], -1, False, True),
-        ([32, 32, 32, 1], -1, True, True),
-        ([512, 1024, 19], 2, True, True),
->>>>>>> 3c4fdbf242 (Unit tests for relu_,conv2d,reshape,squeeze,unsqueeze,argmax,maxpool2d)
+        ([512, 1024, 19], 2, True, True, torch.float32),
     ],
 )
 def test_argmax(device, tensor_shape, dim, keepdim, use_multicore, dtype):
