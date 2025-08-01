@@ -43,9 +43,7 @@ class VisionModelArgs(ModelArgs):
         self.qkv_size = self.padded_head_dim * (2 * self.n_kv_heads + self.n_heads)
         self.MAX_QKV_MM_SEQ_LEN = self.MAX_QKV_MM_SEQ_LEN
 
-        self.optimizations = ModelOptimizations(
-            self.model_name
-        )  # todo)) implement finer grained control similar to tt_transformers'
+        self.optimizations = ModelOptimizations(self.model_name)
 
         num_rows = lambda seq_len: min(seq_len, 1024 if self.is_galaxy else 2048)
         k_dim = self.dim // self.cluster_shape[0] if self.is_galaxy else self.dim

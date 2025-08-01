@@ -59,13 +59,15 @@ class Generator:
             last_token_idx = seq_len - 1
 
             if page_table is not None:
-                # todo)) this needs to be fixed... Look at the TTT's generator.py:90 for example
-                page_table_user = self._ttt_generator._get_prefill_user_page_table(page_table, kv_cache, seq_len)
+                page_table_user = self._ttt_generator._get_prefill_user_page_table(
+                    page_table[user_id : user_id + 1], kv_cache, seq_len
+                )
+            else:
+                page_table_user = None
 
             logits = self.__prefill_forward_single_user_text(
-                # prefill_ids,
-                tokens[user_id : user_id + 1],  # todo)) use this if the above padding is not used
-                page_table=page_table_user if page_table is not None else None,
+                tokens[user_id : user_id + 1],
+                page_table=page_table_user,
                 user_id=user_id,
                 last_token_idx=last_token_idx,
                 kv_cache=kv_cache,
@@ -173,8 +175,8 @@ class Generator:
             tt_logits = self.model.ttnn_prefill_forward(
                 prefill_input,
                 rot_mats=[rm[user_id : user_id + 1, ...] for rm in rot_mats_prefill],
-                user_id=user_id,  # todo)) this needs to be 0 when page_table is used... see line 78 of TTT's geenrator.py -- `            group_user_id = user_id % max_batch_size_per_model if page_table is None else 0` (but it should not need to be...)
-                page_table=page_table_tt,  # todo)) this needs to be sliced then
+                user_id=0,  # [INFO] both rot_mats and page_table_tt are sliced to just single user
+                page_table=page_table_tt,
                 get_last_token=(last_token_idx // 32) * 32,
                 kv_cache=kv_cache,
             )

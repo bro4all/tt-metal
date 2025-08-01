@@ -174,7 +174,6 @@ class RotarySetup(LightweightModule):
         assert position_idxs.device != device, "rot_idxs must be on device"
 
         # [INFO] Qwen2.5 VL produces cos and sin matrices with shape [batch_size, 1, seq_len, head_dim]
-        # todo)) { Optimize the slicing work-around below
         assert len(position_idxs.shape) == 1, "position_idxs must be a [batch] tensor"
         batch_size = position_idxs.shape[0]
         cos, sin = None, None
@@ -190,7 +189,6 @@ class RotarySetup(LightweightModule):
 
         cos = ttnn.to_layout(cos, ttnn.TILE_LAYOUT)
         sin = ttnn.to_layout(sin, ttnn.TILE_LAYOUT)
-        # } todo))
 
         cos = ttnn.unsqueeze_to_4D(cos)  # [1, 1, batch_size, head_dim]
         sin = ttnn.unsqueeze_to_4D(sin)  # [1, 1, batch_size, head_dim]
