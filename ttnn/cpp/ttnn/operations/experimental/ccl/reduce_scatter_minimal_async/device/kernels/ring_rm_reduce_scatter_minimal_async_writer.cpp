@@ -69,15 +69,11 @@ void kernel_main() {
 
     // interleaved addrgen
     constexpr bool intermediate_is_dram = intermediate_type == tt::tt_metal::BufferType::DRAM;
-    auto intermediate_addrgen = InterleavedAddrGenFast<intermediate_is_dram>{
-        .bank_base_address = intermediate_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_compute_output_id)};
+    auto intermediate_addrgen = InterleavedAddrGen<intermediate_is_dram>{
+        .bank_base_address = intermediate_address, .page_size = input_tensor_page_size};
     constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
-    auto output_addrgen = InterleavedAddrGenFast<output_is_dram>{
-        .bank_base_address = output_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_compute_output_id)};
+    auto output_addrgen =
+        InterleavedAddrGen<output_is_dram>{.bank_base_address = output_address, .page_size = input_tensor_page_size};
 
     if (fabric_connection.is_logically_connected()) {
         fabric_connection.open();
@@ -116,31 +112,43 @@ void kernel_main() {
                 uint64_t remote_noc0_dest_noc_addr =
                     get_noc_addr(page_id, intermediate_addrgen, single_slice_row_offset_size, 0 /*noc_id*/);
 
+                uint32_t slice_bytes = slice_width_row_size;
                 uint32_t packets_to_send = packets_to_send_per_row;
                 while (packets_to_send > 0) {
                     if (packets_to_send == 1) {
+                        uint32_t current_packet_size_bytes = std::min(packet_size_bytes, slice_bytes);
+                        slice_bytes -= current_packet_size_bytes;
+
                         // Standard fabric write
                         write_and_advance_local_read_address_for_fabric(
                             remote_noc0_dest_noc_addr,
                             pkt_hdr,
                             fabric_direction_connection,
                             l1_read_addr,
-                            packet_size_bytes);
+                            current_packet_size_bytes);
 
-                        remote_noc0_dest_noc_addr += packet_size_bytes;
+                        remote_noc0_dest_noc_addr += current_packet_size_bytes;
                         packets_to_send--;
                     } else {
                         // Scatter fabric write
+
+                        // First min is technically redundent, since guaranteed to be full packet size
+                        uint32_t packet_one_size_bytes = std::min(packet_size_bytes, slice_bytes);
+                        slice_bytes -= packet_one_size_bytes;
+
+                        uint32_t packet_two_size_bytes = std::min(packet_size_bytes, slice_bytes);
+                        slice_bytes -= packet_one_size_bytes;
+
                         scatter_write_and_advance_local_read_address_for_fabric(
                             remote_noc0_dest_noc_addr,
                             remote_noc0_dest_noc_addr + packet_size_bytes,
                             pkt_hdr,
                             fabric_direction_connection,
                             l1_read_addr,
-                            packet_size_bytes,
-                            packet_size_bytes);
+                            packet_one_size_bytes,
+                            packet_two_size_bytes);
 
-                        remote_noc0_dest_noc_addr += 2 * packet_size_bytes;
+                        remote_noc0_dest_noc_addr += packet_one_size_bytes + packet_two_size_bytes;
                         packets_to_send -= 2;
                     }
                 }
@@ -173,8 +181,8 @@ void kernel_main() {
                 cb_wait_front(cb_output_id, 1);
                 size_t l1_read_addr = get_read_ptr(cb_output_id);
                 uint32_t page_id = rows_read;
-                uint64_t local_noc_addr = get_noc_addr(page_id, output_addrgen, single_slice_row_offset_size);
-                // noc_async_write(l1_read_addr, local_noc_addr, slice_width_row_size);
+                uint64_t local_noc_addr = get_noc_addr(page_id, output_addrgen);
+                noc_async_write(l1_read_addr, local_noc_addr, slice_width_row_size);
 
                 noc_async_write_barrier();
                 cb_pop_front(cb_output_id, 1);

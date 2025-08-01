@@ -50,27 +50,21 @@ void MAIN {
             // }
             // release_dst();
 
-            for (uint32_t tile_id = 0; tile_id < tiles_per_slice_row; tile_id++) {
+            while (tiles_per_slice_row_processed < tiles_per_slice_row_to_process) {
                 acquire_dst();
-                copy_tile(input_cb_id, tile_id, 0);
-                pack_tile(0, output_cb);
+                for (uint32_t dst_tile_id = 0; dst_tile_id < tile_granularity; ++dst_tile_id) {
+                    add_tiles(input_cb_id, intermediate_cb, cb_tile_id, cb_tile_id, dst_tile_id);
+                    pack_tile(dst_tile_id, output_cb, cb_tile_id);
+
+                    cb_tile_id++;
+                    tiles_per_slice_row_processed++;
+                    if (tiles_per_slice_row_processed == tiles_per_slice_row_to_process) {
+                        break;
+                    }
+                }
                 release_dst();
             }
 
-            // while (tiles_per_slice_row_processed < tiles_per_slice_row_to_process) {
-            //     acquire_dst();
-            //     for (uint32_t dst_tile_id = 0; dst_tile_id < tile_granularity; ++dst_tile_id) {
-            //         add_tiles(input_cb_id, intermediate_cb, cb_tile_id, cb_tile_id, dst_tile_id);
-            //         pack_tile(dst_tile_id, output_cb, cb_tile_id);
-
-            //         cb_tile_id++;
-            //         tiles_per_slice_row_processed++;
-            //         if (tiles_per_slice_row_processed == tiles_per_slice_row_to_process) {
-            //             break;
-            //         }
-            //     }
-            //     release_dst();
-            // }
             cb_pop_front(input_cb_id, 1);
             cb_pop_front(intermediate_cb, 1);
             cb_push_back(output_cb, 1);

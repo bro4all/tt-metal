@@ -42,15 +42,11 @@ void kernel_main() {
     size_t out_ready_sem = get_arg_val<uint32_t>(arg_idx++);
 
     constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
-    auto input_tensor_addrgen = InterleavedAddrGenFast<input_tensor_is_dram>{
-        .bank_base_address = input_tensor_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_input_id)};
+    auto input_tensor_addrgen = InterleavedAddrGen<input_tensor_is_dram>{
+        .bank_base_address = input_tensor_address, .page_size = input_tensor_page_size};
     constexpr bool intermediate_tensor_is_dram = intermediate_buffer_type == tt::tt_metal::BufferType::DRAM;
-    auto intermediate_tensor_addrgen = InterleavedAddrGenFast<intermediate_tensor_is_dram>{
-        .bank_base_address = intermediate_tensor_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_input_id)};
+    auto intermediate_tensor_addrgen = InterleavedAddrGen<intermediate_tensor_is_dram>{
+        .bank_base_address = intermediate_tensor_address, .page_size = input_tensor_page_size};
 
     int slice_idx = direction ? my_chip_id - 1 : my_chip_id + 1;
     for (uint32_t i = 0; i < ring_size; ++i) {

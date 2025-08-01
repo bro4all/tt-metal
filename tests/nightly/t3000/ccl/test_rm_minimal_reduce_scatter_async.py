@@ -79,8 +79,8 @@ def run_reduce_scatter_impl(
     rs_output_shape[3] //= num_devices
     persistent_output_buffers = [
         ttnn.from_torch(
-            # torch.zeros(rs_output_shape),
-            torch.full(rs_output_shape, 17),
+            torch.zeros(rs_output_shape),
+            # torch.full(rs_output_shape, 17),
             device=t3k_mesh_device,
             layout=ttnn.ROW_MAJOR_LAYOUT,
             dtype=rs_input_dtype,
@@ -103,9 +103,7 @@ def run_reduce_scatter_impl(
         rs_global_input_shape = rs_input_shape[:]
         rs_global_input_shape[3] *= num_devices
         if ones_tensor:
-            rs_input_tensor = torch.ones(
-                rs_global_input_shape
-            ).bfloat16()  # torch.full(rs_global_input_shape, 4).bfloat16()
+            rs_input_tensor = torch.ones(rs_global_input_shape).bfloat16()
 
             torch.full(rs_global_input_shape, 4).bfloat16()
         else:
@@ -219,7 +217,8 @@ def run_reduce_scatter_impl(
 @pytest.mark.parametrize(
     "num_devices, rs_input_shape, dim, layout, rs_input_dtype",
     [
-        (8, [1, 1, 2, 256], 3, ttnn.ROW_MAJOR_LAYOUT, ttnn.bfloat16),
+        # (8, [1, 1, 2, 256], 3, ttnn.ROW_MAJOR_LAYOUT, ttnn.bfloat16),
+        (8, [1, 1, 2, 9216], 3, ttnn.ROW_MAJOR_LAYOUT, ttnn.bfloat16),
         # (8, [4, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
         # (8, [1, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
         # (8, [1, 1, 352, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
@@ -255,8 +254,8 @@ def run_reduce_scatter_impl(
 @pytest.mark.parametrize(
     "ones_tensor",
     [
-        True,
-        # False,
+        # True,
+        False,
     ],
 )
 @pytest.mark.parametrize(

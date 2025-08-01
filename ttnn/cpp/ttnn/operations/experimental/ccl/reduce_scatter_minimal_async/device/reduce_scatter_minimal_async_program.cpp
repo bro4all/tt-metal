@@ -537,8 +537,8 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_rm_reduce_scatter_minimal_asy
     uint32_t slice_width_elements = input_tensor_width_elements / ring_size;
 
     uint32_t tiles_per_slice_row = tt::round_up(slice_width_elements, tile_volume_elements) / tile_volume_elements;
-    uint32_t cb_page_size = tile_volume_elements * input_tensor.element_size();
-    uint32_t cb_num_pages = 3 * tiles_per_slice_row;  // Triple buffering
+    uint32_t cb_page_size = tile_volume_elements * input_tensor.element_size() * tiles_per_slice_row;
+    uint32_t cb_num_pages = 3;
 
     tt::DataFormat df = tt::tt_metal::datatype_to_dataformat_converter(input_tensor.dtype());
 
