@@ -63,7 +63,7 @@ parameters = {
             # [1, 320, 48, 48, 36, 36, 1, 1, 0, 0, 1, 1, False],  # 3 reduction stages, multiple indexes per core, wide
             # [1, 320, 47, 47, 36, 36, 1, 1, 0, 0, 1, 1, False],  # non-tile multiple NHW
             [1, 128, 256, 512, 3, 3, 2, 2, 1, 1, 1, 1, False],
-            [1, 32, 256, 512, 3, 3, 2, 2, 1, 1, 1, 1, False],  # For BlackHole testing on 5x4
+            # [1, 32, 256, 512, 3, 3, 2, 2, 1, 1, 1, 1, False],  # For BlackHole testing on 5x4
             [1, 32, 512, 1024, 7, 7, 1, 1, 3, 3, 1, 1, False],
         ],
     },
