@@ -587,6 +587,8 @@ def comp_pcc(golden, calculated, pcc=0.99):
     if isinstance(cal_pcc, np.ma.core.MaskedConstant):
         return True, 1.0
 
+    logger.info("cal_pcc = {}", cal_pcc)
+
     return cal_pcc >= pcc, cal_pcc
 
 
