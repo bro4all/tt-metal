@@ -41,4 +41,7 @@ def test_efficientnetb0_model(device, reset_seeds):
 
     ttnn_output = ttnn_model(ttnn_input)
     ttnn_output = ttnn.to_torch(ttnn_output)
-    assert_with_pcc(torch_output, ttnn_output, 0.95)
+    print("ttnn_output:", ttnn_output.shape)
+    ttnn_output = ttnn_output.reshape(1, 112, 112, 32)
+    ttnn_output = ttnn_output.permute(0, 3, 1, 2)
+    assert_with_pcc(torch_output, ttnn_output, 1.0)  # 0.95)

@@ -75,6 +75,7 @@ class EfficientNetb0Conv2D:
         )
 
     def __call__(self, x):
+        # print("self.padding: ", self.padding)
         [x, [out_h, out_w], [self.weights, self.bias]] = ttnn.conv2d(
             input_tensor=x,
             weight_tensor=self.weights,
@@ -122,6 +123,7 @@ class Conv2dDynamicSamePadding:
         self.input_width = conv_params.input_width
         self.shard_layout = shard_layout
         self.use_shallow_covariant = use_shallow_covariant
+        # conv_params.padding = (0,1,0,1)
         ih, iw = self.input_height, self.input_width
         kh, kw = self.kernel_size
         sh, sw = self.stride
@@ -210,7 +212,7 @@ class MBConvBlock:
             device=device,
             parameters=parameters["_se_reduce"],
             conv_params=conv_params._se_reduce,
-            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
         )
 
         self._se_expand = Conv2dDynamicSamePadding(
@@ -224,27 +226,45 @@ class MBConvBlock:
             device,
             parameters=parameters["_project_conv"],
             conv_params=conv_params._project_conv,
-            shard_layout=self.shard_layout,
+            shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
         )
 
     def __call__(self, x):
         if not self.is_depthwise_first:
             x = self._expand_conv(x)
-            x = x * ttnn.sigmoid_accurate(x)
+            x = ttnn.swish(x)  # x = x * ttnn.sigmoid_accurate(x)
         x = self._depthwise_conv(x)
-        x = x * ttnn.sigmoid_accurate(x)
+        x = ttnn.swish(x)  # x = x * ttnn.sigmoid_accurate(x)
         mul1 = x
 
-        if x.is_sharded():
-            x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
-        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
-        x = ttnn.global_avg_pool2d(x)
+        # print("before avgpool x: ", x.memory_config(), x.shape, x.memory_config)
+        # x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
+        # print("before avgpool x: ", x.memory_config, x.shape, x.memory_config())
+        # print("height x: ", int(math.sqrt(x.shape[2])))
 
+        # x = ttnn.global_avg_pool2d(x)
+        x = ttnn.avg_pool2d(
+            input_tensor=x,
+            batch_size=x.shape[0],
+            input_h=int(math.sqrt(x.shape[2])),
+            input_w=int(math.sqrt(x.shape[2])),
+            channels=x.shape[-1],
+            kernel_size=(int(math.sqrt(x.shape[2])), int(math.sqrt(x.shape[2]))),
+            stride=(1, 1),
+            padding=(0, 0),
+        )
+
+        # if(x.shape[-1]<30):
+        #     if x.is_sharded():
+        #         x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
+        #     self.parameters["_se_reduce"][0]
+        #     x = x * self.parameters["_se_reduce"][0] + self.parameters["_se_reduce"][1]
+        # else:
         x = self._se_reduce(x)
 
-        x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
+        # x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
 
-        x = x * ttnn.sigmoid_accurate(x)
+        x = ttnn.swish(x)  # x * ttnn.sigmoid_accurate(x)
         x = self._se_expand(x)
 
         x = ttnn.sigmoid_accurate(x)
@@ -254,7 +274,16 @@ class MBConvBlock:
         if x.is_sharded():
             x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
         ttnn.deallocate(mul1)
+        # print("\nmultiply x: ", x.shape, x.memory_config(), x.memory_config)
+        # print("\nmultiply mul1_interleaved: ", mul1_interleaved.shape, mul1_interleaved.memory_config(), mul1_interleaved.memory_config)
         x = x * mul1_interleaved
+        # output_mem_config = ttnn.MemoryConfig(
+        #     memory_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        #     buffer_type=ttnn.BufferType.L1,
+        # )
+        # x = ttnn.matmul(x, mul1_interleaved, memory_config=output_mem_config)
+        # ss
+        # print("_project_conv x: ", x.shape, x.memory_config(), x.memory_config)
 
         x = self._project_conv(x)
 
@@ -274,122 +303,122 @@ class Efficientnetb0:
             conv_params=conv_params._conv_stem,
             shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
         )
-        self._blocks0 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks0"],
-            is_depthwise_first=True,
-            conv_params=conv_params._blocks0,
-        )
-        self._blocks1 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks1"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks1,
-        )
-        self._blocks2 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks2"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks2,
-        )
-        self._blocks3 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks3"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks3,
-        )
-        self._blocks4 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks4"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks4,
-        )
-        self._blocks5 = MBConvBlock(
-            device, parameters["blocks"]["_blocks5"], is_depthwise_first=False, conv_params=conv_params._blocks5, id=5
-        )
-        self._blocks6 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks6"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks6,
-            id=6,
-        )
-        self._blocks7 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks7"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks7,
-            id=7,
-        )
-        self._blocks8 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks8"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks8,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-            id=8,
-        )
-        self._blocks9 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks9"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks9,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-            id=9,
-        )
-        self._blocks10 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks10"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks10,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-            id=10,
-        )
-        self._blocks11 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks11"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks11,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-            id=11,
-        )
-        self._blocks12 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks12"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks12,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-        )
-        self._blocks13 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks13"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks13,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-        )
-        self._blocks14 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks14"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks14,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-        )
-        self._blocks15 = MBConvBlock(
-            device,
-            parameters["blocks"]["_blocks15"],
-            is_depthwise_first=False,
-            conv_params=conv_params._blocks15,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-        )
-        self._conv_head = Conv2dDynamicSamePadding(
-            device=device,
-            parameters=parameters["_conv_head"],
-            conv_params=conv_params._conv_head,
-            shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-        )
+        # self._blocks0 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks0"],
+        #     is_depthwise_first=True,
+        #     conv_params=conv_params._blocks0,
+        # )
+        # self._blocks1 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks1"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks1,
+        # )
+        # self._blocks2 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks2"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks2,
+        # )
+        # self._blocks3 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks3"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks3,
+        # )
+        # self._blocks4 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks4"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks4,
+        # )
+        # self._blocks5 = MBConvBlock(
+        #     device, parameters["blocks"]["_blocks5"], is_depthwise_first=False, conv_params=conv_params._blocks5, id=5
+        # )
+        # self._blocks6 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks6"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks6,
+        #     id=6,
+        # )
+        # self._blocks7 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks7"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks7,
+        #     id=7,
+        # )
+        # self._blocks8 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks8"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks8,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        #     id=8,
+        # )
+        # self._blocks9 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks9"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks9,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        #     id=9,
+        # )
+        # self._blocks10 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks10"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks10,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        #     id=10,
+        # )
+        # self._blocks11 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks11"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks11,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        #     id=11,
+        # )
+        # self._blocks12 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks12"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks12,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        # )
+        # self._blocks13 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks13"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks13,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        # )
+        # self._blocks14 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks14"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks14,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        # )
+        # self._blocks15 = MBConvBlock(
+        #     device,
+        #     parameters["blocks"]["_blocks15"],
+        #     is_depthwise_first=False,
+        #     conv_params=conv_params._blocks15,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        # )
+        # self._conv_head = Conv2dDynamicSamePadding(
+        #     device=device,
+        #     parameters=parameters["_conv_head"],
+        #     conv_params=conv_params._conv_head,
+        #     shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+        # )
 
-        self.l1_weight = parameters["l1"]["weight"]
-        self.l1_bias = parameters["l1"]["bias"]
+        # self.l1_weight = parameters["l1"]["weight"]
+        # self.l1_bias = parameters["l1"]["bias"]
 
     def __call__(self, x):
         N, C, H, W = x.shape
@@ -406,53 +435,60 @@ class Efficientnetb0:
         x = ttnn.reshape(nhwc, [1, 1, nhwc.shape[0] * nhwc.shape[1] * nhwc.shape[2], nhwc.shape[-1]])
 
         x = self._conv_stem(x)
-        x = x * ttnn.sigmoid_accurate(x)
+        # x = ttnn.swish(x) #x = x * ttnn.sigmoid_accurate(x)
 
-        x = self._blocks0(x)
+        # x = self._blocks0(x)
 
-        x_1 = self._blocks1(x)
-        x = self._blocks2(x_1)
+        # x_1 = self._blocks1(x)
+        # x = self._blocks2(x_1)
 
-        x = ttnn.add(x, x_1)
-        x_3 = self._blocks3(x)
-        x = self._blocks4(x_3)
+        # x = ttnn.add(x, x_1)
+        # x_3 = self._blocks3(x)
+        # x = self._blocks4(x_3)
 
-        x = x + x_3
-        x_5 = self._blocks5(x)
-        x = self._blocks6(x_5)
+        # x = x + x_3
+        # x_5 = self._blocks5(x)
+        # x = self._blocks6(x_5)
 
-        x_7_in = x + x_5
-        x = self._blocks7(x_7_in)
+        # x_7_in = x + x_5
+        # x = self._blocks7(x_7_in)
 
-        x = x_7_in + x
-        x_8 = self._blocks8(x)
-        x = self._blocks9(x_8)
+        # x = x_7_in + x
+        # x_8 = self._blocks8(x)
+        # x = self._blocks9(x_8)
 
-        x_10_in = x + x_8
-        x = self._blocks10(x_10_in)
+        # x_10_in = x + x_8
+        # x = self._blocks10(x_10_in)
 
-        x = x + x_10_in
-        x_11 = self._blocks11(x)
-        x = self._blocks12(x_11)
+        # x = x + x_10_in
 
-        x_13_in = x + x_11
-        x = self._blocks13(x_13_in)
+        # x = torch.load("/home/ubuntu/tt-metal/EN_input11.pt", weights_only=False)
+        # x = x.permute(0,2,3,1)
+        # x = x.reshape(1,1,x.shape[0]* x.shape[1]*x.shape[2], x.shape[3])
+        # x = ttnn.from_torch(x, dtype=ttnn.bfloat16, device=self.device, memory_config=ttnn.L1_MEMORY_CONFIG, layout=ttnn.ROW_MAJOR_LAYOUT)
+        # print("x: ", x.shape)
 
-        x_14_in = x + x_13_in
-        x = self._blocks14(x_14_in)
+        # x_11 = self._blocks11(x)
+        # x = self._blocks12(x_11)
 
-        x = x_14_in + x
-        x = self._blocks15(x)
-        x = self._conv_head(x)
+        # x_13_in = x + x_11
+        # x = self._blocks13(x_13_in)
 
-        x = x * ttnn.sigmoid(x)
+        # x_14_in = x + x_13_in
+        # x = self._blocks14(x_14_in)
 
-        x = ttnn.sharded_to_interleaved(x, memory_config=ttnn.L1_MEMORY_CONFIG)
-        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
-        x = ttnn.global_avg_pool2d(x)
+        # x = x_14_in + x
+        # x = self._blocks15(x)
+        # x = self._conv_head(x)
 
-        x = ttnn.reshape(x, (1, -1))
+        # x = x * ttnn.sigmoid(x)
 
-        x = ttnn.linear(x, self.l1_weight, bias=self.l1_bias)
+        # x = ttnn.sharded_to_interleaved(x, memory_config=ttnn.L1_MEMORY_CONFIG)
+        # x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
+        # x = ttnn.global_avg_pool2d(x)
+
+        # x = ttnn.reshape(x, (1, -1))
+
+        # x = ttnn.linear(x, self.l1_weight, bias=self.l1_bias)
 
         return x
