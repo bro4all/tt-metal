@@ -109,6 +109,7 @@ def test_cumsum(size, dim, dtypes, device):
                 assert_allclose(expected_output, torch_output, atol=4.0, rtol=1e-3)
             else:
                 assert_allclose(expected_output, torch_output)
+            assert 0, "fail on purpose"
 
 
 @pytest.mark.parametrize(
