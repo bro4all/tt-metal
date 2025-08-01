@@ -1208,6 +1208,7 @@ private:
                     comp_result.status = "FAIL";
                     failed_tests_.push_back(
                         config.name + " (" + ftype_str + "," + ntype_str + "," + topology_str + "," + num_devices_str +
+                        ",links:" + std::to_string(config.fabric_setup.num_links) +
                         ") - diff: " + std::to_string(comp_result.difference_percent) +
                         "%, tolerance: " + std::to_string(test_tolerance) + "%");
                 }
@@ -1216,7 +1217,9 @@ private:
                 comp_result.difference_percent = 0.0;
                 comp_result.within_tolerance = false;
                 comp_result.status = "NO_GOLDEN";
-                failed_tests_.push_back(config.name + " (NO GOLDEN ENTRY)");
+                failed_tests_.push_back(
+                    config.name + " (" + ftype_str + "," + ntype_str + "," + topology_str + "," + num_devices_str +
+                    ",links:" + std::to_string(config.fabric_setup.num_links) + ") (NO GOLDEN ENTRY)");
             }
 
             comparison_results_.push_back(comp_result);
