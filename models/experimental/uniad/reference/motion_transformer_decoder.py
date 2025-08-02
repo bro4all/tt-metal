@@ -146,19 +146,10 @@ class MotionDeformableAttention(nn.Module):
             raise ValueError(
                 f"Last dim of reference_trajs must be" f" 2 or 4, but get {reference_trajs.shape[-1]} instead."
             )
-        if torch.cuda.is_available() and value.is_cuda:
-            # using fp16 deformable attention is unstable because it performs many sum operations
-            if value.dtype == torch.float16:
-                MultiScaleDeformableAttnFunction = MultiScaleDeformableAttnFunction_fp32
-            else:
-                MultiScaleDeformableAttnFunction = MultiScaleDeformableAttnFunction_fp32
-            output = MultiScaleDeformableAttnFunction.apply(
-                value, spatial_shapes, level_start_index, sampling_locations, attention_weights, self.im2col_step
-            )
-        else:
-            output = multi_scale_deformable_attn_pytorch(
-                value, spatial_shapes, level_start_index, sampling_locations, attention_weights, self.im2col_step
-            )
+
+        output = multi_scale_deformable_attn_pytorch(
+            value, spatial_shapes, level_start_index, sampling_locations, attention_weights, self.im2col_step
+        )
         output = output.view(bs, num_query, self.num_steps, -1)
         output = torch.flatten(output, start_dim=2, end_dim=3)
         output = self.output_proj(output)

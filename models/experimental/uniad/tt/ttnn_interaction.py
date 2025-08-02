@@ -67,6 +67,7 @@ class TtTrackAgentInteraction:
         norm_cfg=None,
         init_cfg=None,
     ):
+        print("parameters", parameters)
         self.batch_first = batch_first
         self.interaction_transformer = TtTransformerDecoderLayer(
             parameters=parameters.interaction_transformer,

@@ -5,122 +5,11 @@
 from torch import Tensor
 from typing import Union, Callable, Optional
 import torch.nn.functional as F
-import math
 
 import ttnn
-import torch.nn as nn
-
-import torch
-
-# from models.experimental.uniad.tt.ttnn_mha import TtMultiheadAttention
 
 
-class TtMultiheadAttention_nn:
-    def __init__(
-        self,
-        params,
-        device,
-        embed_dims=256,
-        num_heads=8,
-        init_cfg=None,
-        batch_first=False,
-    ):
-        super().__init__()
-        self.params = params
-        self.embed_dims = embed_dims
-        self.num_heads = num_heads
-        self.device = device
-        self.batch_first = batch_first
-        self.attn_in_proj__weight = params.in_proj_weight  # Changed here
-        self.attn_in_proj__weight = ttnn.to_layout(self.attn_in_proj__weight, layout=ttnn.TILE_LAYOUT)  # Changed here
-        self.attn_in_proj__bias = params.in_proj_bias  # Changed here
-        self.attn_in_proj__bias = ttnn.to_layout(self.attn_in_proj__bias, layout=ttnn.TILE_LAYOUT)  # Changed here
-        self.attn_in_proj__weight_permute = self.attn_in_proj__weight  # Changed here
-        self.attn_in_proj__bias_squeeze = ttnn.squeeze(self.attn_in_proj__bias, 0)
-        self.attn_out_proj_weight = params.out_proj.weight
-        self.attn_out_proj_weight = ttnn.to_layout(self.attn_out_proj_weight, layout=ttnn.TILE_LAYOUT)  # Changed here
-        self.attn_out_proj_bias = params.out_proj.bias
-        self.attn_out_proj_bias = ttnn.to_layout(self.attn_out_proj_bias, layout=ttnn.TILE_LAYOUT)  # Changed here
-
-    def __call__(
-        self,
-        query,
-        key=None,
-        value=None,
-        key_padding_mask=None,
-        attn_mask=None,
-        **kwargs,
-    ):
-        in_proj_bias = self.attn_in_proj__bias_squeeze
-
-        in_proj_weight = self.attn_in_proj__weight_permute
-
-        tgt_len, bsz, embed_dim = query.shape
-        src_len, _, _ = key.shape
-
-        q_weight = in_proj_weight[: self.embed_dims, :]  # Query weights
-        k_weight = in_proj_weight[self.embed_dims : 2 * self.embed_dims, :]  # Key weights
-        v_weight = in_proj_weight[2 * self.embed_dims :, :]  # Value weights
-
-        q_bias = in_proj_bias[: self.embed_dims]  # Query biases
-        k_bias = in_proj_bias[self.embed_dims : 2 * self.embed_dims]  # Key biases
-        v_bias = in_proj_bias[2 * self.embed_dims :]  # Value biases
-
-        q_batch_size, q_sequence_size, q_hidden_size = query.shape
-        q_head_size = q_hidden_size // self.num_heads
-
-        k_batch_size, k_sequence_size, k_hidden_size = key.shape
-        k_head_size = k_hidden_size // self.num_heads
-
-        v_batch_size, v_sequence_size, v_hidden_size = value.shape
-        v_head_size = v_hidden_size // self.num_heads
-
-        q_weight = ttnn.permute(q_weight, (1, 0))
-        k_weight = ttnn.permute(k_weight, (1, 0))
-        v_weight = ttnn.permute(v_weight, (1, 0))
-        query = ttnn.linear(query, q_weight, bias=q_bias)
-
-        key = ttnn.linear(key, k_weight, bias=k_bias)
-
-        if value.get_layout() != ttnn.TILE_LAYOUT:
-            value = ttnn.to_layout(value, ttnn.TILE_LAYOUT)
-        value = ttnn.linear(value, v_weight, bias=v_bias)
-
-        query = ttnn.reshape(query, (tgt_len, bsz * self.num_heads, q_head_size))
-        query = ttnn.permute(query, (1, 0, 2))
-
-        key = ttnn.reshape(key, (k_batch_size, bsz * self.num_heads, q_head_size))
-        key = ttnn.permute(key, (1, 0, 2))
-
-        value = ttnn.reshape(value, (v_batch_size, bsz * self.num_heads, q_head_size))
-        value = ttnn.permute(value, (1, 0, 2))
-
-        src_len = key.shape[1]
-
-        B, Nt, E = query.shape
-        q_scaled = query * math.sqrt(1.0 / float(E))
-        key_transposed = ttnn.permute(key, (0, 2, 1))
-
-        if attn_mask is not None:
-            attn_output_weights = ttnn.matmul(q_scaled, key_transposed)
-            attn_output_weights = attn_output_weights + attn_mask
-        else:
-            attn_output_weights = ttnn.matmul(q_scaled, key_transposed)
-
-        attn_output_weights = ttnn.softmax(attn_output_weights, dim=-1)
-
-        attn_output = ttnn.matmul(attn_output_weights, value)
-
-        attn_output = ttnn.permute(attn_output, (1, 0, 2))
-        attn_output = ttnn.reshape(attn_output, (tgt_len * bsz, embed_dim))
-
-        attn_output = ttnn.linear(attn_output, self.attn_out_proj_weight, bias=self.attn_out_proj_bias)
-        attn_output = ttnn.reshape(attn_output, (tgt_len, bsz, attn_output.shape[1]))
-        attn_output_weights = ttnn.reshape(attn_output_weights, (bsz, self.num_heads, tgt_len, src_len))
-        attn_output_weights = ttnn.to_layout(attn_output_weights, ttnn.ROW_MAJOR_LAYOUT)
-        attn_output_weights = ttnn.mean(attn_output_weights, dim=1)
-
-        return attn_output
+from models.experimental.uniad.tt.ttnn_multi_head_attention import TtMultiheadAttention
 
 
 class TtTransformerDecoderLayer:
@@ -144,26 +33,13 @@ class TtTransformerDecoderLayer:
         self.parameters = parameters
         self.device = device
         factory_kwargs = {"device": device, "dtype": dtype}
-        self.self_attn = nn.MultiheadAttention(
-            # parameters.self_attn,
-            # device,
-            d_model,
-            nhead,
-            0.1,
-            batch_first=batch_first,
+        self.self_attn = TtMultiheadAttention(
+            device, parameters.self_attn, embed_dim=d_model, num_heads=nhead, batch_first=batch_first
         )
-        self.self_attn.load_state_dict(parameters["self_attn"].state_dict())
-        self.self_attn.eval()
-        self.multihead_attn = nn.MultiheadAttention(
-            # parameters.multihead_attn,
-            # device,
-            d_model,
-            nhead,
-            0.1,
-            batch_first=batch_first,
+        self.multihead_attn = TtMultiheadAttention(
+            device, parameters.multihead_attn, embed_dim=d_model, num_heads=nhead, batch_first=batch_first
         )
-        self.multihead_attn.load_state_dict(parameters["multihead_attn"].state_dict())
-        self.multihead_attn.eval()
+
         # Implementation of Feedforward model
         self.linear1 = ttnn.linear
         self.linear2 = ttnn.linear
@@ -188,7 +64,9 @@ class TtTransformerDecoderLayer:
         memory_is_causal: bool = False,
     ) -> Tensor:
         x = tgt
+
         if self.norm_first:
+            print("Hellooooooo")
             x = x + self.self_attn(
                 self.norm1(x), self.norm1(x), self.norm1(x), attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask
             )
@@ -197,41 +75,42 @@ class TtTransformerDecoderLayer:
             )
             x = x + self._ff_block(self.norm3(x))
         else:
+            print("Yessssssssssssss")
+            print("x", x.shape)
             x = self.norm1(
                 (
                     x
-                    + ttnn.from_torch(
-                        self.self_attn(
-                            ttnn.to_torch(x).to(dtype=torch.float),
-                            ttnn.to_torch(x).to(dtype=torch.float),
-                            ttnn.to_torch(x).to(dtype=torch.float),
-                            attn_mask=tgt_mask,
-                            key_padding_mask=tgt_key_padding_mask,
-                        )[0],
-                        device=self.device,
-                        layout=ttnn.TILE_LAYOUT,
-                        dtype=ttnn.bfloat16,
-                    )
+                    + self.self_attn(
+                        x,
+                        x,
+                        x,
+                    )[0]
                 ),
                 weight=self.parameters.norm1.weight,
                 bias=self.parameters.norm1.bias,
             )
 
+            print("x", x.shape)
+            print("memory", memory.shape)
+            # x = x + self.multihead_attn(
+            #             x,
+            #             memory,
+            #             memory,
+            #         )[0]
+            #     # )
             x = self.norm2(
-                x
-                + ttnn.from_torch(
-                    self.multihead_attn(
-                        ttnn.to_torch(x).to(dtype=torch.float),
-                        ttnn.to_torch(memory).to(dtype=torch.float),
-                        ttnn.to_torch(memory).to(dtype=torch.float),
-                        attn_mask=memory_mask,
-                        key_padding_mask=memory_key_padding_mask,
-                    )[0],
-                    device=self.device,
-                    layout=ttnn.TILE_LAYOUT,
-                    dtype=ttnn.bfloat16,
-                )
+                (
+                    x
+                    + self.multihead_attn(
+                        x,
+                        memory,
+                        memory,
+                    )[0]
+                ),
+                weight=self.parameters.norm2.weight,
+                bias=self.parameters.norm2.bias,
             )
+
             x = self.norm3(x + self._ff_block(x), weight=self.parameters.norm3.weight, bias=self.parameters.norm3.bias)
 
         return x
@@ -253,7 +132,7 @@ class TtTransformerDecoderLayer:
             is_causal=is_causal,
             need_weights=False,
         )[0]
-        return self.dropout1(x)
+        return x
 
     # multihead attention block
     def _mha_block(
@@ -273,7 +152,7 @@ class TtTransformerDecoderLayer:
             is_causal=is_causal,
             need_weights=False,
         )[0]
-        return self.dropout2(x)
+        return x
 
     # feed forward block
     def _ff_block(self, x: Tensor) -> Tensor:

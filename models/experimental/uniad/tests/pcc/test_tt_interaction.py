@@ -37,8 +37,38 @@ def custom_preprocessor(model, name):
         child = model.interaction_transformer
         if isinstance(child, nn.TransformerDecoderLayer):
             parameters_tmp = {}
-            parameters_tmp["self_attn"] = child.self_attn
-            parameters_tmp["multihead_attn"] = child.multihead_attn
+            # parameters_tmp["self_attn"] = child.self_attn
+            # parameters_tmp["multihead_attn"] = child.multihead_attn
+
+            parameters_tmp["self_attn"] = {}
+            parameters_tmp["self_attn"]["in_proj_weight"] = ttnn.from_torch(
+                child.self_attn.in_proj_weight, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["self_attn"]["in_proj_bias"] = ttnn.from_torch(
+                child.self_attn.in_proj_bias, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["self_attn"]["out_proj"] = {}
+            parameters_tmp["self_attn"]["out_proj"]["weight"] = preprocess_linear_weight(
+                child.self_attn.out_proj.weight, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["self_attn"]["out_proj"]["bias"] = preprocess_linear_bias(
+                child.self_attn.out_proj.bias, dtype=ttnn.bfloat16
+            )
+
+            parameters_tmp["multihead_attn"] = {}
+            parameters_tmp["multihead_attn"]["in_proj_weight"] = ttnn.from_torch(
+                child.multihead_attn.in_proj_weight, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["multihead_attn"]["in_proj_bias"] = ttnn.from_torch(
+                child.multihead_attn.in_proj_bias, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["multihead_attn"]["out_proj"] = {}
+            parameters_tmp["multihead_attn"]["out_proj"]["weight"] = preprocess_linear_weight(
+                child.multihead_attn.out_proj.weight, dtype=ttnn.bfloat16
+            )
+            parameters_tmp["multihead_attn"]["out_proj"]["bias"] = preprocess_linear_bias(
+                child.multihead_attn.out_proj.bias, dtype=ttnn.bfloat16
+            )
 
             parameters_tmp["linear1"] = {}
             parameters_tmp["linear1"]["weight"] = preprocess_linear_weight(child.linear1.weight, dtype=ttnn.bfloat16)
