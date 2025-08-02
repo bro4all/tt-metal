@@ -32,7 +32,6 @@ def run_demo_inference(
     batch_size = ttnn_device.get_num_devices()
 
     start_from, _ = evaluation_range
-    torch.manual_seed(0)
 
     if isinstance(prompts, str):
         prompts = [prompts]
@@ -92,16 +91,26 @@ def run_demo_inference(
             pipeline.scheduler.config.rescale_betas_zero_snr,
             pipeline.scheduler.config.final_sigmas_type,
         )
+    scaling_factor = ttnn.from_torch(
+        torch.Tensor([pipeline.vae.config.scaling_factor]),
+        dtype=ttnn.bfloat16,
+        device=ttnn_device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        mesh_mapper=ttnn.ReplicateTensorToMesh(ttnn_device),
+    )
     pipeline.scheduler = tt_scheduler
 
     cpu_device = "cpu"
 
+    # Prepare timesteps
+    ttnn_timesteps, num_inference_steps = retrieve_timesteps(
+        pipeline.scheduler, num_inference_steps, cpu_device, None, None
+    )
+
     if not is_ci_env and not os.path.exists("output"):
         os.mkdir("output")
-    tt_latents, tt_prompt_embeds, tt_add_text_embeds = None, None, None
-    tt_latents_device, tt_prompt_embeds_device, tt_text_embeds_device, tt_time_ids_device = None, None, None, None
-    scaling_factor = None
-    output_device = None
+
     i = 0
     while True:
         if i > 1:
@@ -112,9 +121,9 @@ def run_demo_inference(
             input("Press Enter to continue after you've typed input prompts to inputs.txt")
         with open("inputs.txt", "r") as f:
             prompts = [line.strip() for line in f if line.strip()]
+
         needed_padding = (batch_size - len(prompts) % batch_size) % batch_size
         prompts = prompts + [""] * needed_padding
-        print(f"prompts: {prompts}")
 
         all_embeds = [
             pipeline.encode_prompt(
@@ -156,20 +165,6 @@ def run_demo_inference(
         negative_pooled_prompt_embeds_torch = torch.split(
             torch.cat(negative_pooled_prompt_embeds, dim=0), batch_size, dim=0
         )
-
-        # Prepare timesteps
-        ttnn_timesteps, num_inference_steps = retrieve_timesteps(
-            pipeline.scheduler, num_inference_steps, cpu_device, None, None
-        )
-        if scaling_factor is None:
-            scaling_factor = ttnn.from_torch(
-                torch.Tensor([pipeline.vae.config.scaling_factor]),
-                dtype=ttnn.bfloat16,
-                device=ttnn_device,
-                layout=ttnn.TILE_LAYOUT,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                mesh_mapper=ttnn.ReplicateTensorToMesh(ttnn_device),
-            )
 
         num_channels_latents = pipeline.unet.config.in_channels
         assert num_channels_latents == 4, f"num_channels_latents is {num_channels_latents}, but it should be 4"
@@ -293,8 +288,6 @@ def run_demo_inference(
                 )
             profiler.clear()
 
-        torch.manual_seed(0)
-
         images = []
         logger.info("Starting ttnn inference...")
         if i != 0:
@@ -311,7 +304,6 @@ def run_demo_inference(
                     ],
                     [tt_latents_device, *tt_prompt_embeds_device, *tt_text_embeds_device],
                 )
-                print(f"tid: {tid}, tid_vae: {tid_vae}")
                 imgs, tid, output_device, output_shape, tid_vae = run_tt_image_gen(
                     ttnn_device,
                     tt_unet,
