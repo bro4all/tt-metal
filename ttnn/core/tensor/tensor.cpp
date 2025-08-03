@@ -232,11 +232,12 @@ Tensor Tensor::from_span(
     size_t volume = spec.logical_shape().volume();
     TT_FATAL(
         buffer.size() == volume, "Current buffer size is {} different from shape volume {}", buffer.size(), volume);
+    // Special case: Allow uint8_t storage for BOOL data type
+    bool data_type_matches =
+        (spec.data_type() == convert_to_data_type<T>()) || (spec.data_type() == tt::tt_metal::DataType::BOOL &&
+                                                            convert_to_data_type<T>() == tt::tt_metal::DataType::UINT8);
     TT_FATAL(
-        spec.data_type() == convert_to_data_type<T>(),
-        "Unsupported data type: got {}, expected: {}",
-        spec.data_type(),
-        convert_to_data_type<T>());
+        data_type_matches, "Unsupported data type: got {}, expected: {}", spec.data_type(), convert_to_data_type<T>());
     return create_tensor_from_row_major_data(buffer, spec, device, cq_id, pad_value);
 }
 
@@ -281,11 +282,12 @@ Tensor Tensor::from_vector(
     size_t volume = spec.logical_shape().volume();
     TT_FATAL(
         buffer.size() == volume, "Current buffer size is {} different from shape volume {}", buffer.size(), volume);
+    // Special case: Allow uint8_t storage for BOOL data type
+    bool data_type_matches =
+        (spec.data_type() == convert_to_data_type<T>()) || (spec.data_type() == tt::tt_metal::DataType::BOOL &&
+                                                            convert_to_data_type<T>() == tt::tt_metal::DataType::UINT8);
     TT_FATAL(
-        spec.data_type() == convert_to_data_type<T>(),
-        "Unsupported data type: got {}, expected: {}",
-        spec.data_type(),
-        convert_to_data_type<T>());
+        data_type_matches, "Unsupported data type: got {}, expected: {}", spec.data_type(), convert_to_data_type<T>());
     return create_tensor_from_row_major_data(std::move(buffer), spec, device, cq_id, pad_value);
 }
 

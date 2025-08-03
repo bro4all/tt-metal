@@ -39,6 +39,7 @@ enum class DataType {
     UINT8 = 5,
     UINT16 = 6,
     INT32 = 7,
+    BOOL = 9,
     INVALID = 8,
 };
 
@@ -58,6 +59,8 @@ consteval inline DataType convert_to_data_type() {
         return DataType::FLOAT32;
     } else if constexpr (std::is_same_v<T, ::bfloat16>) {
         return DataType::BFLOAT16;
+    } else if constexpr (std::is_same_v<T, bool>) {
+        return DataType::BOOL;
     } else {
         static_assert(tt::stl::concepts::always_false_v<T>, "Unsupported DataType!");
     }

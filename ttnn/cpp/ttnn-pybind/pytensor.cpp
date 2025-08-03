@@ -145,6 +145,8 @@ Tensor create_tt_tensor_from_py_data(
         case DataType::UINT32: return create_concrete.operator()<uint32_t>();
         case DataType::FLOAT32: return create_concrete.operator()<float>();
         case DataType::BFLOAT16: return create_concrete.operator()<bfloat16>();
+        case DataType::BOOL:
+            return create_concrete.operator()<uint8_t>();  // Use uint8_t internally to avoid std::vector<bool> issues
         case DataType::BFLOAT8_B:
         case DataType::BFLOAT4_B: {
             return create_concrete.operator()<float>();
@@ -189,6 +191,8 @@ PreprocessedPyTensor parse_py_tensor(const py::handle& py_tensor, std::optional<
             data_type = DataType::UINT16;
         } else if (py_dtype.equal(torch.attr("uint8"))) {
             data_type = DataType::UINT8;
+        } else if (py_dtype.equal(torch.attr("bool"))) {
+            data_type = DataType::BOOL;
         } else {
             TT_THROW("Unsupported DataType: {}", std::string(py::repr(py_dtype)));
         }
@@ -220,6 +224,10 @@ PreprocessedPyTensor parse_py_tensor(const py::handle& py_tensor, std::optional<
             }
             case DataType::BFLOAT16: {
                 maybe_convert_pytorch_tensor("bfloat16");
+                break;
+            }
+            case DataType::BOOL: {
+                maybe_convert_pytorch_tensor("bool");
                 break;
             }
             default: {
@@ -431,6 +439,9 @@ RowMajorHostBuffer convert_to_row_major_host_buffer(const Tensor& tt_tensor, con
             case DataType::UINT32: return dispatch_to_concrete.template operator()<uint32_t>(buffer);
             case DataType::FLOAT32: return dispatch_to_concrete.template operator()<float>(buffer);
             case DataType::BFLOAT16: return dispatch_to_concrete.template operator()<bfloat16>(buffer);
+            case DataType::BOOL:
+                return dispatch_to_concrete.template operator()<uint8_t>(
+                    buffer);  // Use uint8_t internally to avoid std::vector<bool> issues
             case DataType::BFLOAT8_B:
             case DataType::BFLOAT4_B: {
                 const auto& tile = tensor_spec.tile();
@@ -490,6 +501,9 @@ RowMajorHostBuffer convert_to_row_major_host_buffer(
         case DataType::INT32: return dispatch_to_concrete.template operator()<int32_t>(tt_tensor);
         case DataType::UINT32: return dispatch_to_concrete.template operator()<uint32_t>(tt_tensor);
         case DataType::BFLOAT16: return dispatch_to_concrete.template operator()<bfloat16>(tt_tensor);
+        case DataType::BOOL:
+            return dispatch_to_concrete.template operator()<uint8_t>(
+                tt_tensor);  // Use uint8_t internally to avoid std::vector<bool> issues
         case DataType::BFLOAT8_B:
         case DataType::BFLOAT4_B:
         case DataType::FLOAT32: return dispatch_to_concrete.template operator()<float>(tt_tensor);
@@ -512,6 +526,7 @@ py::object convert_tt_tensor_to_torch_tensor(const RowMajorHostBuffer& row_major
             case DataType::INT32: return torch.attr("int32");
             case DataType::UINT32: return torch.attr("int32");
             case DataType::BFLOAT16: return torch.attr("bfloat16");
+            case DataType::BOOL: return torch.attr("bool");
             case DataType::BFLOAT8_B:
             case DataType::BFLOAT4_B:
             case DataType::FLOAT32: return torch.attr("float32");
@@ -549,6 +564,7 @@ py::object convert_tt_tensor_to_numpy_tensor(const RowMajorHostBuffer& row_major
             case DataType::INT32: return np.attr("int32");
             case DataType::UINT32: return np.attr("int32");
             case DataType::BFLOAT16: TT_THROW("Bfloat16 is not supported for numpy!");
+            case DataType::BOOL: return np.attr("bool_");
             case DataType::BFLOAT8_B:
             case DataType::BFLOAT4_B:
             case DataType::FLOAT32: return np.attr("float32");
@@ -1048,6 +1064,9 @@ void pytensor_module(py::module& m_tensor) {
                     case DataType::UINT32: return py::cast(self.item<uint32_t>());
                     case DataType::UINT16: return py::cast(self.item<uint16_t>());
                     case DataType::UINT8: return py::cast(self.item<uint8_t>());
+                    case DataType::BOOL:
+                        return py::cast(static_cast<bool>(
+                            self.item<uint8_t>()));  // Use uint8_t internally, cast to bool for Python
                     case DataType::INVALID: TT_THROW("Unsupported DataType");
                 }
                 TT_THROW("Unreachable");

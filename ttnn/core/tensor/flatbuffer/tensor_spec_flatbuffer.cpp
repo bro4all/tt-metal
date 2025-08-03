@@ -116,6 +116,8 @@ flatbuffer::DataType to_flatbuffer(tt::tt_metal::DataType type) {
         case tt::tt_metal::DataType::UINT8: return flatbuffer::DataType::UInt8;
         case tt::tt_metal::DataType::UINT16: return flatbuffer::DataType::UInt16;
         case tt::tt_metal::DataType::INT32: return flatbuffer::DataType::Int32;
+        case tt::tt_metal::DataType::BOOL:
+            return flatbuffer::DataType::UInt8;  // Map BOOL to UInt8 for flatbuffer compatibility
         case tt::tt_metal::DataType::INVALID: return flatbuffer::DataType::Invalid;
     }
     TT_THROW("Unsupported DataType to flatbuffer.");

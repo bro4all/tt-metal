@@ -114,6 +114,8 @@ void dump_host_storage(FILE* output_file, const HostBuffer& buffer, DataType dty
             case DataType::UINT8: return sizeof(uint8_t);
             case DataType::UINT16: return sizeof(uint16_t);
             case DataType::INT32: return sizeof(int32_t);
+            case DataType::BOOL:
+                return sizeof(uint8_t);  // BOOL is stored as uint8_t internally
             // Block float types are encoded as uint32_t.
             case DataType::BFLOAT8_B:
             case DataType::BFLOAT4_B:

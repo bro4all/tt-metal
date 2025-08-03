@@ -217,6 +217,7 @@ public:
             case tt::tt_metal::DataType::UINT8: return extract_logical_data.template operator()<uint8_t>(tensor);
             case tt::tt_metal::DataType::UINT16: return extract_logical_data.template operator()<uint16_t>(tensor);
             case tt::tt_metal::DataType::INT32: return extract_logical_data.template operator()<int32_t>(tensor);
+            case tt::tt_metal::DataType::BOOL: return extract_logical_data.template operator()<uint8_t>(tensor);
             case tt::tt_metal::DataType::INVALID: TT_THROW("Invalid data type: {}", tensor.tensor_spec().data_type());
         }
         TT_THROW("Unreachable");
@@ -476,6 +477,7 @@ public:
             case tt::tt_metal::DataType::UINT8: return dispatch_to_concrete.template operator()<uint8_t>(tensor);
             case tt::tt_metal::DataType::UINT16: return dispatch_to_concrete.template operator()<uint16_t>(tensor);
             case tt::tt_metal::DataType::INT32: return dispatch_to_concrete.template operator()<int32_t>(tensor);
+            case tt::tt_metal::DataType::BOOL: return dispatch_to_concrete.template operator()<uint8_t>(tensor);
             case tt::tt_metal::DataType::INVALID: TT_THROW("Invalid data type: {}", tensor.dtype());
         }
         TT_THROW("Unreachable");

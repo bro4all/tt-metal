@@ -88,6 +88,7 @@ uint32_t element_size_bytes(DataType dtype) {
         case DataType::UINT8: return sizeof(uint8_t);
         case DataType::BFLOAT8_B: return sizeof(std::byte);
         case DataType::BFLOAT4_B: return sizeof(std::byte);
+        case DataType::BOOL: return sizeof(uint8_t);  // BOOL is stored as uint8_t internally
         default: TT_THROW("Unsupported data type");
     }
 }
@@ -492,6 +493,12 @@ template std::string to_string<uint32_t>(const Tensor& tensor);
 template std::string to_string<uint16_t>(const Tensor& tensor);
 template std::string to_string<uint8_t>(const Tensor& tensor);
 
+// BOOL uses uint8_t storage but we create an alias for it
+template <>
+std::string to_string<bool>(const Tensor& tensor) {
+    return to_string<uint8_t>(tensor);
+}
+
 template <>
 std::string to_string<bfloat8_b>(const Tensor& tensor) {
     return to_string<float>(tensor);
@@ -515,6 +522,9 @@ HostBuffer allocate_host_buffer(const TensorSpec& tensor_spec) {
         case DataType::INT32: return HostBuffer(std::vector<int32_t>(size_bytes / sizeof(int32_t)));
         case DataType::UINT8: return HostBuffer(std::vector<uint8_t>(size_bytes / sizeof(uint8_t)));
         case DataType::UINT16: return HostBuffer(std::vector<uint16_t>(size_bytes / sizeof(uint16_t)));
+        case DataType::BOOL:
+            return HostBuffer(
+                std::vector<uint8_t>(size_bytes / sizeof(uint8_t)));  // Use uint8_t to avoid std::vector<bool> issues
         case DataType::BFLOAT4_B:
         case DataType::BFLOAT8_B:
         case DataType::UINT32: return HostBuffer(std::vector<uint32_t>(size_bytes / sizeof(uint32_t)));

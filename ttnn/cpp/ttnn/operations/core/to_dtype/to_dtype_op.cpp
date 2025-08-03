@@ -132,6 +132,7 @@ Tensor ToDtype::invoke(const ttnn::Tensor& input_tensor, const ttnn::DataType& d
                 case DataType::UINT16: return &transform_type<SrcType, uint16_t>;
                 case DataType::UINT32: return &transform_type<SrcType, uint32_t>;
                 case DataType::INT32: return &transform_type<SrcType, int32_t>;
+                case DataType::BOOL: return &transform_type<SrcType, uint8_t>;  // BOOL is stored as uint8_t internally
                 case DataType::INVALID:
                     TT_THROW("Unsupported data type conversion requested. Destination type is invalid!");
             }
@@ -147,6 +148,7 @@ Tensor ToDtype::invoke(const ttnn::Tensor& input_tensor, const ttnn::DataType& d
             case DataType::UINT16: return get_dest_func.operator()<uint16_t>();
             case DataType::UINT32: return get_dest_func.operator()<uint32_t>();
             case DataType::INT32: return get_dest_func.operator()<int32_t>();
+            case DataType::BOOL: return get_dest_func.operator()<uint8_t>();  // BOOL is stored as uint8_t internally
             case DataType::INVALID: TT_THROW("Unsupported data type conversion requested. Source type is invalid!");
         }
         TT_THROW("Unreachable");
