@@ -825,21 +825,64 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
         log_info(tt::LogOp, "Circular Buffer: cb_output, ID: {}, Memory: {} bytes", output_cb_index, out_CB_size);
     }
 
-    // in - stores tilized input
-    uint32_t in_cb_index = tt::CBIndex::c_1;
-    tt::tt_metal::CircularBufferConfig in_cb_config =
-        tt::tt_metal::CircularBufferConfig(in_CB_size, {{in_cb_index, in_data_format}})
-            .set_page_size(in_cb_index, in_single_tile_size);
-    auto cb_in = tt::tt_metal::CreateCircularBuffer(program, all_cores, in_cb_config);
-    log_info(tt::LogOp, "Circular Buffer: cb_in, ID: {}, Memory: {} bytes", in_cb_index, in_CB_size);
     // out - stores tilized output
     if (untilize_out) {
-        uint32_t out_cb_index = tt::CBIndex::c_30;
-        tt::tt_metal::CircularBufferConfig out_cb_config =
-            tt::tt_metal::CircularBufferConfig(in_CB_size, {{out_cb_index, in_data_format}})
-                .set_page_size(out_cb_index, in_single_tile_size);
-        auto cb_out = tt::tt_metal::CreateCircularBuffer(program, all_cores, out_cb_config);
-        log_info(tt::LogOp, "Circular Buffer: cb_out, ID: {}, Memory: {} bytes", out_cb_index, in_CB_size);
+        // std::map<uint8_t, tt::DataFormat> in0_out0_cb_data_format_spec{
+        //     {in0_cb_index, in_data_format}, {output_cb_index, in_data_format}};
+        // CircularBufferConfig in0_out0_cb_config =
+        //     tt::tt_metal::CircularBufferConfig(in0_CB_size, in0_out0_cb_data_format_spec)
+        //         .set_page_size(in0_cb_index, in_single_tile_size)
+        //         .set_page_size(output_cb_index, in_single_tile_size)
+        //         .set_globally_allocated_address(*a.buffer());
+
+        // cb_in0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, in0_out0_cb_config);
+        // cb_output = cb_in0;
+        // log_info(
+        //     tt::LogOp,
+        //     "Circular Buffer: cb_in0/cb_output (inplace), ID: {}, Memory: {} bytes",
+        //     in0_cb_index,
+        //     in0_CB_size);
+        // log_info(
+        //     tt::LogOp,
+        //     "Circular Buffer: cb_in0/cb_output (inplace), ID: {}, Memory: {} bytes",
+        //     output_cb_index,
+        //     in0_CB_size);
+        if (negative_mask.has_value() == false) {
+            // in - stores tilized input
+            uint32_t in_cb_index = tt::CBIndex::c_1;
+            tt::tt_metal::CircularBufferConfig in_cb_config =
+                tt::tt_metal::CircularBufferConfig(in_CB_size, {{in_cb_index, in_data_format}})
+                    .set_page_size(in_cb_index, in_single_tile_size);
+            auto cb_in = tt::tt_metal::CreateCircularBuffer(program, all_cores, in_cb_config);
+            log_info(tt::LogOp, "Circular Buffer: cb_in, ID: {}, Memory: {} bytes", in_cb_index, in_CB_size);
+            uint32_t out_cb_index = tt::CBIndex::c_30;
+            tt::tt_metal::CircularBufferConfig out_cb_config =
+                tt::tt_metal::CircularBufferConfig(in_CB_size, {{out_cb_index, in_data_format}})
+                    .set_page_size(out_cb_index, in_single_tile_size);
+            auto cb_out = tt::tt_metal::CreateCircularBuffer(program, all_cores, out_cb_config);
+            log_info(tt::LogOp, "Circular Buffer: cb_out, ID: {}, Memory: {} bytes", out_cb_index, in_CB_size);
+        } else {
+            // in - stores tilized input
+            uint32_t in_cb_index = tt::CBIndex::c_1;
+            // tt::tt_metal::CircularBufferConfig in_cb_config =
+            //     tt::tt_metal::CircularBufferConfig(in_CB_size, {{in_cb_index, in_data_format}})
+            //         .set_page_size(in_cb_index, in_single_tile_size);
+            // auto cb_in = tt::tt_metal::CreateCircularBuffer(program, all_cores, in_cb_config);
+            // log_info(tt::LogOp, "Circular Buffer: cb_in, ID: {}, Memory: {} bytes", in_cb_index, in_CB_size);
+            uint32_t out_cb_index = tt::CBIndex::c_30;
+            std::map<uint8_t, tt::DataFormat> in_out_cb_data_format_spec{
+                {in_cb_index, in_data_format}, {out_cb_index, in_data_format}};
+            CircularBufferConfig in_out_cb_config =
+                tt::tt_metal::CircularBufferConfig(in_CB_size, in_out_cb_data_format_spec)
+                    .set_page_size(in_cb_index, in_single_tile_size)
+                    .set_page_size(out_cb_index, in_single_tile_size);
+            auto cb_out = tt::tt_metal::CreateCircularBuffer(program, all_cores, in_out_cb_config);
+            log_info(
+                tt::LogOp,
+                "Circular Buffer: cb_out (inplace with cb_in), ID: {}, Memory: {} bytes",
+                out_cb_index,
+                in_CB_size);
+        }
     }
     // in2 scaler - for partial Ex
     uint32_t in2_cb_index = tt::CBIndex::c_2;

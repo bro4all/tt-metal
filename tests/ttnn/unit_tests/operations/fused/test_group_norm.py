@@ -487,9 +487,9 @@ def generate_sdxl_test_inputs():
     # inputs.append((1, 1920, 64, 64))
     # inputs.append((1, 1920, 32, 32))
     # inputs.append((1, 2560, 32, 32))
+    # inputs.append((1, 640, 128, 128))
     # inputs.append((1, 320, 128, 128))
-    inputs.append((1, 40, 128, 128))
-    # inputs.append((1, 480, 128, 128))
+    inputs.append((1, 960, 128, 128))
 
     # inputs.append((1, 960, 128, 128))
     # inputs.append((1, 320, 64, 64))
@@ -500,16 +500,16 @@ def generate_sdxl_test_inputs():
     return inputs
 
 
-@pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 47000}], indirect=True)
 @pytest.mark.parametrize("input_shape", generate_sdxl_test_inputs())
-def test_sdxl_base_group_norm_1_core(device, input_shape):
-    num_groups = 4  #  always 32 for SDXL Base 1024x1024
+def test_sdxl_base_group_norm_negative_mask(device, input_shape):
+    num_groups = 32  #  always 32 for SDXL Base 1024x1024
     N, C, H, W = input_shape
     torch.manual_seed(0)
     if device.core_grid.y == 7:
         pytest.skip()
 
-    grid_size = ttnn.CoreGrid(y=8, x=1)
+    grid_size = ttnn.CoreGrid(y=8, x=8)
 
     # Generate torch tensor
     torch_input_tensor = torch.rand(input_shape, dtype=torch.bfloat16)
