@@ -47,7 +47,7 @@ def test_detection(
 
     ttnn_output = ttnn_model(ttnn_input)
 
-    for i in range(3):
+    for i in range(4):
         ttnn_output_final = ttnn.to_torch(ttnn_output[i])
 
         ttnn_output_final = torch.reshape(

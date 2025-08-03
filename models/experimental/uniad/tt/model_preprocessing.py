@@ -214,8 +214,8 @@ def custom_preprocessor(model, name):
         )
         bias = model.fpn_convs[1].conv.bias.reshape((1, 1, 1, -1))
         parameters["fpn"]["fpn_convs"]["1"]["conv"]["bias"] = ttnn.from_torch(bias, dtype=ttnn.float32)
-        parameters["fpn"]["fpn_convs"]["1"]["conv"]["height"] = 80
-        parameters["fpn"]["fpn_convs"]["1"]["conv"]["width"] = 45
+        parameters["fpn"]["fpn_convs"]["1"]["conv"]["height"] = 40
+        parameters["fpn"]["fpn_convs"]["1"]["conv"]["width"] = 23
         parameters["fpn"]["fpn_convs"]["1"]["conv"]["batch"] = 6
 
         parameters["fpn"]["fpn_convs"]["2"] = {}
@@ -225,9 +225,20 @@ def custom_preprocessor(model, name):
         )
         bias = model.fpn_convs[2].conv.bias.reshape((1, 1, 1, -1))
         parameters["fpn"]["fpn_convs"]["2"]["conv"]["bias"] = ttnn.from_torch(bias, dtype=ttnn.float32)
-        parameters["fpn"]["fpn_convs"]["2"]["conv"]["height"] = 40
-        parameters["fpn"]["fpn_convs"]["2"]["conv"]["width"] = 23
+        parameters["fpn"]["fpn_convs"]["2"]["conv"]["height"] = 20
+        parameters["fpn"]["fpn_convs"]["2"]["conv"]["width"] = 12
         parameters["fpn"]["fpn_convs"]["2"]["conv"]["batch"] = 6
+
+        parameters["fpn"]["fpn_convs"]["3"] = {}
+        parameters["fpn"]["fpn_convs"]["3"]["conv"] = {}
+        parameters["fpn"]["fpn_convs"]["3"]["conv"]["weight"] = ttnn.from_torch(
+            model.fpn_convs[3].conv.weight, dtype=ttnn.float32
+        )
+        bias = model.fpn_convs[3].conv.bias.reshape((1, 1, 1, -1))
+        parameters["fpn"]["fpn_convs"]["3"]["conv"]["bias"] = ttnn.from_torch(bias, dtype=ttnn.float32)
+        parameters["fpn"]["fpn_convs"]["3"]["conv"]["height"] = 20
+        parameters["fpn"]["fpn_convs"]["3"]["conv"]["width"] = 12
+        parameters["fpn"]["fpn_convs"]["3"]["conv"]["batch"] = 6
 
         # if isinstance(model, TemporalSelfAttention):
         #     parameters["temporal_self_attention"] = {}
