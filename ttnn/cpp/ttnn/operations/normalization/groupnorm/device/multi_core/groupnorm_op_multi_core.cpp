@@ -128,6 +128,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     const std::optional<const Tensor>& gamma,
     const std::optional<const Tensor>& beta,
     const std::optional<const Tensor>& input_mask,
+    const std::optional<const Tensor>& negative_mask,
     Tensor& output,
     float eps,
     uint32_t num_groups,
@@ -165,6 +166,9 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     tt::DataFormat in_mask_cb_data_format =
         input_mask.has_value() ? tt::tt_metal::datatype_to_dataformat_converter(input_mask.value().dtype())
                                : tt::DataFormat::Float16_b;
+    tt::DataFormat in_negative_mask_cb_data_format =
+        negative_mask.has_value() ? tt::tt_metal::datatype_to_dataformat_converter(negative_mask.value().dtype())
+                                  : tt::DataFormat::Float16_b;
     uint32_t datum_size_bytes = 2;  // bfloat16
 
     TT_FATAL(
@@ -179,6 +183,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     uint32_t out_single_tile_size = tt::tt_metal::detail::TileSize(out_data_format);
     uint32_t gamma_beta_single_tile_size = tt::tt_metal::detail::TileSize(gamma_beta_cb_data_format);
     uint32_t in_mask_single_tile_size = tt::tt_metal::detail::TileSize(in_mask_cb_data_format);
+    uint32_t in_negative_mask_single_tile_size = tt::tt_metal::detail::TileSize(in_negative_mask_cb_data_format);
     // shard shape per core
     uint32_t per_core_M = a.shard_spec().value().shape[0];
     uint32_t per_core_N = a.shard_spec().value().shape[1];
@@ -385,6 +390,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     auto gamma_dram_addr = gamma.has_value() ? gamma.value().buffer()->address() : 0;
     auto beta_dram_addr = beta.has_value() ? beta.value().buffer()->address() : 0;
     auto input_mask_dram_addr = input_mask.has_value() ? input_mask.value().buffer()->address() : 0;
+    auto input_negative_mask_dram_addr = negative_mask.has_value() ? negative_mask.value().buffer()->address() : 0;
     // num tiles for a, gamma, beta
     uint32_t num_tiles = a.physical_volume() / TILE_HW;
     uint32_t num_gamma_tiles = gamma.has_value() ? gamma.value().physical_volume() / TILE_HW : 0;
@@ -416,6 +422,9 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     // input mask
     uint32_t input_mask_num_tiles_per_core = block_wt * num_groups_per_core;
     uint32_t in_mask_CB_size = block_wt * in_mask_single_tile_size * 2;  // double buffer
+    // negative mask
+    uint32_t input_negative_mask_num_tiles_per_core = block_wt * num_groups_per_core;
+    uint32_t in_negative_mask_CB_size = block_wt * in_negative_mask_single_tile_size * 2;  // double buffer
     // repack cb
     uint32_t repack_CB_size = per_core_Nt * in_single_tile_size * 2;  // double buffer
     // itermediate buffers
@@ -613,6 +622,9 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
 
     // writer defines
     std::map<std::string, std::string> writer_defines;
+    if (negative_mask.has_value()) {
+        writer_defines["FUSE_NEGATIVE_MASK"] = "1";
+    }
     // writer compile time args
     std::vector<uint32_t> writer_mcast_sender_compile_time_args = {
         1,
@@ -621,6 +633,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
         (std::uint32_t)is_dram(gamma),
         (std::uint32_t)is_dram(beta),
         (std::uint32_t)is_dram(input_mask),
+        (std::uint32_t)is_dram(negative_mask),
         (std::uint32_t)gamma_beta_num_cols_tile_per_core,
         (std::uint32_t)per_core_N,
         (std::uint32_t)per_core_N * datum_size_bytes,
@@ -679,6 +692,9 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     }
     if (untilize_out) {
         eltwise_binary_defines["UNTILIZE_OUT"] = "1";
+    }
+    if (negative_mask.has_value()) {
+        eltwise_binary_defines["FUSE_NEGATIVE_MASK"] = "1";
     }
     // compute kernel compile time args
     std::vector<uint32_t> mcast_sender_compute_compile_time_args = {
@@ -876,6 +892,20 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
             "Circular Buffer: in_mask_CB (input_mask), ID: {}, Memory: {} bytes",
             in_mask_cb_index,
             in_mask_CB_size);
+    }
+    // negative mask
+    if (negative_mask.has_value()) {
+        uint32_t in_negative_mask_cb_index = tt::CBIndex::c_14;
+        tt::tt_metal::CircularBufferConfig in_negative_mask_cb_config =
+            tt::tt_metal::CircularBufferConfig(
+                in_negative_mask_CB_size, {{in_negative_mask_cb_index, in_negative_mask_cb_data_format}})
+                .set_page_size(in_negative_mask_cb_index, in_negative_mask_single_tile_size);
+        auto cb_in_negative_mask = tt::tt_metal::CreateCircularBuffer(program, all_cores, in_negative_mask_cb_config);
+        log_info(
+            tt::LogOp,
+            "Circular Buffer: in_negative_mask_CB (negative_mask), ID: {}, Memory: {} bytes",
+            in_negative_mask_cb_index,
+            in_negative_mask_CB_size);
     }
     if (reader_repack_output) {
         uint32_t repack_cb_index = tt::CBIndex::c_11;
@@ -1101,6 +1131,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
         writer_mcast_sender_args.push_back(gamma_dram_addr);
         writer_mcast_sender_args.push_back(beta_dram_addr);
         writer_mcast_sender_args.push_back(input_mask_dram_addr);
+        writer_mcast_sender_args.push_back(input_negative_mask_dram_addr);
         writer_mcast_sender_args.push_back(gamma_tile_start_id);
         writer_mcast_sender_args.push_back(beta_tile_start_id);
         writer_mcast_sender_args.push_back(input_mask_tile_start_id);
@@ -1119,6 +1150,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
             input_mask_tile_start_id = (input_mask_tile_start_id + input_mask_num_tiles_per_core) %
                                        (input_mask.value().physical_volume() / TILE_HW);
         }
+        // Todo: handle negative mask, assume same as input mask
     }
 
     auto override_runtime_args_callback = [writer_kernel_ids, cb_in0, cb_output, num_cores, grid_size](
@@ -1131,6 +1163,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
         const auto& gamma_tensor = optional_input_tensors.at(0);
         const auto& beta_tensor = optional_input_tensors.at(1);
         const auto& mask_tensor = optional_input_tensors.at(2);
+        const auto& negative_mask_tensor = optional_input_tensors.at(3);
         auto dst_buffer = output_tensors.at(0).buffer();
 
         UpdateDynamicCircularBufferAddress(program, cb_in0, *src_buffer_a);
@@ -1151,6 +1184,9 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
             }
             if (mask_tensor.has_value()) {
                 runtime_args[5] = mask_tensor.value().buffer()->address();
+            }
+            if (negative_mask_tensor.has_value()) {
+                runtime_args[6] = negative_mask_tensor.value().buffer()->address();
             }
         }
     };

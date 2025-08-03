@@ -58,7 +58,8 @@ void bind_normalization_group_norm_operation(pybind11::module& module) {
             py::arg("inplace") = true,
             py::arg("output_layout") = std::nullopt,
             py::arg("num_out_blocks") = std::nullopt,
-            py::arg("compute_kernel_config") = std::nullopt});
+            py::arg("compute_kernel_config") = std::nullopt,
+            py::arg("negative_mask") = std::nullopt});
 }
 void bind_normalization_group_norm(py::module& module) { bind_normalization_group_norm_operation(module); }
 

@@ -20,11 +20,12 @@ void GroupNorm::validate(
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const Tensor>>& optional_input_tensors) const {
     TT_FATAL(
-        input_tensors.size() == 1 and optional_input_tensors.size() <= 3, "Must have between 1 to 4 input tensors");
+        input_tensors.size() == 1 and optional_input_tensors.size() <= 4, "Must have between 1 to 4 input tensors");
     auto& a = input_tensors.at(0);
     const auto& gamma = optional_input_tensors.at(0);
     const auto& beta = optional_input_tensors.at(1);
     const auto& input_mask = optional_input_tensors.at(2);
+    const auto& negative_mask = optional_input_tensors.at(3);
     TT_FATAL(a.dtype() == DataType::BFLOAT16, "Error");
     TT_FATAL(a.storage_type() == StorageType::DEVICE, "Operands to groupnorm need to be on device!");
     TT_FATAL(a.buffer() != nullptr, "Operands to groupnorm need to be allocated in buffers on device!");
@@ -78,6 +79,15 @@ void GroupNorm::validate(
         TT_FATAL(input_mask.value().padded_shape()[2] == TILE_HEIGHT, "Error");
         TT_FATAL(input_mask.value().padded_shape()[3] % TILE_WIDTH == 0, "Error");
     }
+
+    if (negative_mask.has_value()) {
+        TT_FATAL(negative_mask.value().layout() == Layout::TILE, "Error");
+        TT_FATAL(negative_mask.value().padded_shape()[1] == this->num_groups, "Error");
+        TT_FATAL(negative_mask.value().padded_shape()[2] == TILE_HEIGHT, "Error");
+        TT_FATAL(negative_mask.value().padded_shape()[3] % TILE_WIDTH == 0, "Error");
+        TT_FATAL(a.is_sharded(), "Error");
+        TT_FATAL(a.layout() == Layout::ROW_MAJOR, "Error");
+    }
 }
 std::vector<TensorSpec> GroupNorm::compute_output_specs(const std::vector<Tensor>& input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
@@ -126,6 +136,7 @@ operation::ProgramWithCallbacks GroupNorm::create_program(
     const auto& gamma = optional_input_tensors.at(0);
     const auto& beta = optional_input_tensors.at(1);
     const auto& input_mask = optional_input_tensors.at(2);
+    const auto& negative_mask = optional_input_tensors.at(3);
     auto& output_tensor = output_tensors.at(0);
 
     return std::visit(
@@ -143,6 +154,7 @@ operation::ProgramWithCallbacks GroupNorm::create_program(
                     gamma,
                     beta,
                     input_mask,
+                    negative_mask,
                     output_tensor,
                     this->eps,
                     this->num_groups,

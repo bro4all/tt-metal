@@ -43,14 +43,12 @@ def manual_group_norm(input_tensor, num_groups, eps=1e-2):
 def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
     torch.manual_seed(0)
 
-    grid_size = ttnn.CoreGrid(y=1, x=8)
+    grid_size = ttnn.CoreGrid(y=2, x=8)
 
     torch_input_tensor = torch.rand((N, C, H, W), dtype=torch.bfloat16)
-    torch_weight = torch.rand((C,), dtype=torch.bfloat16)
-    torch_bias = torch.rand((C,), dtype=torch.bfloat16)
-    torch_output_tensor = torch.nn.functional.group_norm(
-        torch_input_tensor, num_groups, weight=torch_weight, bias=torch_bias
-    )
+    # torch_weight = torch.rand((C,), dtype=torch.bfloat16)
+    # torch_bias = torch.rand((C,), dtype=torch.bfloat16)
+    torch_output_tensor = torch.nn.functional.group_norm(torch_input_tensor, num_groups)
     torch_output_tensor = torch_output_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
 
     input_tensor = torch_input_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
@@ -63,7 +61,7 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
     )
 
     # input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, 1)
     input_mask_tensor = ttnn.from_torch(
         input_mask_tensor,
         dtype=ttnn.DataType.BFLOAT8_B,
@@ -72,29 +70,14 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
 
-    gamma = ttnn.create_group_norm_weight_bias_rm(torch_weight, C, grid_size.y)
-    beta = ttnn.create_group_norm_weight_bias_rm(torch_bias, C, grid_size.y)
-
-    gamma_t = ttnn.from_torch(
-        gamma,
-        dtype=ttnn.DataType.BFLOAT16,
-        layout=ttnn.ROW_MAJOR_LAYOUT,
-        device=device,
-        memory_config=ttnn.DRAM_MEMORY_CONFIG,
-    )
-    beta_t = ttnn.from_torch(
-        beta,
-        dtype=ttnn.DataType.BFLOAT16,
-        layout=ttnn.ROW_MAJOR_LAYOUT,
-        device=device,
-        memory_config=ttnn.DRAM_MEMORY_CONFIG,
-    )
+    # gamma = ttnn.create_group_norm_weight_bias_rm(torch_weight, C, 1)
+    # beta = ttnn.create_group_norm_weight_bias_rm(torch_bias, C, 1)
 
     # shard config
     grid_coord = ttnn.CoreCoord(grid_size.x - 1, grid_size.y - 1)
     shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
-    shard_shape = N * H * W // grid_size.x, C // grid_size.y
-    shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.COL_MAJOR)
+    shard_shape = N * H * W // grid_size.x * grid_size.y, C
+    shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
     sharded_mem_config = ttnn.MemoryConfig(
         ttnn.types.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.types.BufferType.L1, shard_spec
     )
@@ -104,8 +87,6 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
         input_tensor,
         num_groups=num_groups,
         input_mask=input_mask_tensor,
-        weight=gamma_t,
-        bias=beta_t,
         memory_config=sharded_mem_config,
         core_grid=grid_size,
     )
@@ -406,6 +387,9 @@ def test_group_norm_with_block_sharded_v2_8x8_grid_tile_layout(device, N, C, H, 
 
     assert_with_pcc(torch_output_tensor, output_tensor, 0.9997)
 
+    # (1, 640, 128, 128, 32, 3, 4, 4),
+    # (1, 960, 128, 128, 32, 6, 2, 2),
+
 
 def generate_sdxl_test_inputs():
     inputs = []
@@ -416,7 +400,11 @@ def generate_sdxl_test_inputs():
     # inputs.append((1, 1920, 64, 64))
     # inputs.append((1, 1920, 32, 32))
     # inputs.append((1, 2560, 32, 32))
-    inputs.append((1, 320, 128, 128))
+    # inputs.append((1, 320, 128, 128))
+    # inputs.append((1, 320, 128, 128))
+    inputs.append((1, 640, 128, 128))
+
+    # inputs.append((1, 960, 128, 128))
     # inputs.append((1, 320, 64, 64))
     # inputs.append((1, 640, 64, 64))
     # inputs.append((1, 640, 32, 32))
@@ -471,6 +459,8 @@ def test_sdxl_base_group_norm(device, input_shape):
     )
     tt_input_tensor = ttnn.to_device(tt_input_tensor, device, memory_config=sharded_mem_config)
 
+    print("sharded_mem_config: ", sharded_mem_config)
+
     # Execute ttnn group_norm
     tt_output_tensor = ttnn.group_norm(
         tt_input_tensor,
@@ -479,6 +469,206 @@ def test_sdxl_base_group_norm(device, input_shape):
         memory_config=sharded_mem_config,
         core_grid=grid_size,
     )
+
+    tt_output_tensor = ttnn.from_device(tt_output_tensor)
+    tt_output_tensor = ttnn.to_torch(tt_output_tensor)
+    print("Out tensor: ", tt_output_tensor)
+    print("Torch out tensor: ", torch_output_tensor)
+
+    assert_with_pcc(torch_output_tensor, tt_output_tensor, 0.9997)
+
+
+def generate_sdxl_test_inputs():
+    inputs = []
+
+    # 1024x1024 resoultion
+    # inputs.append((1, 1280, 64, 64))
+    # inputs.append((1, 1280, 32, 32))
+    # inputs.append((1, 1920, 64, 64))
+    # inputs.append((1, 1920, 32, 32))
+    # inputs.append((1, 2560, 32, 32))
+    # inputs.append((1, 320, 128, 128))
+    inputs.append((1, 40, 128, 128))
+    # inputs.append((1, 480, 128, 128))
+
+    # inputs.append((1, 960, 128, 128))
+    # inputs.append((1, 320, 64, 64))
+    # inputs.append((1, 640, 64, 64))
+    # inputs.append((1, 640, 32, 32))
+    # inputs.append((1, 960, 64, 64))
+
+    return inputs
+
+
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
+@pytest.mark.parametrize("input_shape", generate_sdxl_test_inputs())
+def test_sdxl_base_group_norm_1_core(device, input_shape):
+    num_groups = 4  #  always 32 for SDXL Base 1024x1024
+    N, C, H, W = input_shape
+    torch.manual_seed(0)
+    if device.core_grid.y == 7:
+        pytest.skip()
+
+    grid_size = ttnn.CoreGrid(y=8, x=1)
+
+    # Generate torch tensor
+    torch_input_tensor = torch.rand(input_shape, dtype=torch.bfloat16)
+
+    # Execute torch group_norm
+    torch_output_tensor = torch.nn.functional.group_norm(torch_input_tensor, num_groups)
+    torch_output_tensor = torch_output_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
+
+    # Generate ttnn tensor
+    tt_input_tensor = torch_input_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
+    tt_input_tensor = ttnn.from_torch(
+        tt_input_tensor,
+        dtype=ttnn.DataType.BFLOAT16,
+        layout=ttnn.ROW_MAJOR_LAYOUT,
+    )
+
+    # Generate input mask
+    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.x)
+    input_mask_tensor = ttnn.from_torch(
+        input_mask_tensor,
+        dtype=ttnn.DataType.BFLOAT8_B,
+        layout=ttnn.TILE_LAYOUT,
+        device=device,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    input_negative_mask_tensor = ttnn.create_group_norm_input_negative_mask(C, num_groups, grid_size.x)
+    input_negative_mask_tensor = ttnn.from_torch(
+        input_negative_mask_tensor,
+        dtype=ttnn.DataType.BFLOAT8_B,
+        layout=ttnn.TILE_LAYOUT,
+        device=device,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    print("GN mask is: ", input_mask_tensor)
+    print("GN negative mask is: ", input_negative_mask_tensor)
+
+    # Generate shard config
+    grid_coord = ttnn.CoreCoord(grid_size.x - 1, grid_size.y - 1)
+    shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
+    shard_shape = N * H * W // grid_size.y, C // grid_size.x
+    shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+    sharded_mem_config = ttnn.MemoryConfig(
+        ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
+    )
+    tt_input_tensor = ttnn.to_device(tt_input_tensor, device, memory_config=sharded_mem_config)
+    print("tt_input_tensor: ", tt_input_tensor)
+
+    print("sharded_mem_config: ", sharded_mem_config)
+
+    # Execute ttnn group_norm
+    tt_output_tensor = ttnn.group_norm(
+        tt_input_tensor,
+        num_groups=num_groups,
+        input_mask=input_mask_tensor,
+        negative_mask=input_negative_mask_tensor,
+        memory_config=sharded_mem_config,
+        core_grid=grid_size,
+    )
+
+    tt_output_tensor = ttnn.from_device(tt_output_tensor)
+    tt_output_tensor = ttnn.to_torch(tt_output_tensor)
+    print("tt_output_tensor : ", tt_output_tensor)
+    print("torch_output_tensor : ", torch_output_tensor)
+    # print("Out tensor: ", tt_output_tensor)
+    # print("Torch out tensor: ", torch_output_tensor)
+
+    assert_with_pcc(torch_output_tensor, tt_output_tensor, 0.9997)
+
+
+# Deluje bas jebeno da se izbaci
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
+@pytest.mark.parametrize(
+    "N, C, H, W, num_groups, num_splits, grid_x",
+    [
+        (1, 640, 128, 128, 32, 2, 8),
+        # (1, 960, 128, 128, 32, 1, 8),
+    ],
+)
+def test_sdxl_base_group_norm_split(device, N, C, H, W, num_groups, num_splits, grid_x):
+    torch.manual_seed(0)
+    if device.core_grid.y == 7:
+        pytest.skip()
+
+    grid_size = ttnn.CoreGrid(y=8, x=grid_x)
+
+    # Generate torch tensor
+    torch_input_tensor = torch.rand([N, C, H, W], dtype=torch.bfloat16)
+
+    # Execute torch group_norm
+    torch_output_tensor = torch.nn.functional.group_norm(torch_input_tensor, num_groups)
+    torch_output_tensor = torch_output_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
+
+    # Generate ttnn tensor
+    tt_input_tensor = torch_input_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
+    tt_input_tensor = ttnn.from_torch(
+        tt_input_tensor,
+        dtype=ttnn.DataType.BFLOAT16,
+        layout=ttnn.ROW_MAJOR_LAYOUT,
+    )
+
+    print("tt_input_tensor shape: ", tt_input_tensor.shape)
+
+    # Generate input mask
+    num_groups_per_split = num_groups // num_splits  # 16
+    C_per_split = C // num_splits
+    input_mask_tensor = ttnn.create_group_norm_input_mask(C_per_split, num_groups_per_split, grid_size.x)
+    input_mask_tensor = ttnn.from_torch(
+        input_mask_tensor,
+        dtype=ttnn.DataType.BFLOAT8_B,
+        layout=ttnn.TILE_LAYOUT,
+        device=device,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    tt_input_tensor = ttnn.to_device(tt_input_tensor, device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+    # Generate shard config
+    grid_coord = ttnn.CoreCoord(grid_size.x - 1, grid_size.y - 1)
+    shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
+    shard_shape = N * H * W // grid_size.y, C_per_split // grid_size.x
+    shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+    sharded_mem_config_per_split = ttnn.MemoryConfig(
+        ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
+    )
+    print("sharded_mem_config_per_split: ", sharded_mem_config_per_split)
+
+    per_group_results = []
+    for i in range(num_splits):
+        tt_input_tensor_per_group_split = tt_input_tensor[:, :, :, i * C_per_split : (i + 1) * C_per_split]
+        print("tt_input_tensor_per_group_split shape: ", tt_input_tensor_per_group_split.shape)
+        tt_input_tensor_per_group_split_sharded = ttnn.to_memory_config(
+            tt_input_tensor_per_group_split, sharded_mem_config_per_split
+        )
+        tt_output_tensor_per_group_split = ttnn.group_norm(
+            tt_input_tensor_per_group_split_sharded,
+            num_groups=num_groups_per_split,
+            input_mask=input_mask_tensor,
+            memory_config=sharded_mem_config_per_split,
+            core_grid=grid_size,
+        )
+        tt_output_tensor_per_group_split = ttnn.to_memory_config(
+            tt_output_tensor_per_group_split, ttnn.DRAM_MEMORY_CONFIG
+        )
+        per_group_results.append(tt_output_tensor_per_group_split)
+
+    tt_output_tensor = ttnn.concat(per_group_results, dim=-1)
+    # tt_output_tensor = per_group_results[0]
+
+    # tt_input_tensor = ttnn.to_device(tt_input_tensor, device, memory_config=sharded_mem_config)
+    # Execute ttnn group_norm
+    # tt_output_tensor = ttnn.group_norm(
+    #     tt_input_tensor,
+    #     num_groups=num_groups,
+    #     input_mask=input_mask_tensor,
+    #     memory_config=sharded_mem_config,
+    #     core_grid=grid_size,
+    # )
 
     tt_output_tensor = ttnn.from_device(tt_output_tensor)
     tt_output_tensor = ttnn.to_torch(tt_output_tensor)

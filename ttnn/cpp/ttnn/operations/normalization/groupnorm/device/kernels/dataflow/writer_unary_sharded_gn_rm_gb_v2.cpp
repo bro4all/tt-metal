@@ -16,26 +16,28 @@ void kernel_main() {
     constexpr bool gamma_is_dram = get_compile_time_arg_val(3) == 1;
     constexpr bool beta_is_dram = get_compile_time_arg_val(4) == 1;
     constexpr bool input_mask_is_dram = get_compile_time_arg_val(5) == 1;
+    constexpr bool input_negative_mask_is_dram = get_compile_time_arg_val(6) == 1;
 
-    constexpr uint32_t num_cols_tile_gamma_beta = get_compile_time_arg_val(6);
+    constexpr uint32_t num_cols_tile_gamma_beta = get_compile_time_arg_val(7);
 
-    constexpr uint32_t per_core_N = get_compile_time_arg_val(7);
-    constexpr uint32_t per_core_N_bytes = get_compile_time_arg_val(8);
-    constexpr uint32_t per_core_N_bytes_with_stride = get_compile_time_arg_val(9);
+    constexpr uint32_t per_core_N = get_compile_time_arg_val(8);
+    constexpr uint32_t per_core_N_bytes = get_compile_time_arg_val(9);
+    constexpr uint32_t per_core_N_bytes_with_stride = get_compile_time_arg_val(10);
 
-    constexpr uint32_t num_groups_per_core = get_compile_time_arg_val(10);
-    constexpr uint32_t num_batches_per_core = get_compile_time_arg_val(11);
-    constexpr uint32_t block_w = get_compile_time_arg_val(12);
+    constexpr uint32_t num_groups_per_core = get_compile_time_arg_val(11);
+    constexpr uint32_t num_batches_per_core = get_compile_time_arg_val(12);
+    constexpr uint32_t block_w = get_compile_time_arg_val(13);
 
-    constexpr bool stick_size_is_pow2 = get_compile_time_arg_val(13) == 1;
-    constexpr uint32_t size = get_compile_time_arg_val(14);
+    constexpr bool stick_size_is_pow2 = get_compile_time_arg_val(14) == 1;
+    constexpr uint32_t size = get_compile_time_arg_val(15);
 
     const uint32_t gamma_addr = get_arg_val<uint32_t>(3);
     const uint32_t beta_addr = get_arg_val<uint32_t>(4);
     const uint32_t input_mask_addr = get_arg_val<uint32_t>(5);
-    const uint32_t gamma_tile_start_id = get_arg_val<uint32_t>(6);
-    const uint32_t beta_tile_start_id = get_arg_val<uint32_t>(7);
-    const uint32_t input_mask_tile_start_id = get_arg_val<uint32_t>(8);
+    const uint32_t input_negative_mask_addr = get_arg_val<uint32_t>(6);
+    const uint32_t gamma_tile_start_id = get_arg_val<uint32_t>(7);
+    const uint32_t beta_tile_start_id = get_arg_val<uint32_t>(8);
+    const uint32_t input_mask_tile_start_id = get_arg_val<uint32_t>(9);
 
     constexpr uint32_t cb_gamma = tt::CBIndex::c_5;
     constexpr uint32_t cb_beta = tt::CBIndex::c_6;
@@ -53,8 +55,22 @@ void kernel_main() {
         .page_size = input_mask_single_tile_size_bytes,
         .data_format = input_mask_data_format};
 
+#if defined(FUSE_NEGATIVE_MASK)
+    constexpr uint32_t cb_input_negative_mask = tt::CBIndex::c_14;
+    const uint32_t input_negative_mask_single_tile_size_bytes = get_tile_size(cb_input_negative_mask);
+    const DataFormat input_negative_mask_data_format = get_dataformat(cb_input_negative_mask);
+
+    const InterleavedAddrGenFast<input_negative_mask_is_dram> negative_mask = {
+        .bank_base_address = input_negative_mask_addr,
+        .page_size = input_negative_mask_single_tile_size_bytes,
+        .data_format = input_negative_mask_data_format};
+#endif
+
     for (uint32_t b = 0; b < num_batches_per_core; ++b) {
         uint32_t input_mask_tile_id = input_mask_tile_start_id;
+#if defined(FUSE_NEGATIVE_MASK)
+        uint32_t input_negative_mask_tile_id = input_mask_tile_start_id;
+#endif
         for (uint32_t i = 0; i < num_groups_per_core; ++i) {
             cb_reserve_back(cb_input_mask, block_w);
             uint32_t l1_write_addr_input_mask = get_write_ptr(cb_input_mask);
@@ -65,6 +81,18 @@ void kernel_main() {
             }
             noc_async_read_barrier();
             cb_push_back(cb_input_mask, block_w);
+
+#if defined(FUSE_NEGATIVE_MASK)
+            cb_reserve_back(cb_input_negative_mask, block_w);
+            uint32_t l1_write_addr_input_negative_mask = get_write_ptr(cb_input_negative_mask);
+            for (uint32_t j = 0; j < block_w; ++j) {
+                noc_async_read_tile(input_negative_mask_tile_id, negative_mask, l1_write_addr_input_negative_mask);
+                l1_write_addr_input_negative_mask += input_negative_mask_single_tile_size_bytes;
+                input_negative_mask_tile_id += 1;
+            }
+            noc_async_read_barrier();
+            cb_push_back(cb_input_negative_mask, block_w);
+#endif
 
             if (i == 0 and b == 0) {
                 constexpr uint32_t cb_in_2 = tt::CBIndex::c_2;
