@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
         const auto& topology = test_config.fabric_setup.topology;
         const auto& routing_type = test_config.fabric_setup.routing_type.value();
 
+        log_info(tt::LogTest, "Setting enable_fabric_telemetry to {}", test_config.benchmark_mode);
         tt::tt_metal::MetalContext::instance().rtoptions().set_enable_fabric_telemetry(test_config.benchmark_mode);
 
         log_info(tt::LogTest, "Opening devices with topology: {} and routing type: {}", topology, routing_type);
