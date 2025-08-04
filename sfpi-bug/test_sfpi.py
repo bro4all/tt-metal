@@ -85,9 +85,6 @@ def main():
         # torch_result_f32, ttnn_result_f32, match_status = benchmark_pow(device, torch.float32)
 
         # Display results
-        print(f"Input values: a=9, b=2")
-        print(f"Computing a**b (9**2):")
-        print(f"")
         print(f"-----")
         print(f"[bfloat16] Torch result:  {torch_result}")
         print(f"[bfloat16] TTNN result:   {ttnn_result}")
@@ -97,12 +94,6 @@ def main():
         print(f"")
         print(f"Results match: {match_status}")
         print(f"Expected value: 81.0")
-
-        # Additional information
-        print(f"")
-        print(f"Data type: bfloat16")
-        print(f"Tensor shape: [1] (1D with single element)")
-        print(f"TTNN layout: TILE")
 
         # if match_status:
         #     print(f"✓ Test PASSED: ttnn.pow matches torch.pow")

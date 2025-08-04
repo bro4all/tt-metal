@@ -420,6 +420,14 @@ sfpi_inline sfpi::vFloat test_conditional_bug(sfpi::vFloat base, sfpi::vFloat po
     __builtin_rvtt_sfpnop();
     __builtin_rvtt_sfpnop();
 
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+
     return pow;
 }
 
