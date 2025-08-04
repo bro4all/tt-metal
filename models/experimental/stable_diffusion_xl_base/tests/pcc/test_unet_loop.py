@@ -394,4 +394,4 @@ def test_unet_loop(
     prompt,
     loop_iter_num,
 ):
-    return run_unet_inference(device, is_ci_env, prompt, loop_iter_num)
+    return run_unet_inference(device, is_ci_env, prompt, 50)

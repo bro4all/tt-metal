@@ -395,20 +395,20 @@ def generate_sdxl_test_inputs():
     inputs = []
 
     # 1024x1024 resoultion
-    # inputs.append((1, 1280, 64, 64))
-    # inputs.append((1, 1280, 32, 32))
-    # inputs.append((1, 1920, 64, 64))
-    # inputs.append((1, 1920, 32, 32))
-    # inputs.append((1, 2560, 32, 32))
-    # inputs.append((1, 320, 128, 128))
-    # inputs.append((1, 320, 128, 128))
-    inputs.append((1, 640, 128, 128))
+    inputs.append((1, 1280, 64, 64))
+    inputs.append((1, 1280, 32, 32))
+    inputs.append((1, 1920, 64, 64))
+    inputs.append((1, 1920, 32, 32))
+    inputs.append((1, 2560, 32, 32))
+    inputs.append((1, 320, 128, 128))
+    inputs.append((1, 640, 64, 128))
+    # inputs.append((1, 640, 128, 128))
 
-    # inputs.append((1, 960, 128, 128))
-    # inputs.append((1, 320, 64, 64))
-    # inputs.append((1, 640, 64, 64))
-    # inputs.append((1, 640, 32, 32))
-    # inputs.append((1, 960, 64, 64))
+    #    inputs.append((1, 960, 128, 128))
+    inputs.append((1, 320, 64, 64))
+    inputs.append((1, 640, 64, 64))
+    inputs.append((1, 640, 32, 32))
+    inputs.append((1, 960, 64, 64))
 
     return inputs
 
@@ -486,9 +486,8 @@ def generate_sdxl_test_inputs():
     # inputs.append((1, 1280, 32, 32))
     # inputs.append((1, 1920, 64, 64))
     # inputs.append((1, 1920, 32, 32))
-    # inputs.append((1, 2560, 32, 32))
-    # inputs.append((1, 640, 128, 128))
-    # inputs.append((1, 320, 128, 128))
+    inputs.append((1, 320, 128, 128))
+    inputs.append((1, 640, 128, 128))
     inputs.append((1, 960, 128, 128))
 
     # inputs.append((1, 960, 128, 128))
@@ -506,10 +505,12 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape):
     num_groups = 32  #  always 32 for SDXL Base 1024x1024
     N, C, H, W = input_shape
     torch.manual_seed(0)
-    if device.core_grid.y == 7:
-        pytest.skip()
+    # if device.core_grid.y == 7:
+    #     pytest.skip()
 
-    grid_size = ttnn.CoreGrid(y=8, x=8)
+    core_x = 8
+    core_y = 8
+    grid_size = ttnn.CoreGrid(y=core_y, x=core_x)
 
     # Generate torch tensor
     torch_input_tensor = torch.rand(input_shape, dtype=torch.bfloat16)
@@ -533,6 +534,7 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape):
 
     # Generate input mask
     input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.x)
+    input_mask_tensor_torch = input_mask_tensor
     input_mask_tensor = ttnn.from_torch(
         input_mask_tensor,
         dtype=ttnn.DataType.BFLOAT8_B,
@@ -542,6 +544,7 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape):
     )
 
     input_negative_mask_tensor = ttnn.create_group_norm_input_negative_mask(C, num_groups, grid_size.x)
+    input_negative_mask_tensor_torch = input_negative_mask_tensor
     input_negative_mask_tensor = ttnn.from_torch(
         input_negative_mask_tensor,
         dtype=ttnn.DataType.BFLOAT8_B,
@@ -568,8 +571,10 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape):
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
 
-    print("GN mask is: ", input_mask_tensor)
-    print("GN negative mask is: ", input_negative_mask_tensor)
+    # set full print options so that entire tensor is printed
+    # torch.set_printoptions(precision=10, profile="full")
+    # print("GN mask is: ", input_mask_tensor_torch)
+    # print("GN negative mask is: ", input_negative_mask_tensor_torch)
 
     # Generate shard config
     grid_coord = ttnn.CoreCoord(grid_size.x - 1, grid_size.y - 1)
@@ -603,7 +608,9 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape):
     # print("Out tensor: ", tt_output_tensor)
     # print("Torch out tensor: ", torch_output_tensor)
 
-    assert_with_pcc(torch_output_tensor, tt_output_tensor, 0.9997)
+    x, y = assert_with_pcc(torch_output_tensor, tt_output_tensor, 0.9997)
+    print("x: ", x)
+    print("y: ", y)
 
 
 # Deluje bas jebeno da se izbaci

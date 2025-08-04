@@ -317,6 +317,12 @@ void MAIN {
             mul_tiles_init(cb_x, cb_input_mask);
             cb_wait_front(cb_x, block_hw);
 
+            // DPRINT << "CB_IN_POSITIVE MASK g = " << g << ENDL();
+            // for (uint32_t i = 0; i < block_w; i++) {
+            //     DPRINT << "Tile " << i << " of cb_in_positive mask g = " << g << ENDL();
+            //     tt::compute::common::print_full_tile(cb_input_mask, i, true);
+            // }
+
             for (uint32_t i = 0; i < block_h; i++) {
                 index_subblock_w_offset = 0;
                 for (uint32_t j = 0; j < num_subblocks_w; ++j) {
@@ -324,6 +330,10 @@ void MAIN {
                     for (uint32_t w = 0; w < subblock_w; ++w) {
                         uint32_t index = w + index_subblock_w_offset;
                         uint32_t index_mask = index;
+                        if (i == 0 || index_mask > 1) {
+                            DPRINT << "Mult with positive mask: g = " << g << " index_mask = " << index_mask
+                                   << " index of cb: " << index << ENDL();
+                        }
                         mul_tiles(cb_x, cb_input_mask, index, index_mask, w);
                     }
                     tile_regs_commit();
@@ -590,40 +600,80 @@ void MAIN {
                 reconfig_data_format_srcb(cb_x, cb_in_negative_mask);
                 mul_tiles_init(cb_in, cb_in_negative_mask);
 
+                // DPRINT << "num_subblocks_w: " << num_subblocks_w  << " subblock_w: " << subblock_w << ENDL();
+                // DPRINT << "per_core_M: " << per_core_M << " per_core_N: " << per_core_N << " block_h: " << block_h <<
+                // "block_w: " << block_w << ENDL();
                 // DPRINT << "CB_IN before multiplying with mask: g = " << g << ENDL();
-                // for (uint32_t i = 0; i < 2; i++) {
+                // for (uint32_t i = 0; i < block_w; i++) {
                 //     DPRINT << "Tile " << i << " of cb_in before multiplying with mask: " << ENDL();
                 //     tt::compute::common::print_full_tile(cb_in, i, true);
                 // }
 
-                for (uint32_t i = 0; i < block_h; i++) {
-                    // DPRINT << "G = " << g << " i = " << i << ENDL();
-                    index_subblock_w_offset = 0;
-                    for (uint32_t j = 0; j < num_subblocks_w; ++j) {
+                // DPRINT << "CB_IN_NEGATIVE_MASK g = " << g << ENDL();
+                // for (uint32_t i = 0; i < block_w; i++) {
+                //     DPRINT << "Tile " << i << " of cb_in_negative_mask g = " << g << ENDL();
+                //     tt::compute::common::print_full_tile(cb_in_negative_mask, i, true);
+                // }
+
+                // for (uint32_t i = 0; i < block_h; i++) {
+                //     // DPRINT << "G = " << g << " i = " << i << ENDL();
+                //     index_subblock_w_offset = 0;
+                //     for (uint32_t j = 0; j < num_subblocks_w; ++j) {
+                //         tile_regs_acquire();
+                //         for (uint32_t w = 0; w < subblock_w; ++w) {
+                //             uint32_t index = w + index_subblock_w_offset;
+                //             uint32_t index_mask = index;
+                //             // if (g == 1) {
+                //             //     index += 1;
+                //             // }
+                //             DPRINT << "Mult with negative mask: g = " << g << " index_mask = " << index_mask << "
+                //             index of cb: " << index << ENDL(); mul_tiles(cb_in, cb_in_negative_mask, index,
+                //             index_mask, w);
+                //         }
+                //         tile_regs_commit();
+
+                //         cb_pop_front(cb_in, subblock_w);
+                //         cb_reserve_back(cb_in, subblock_w);
+
+                //         tile_regs_wait();
+                //         for (uint32_t i = 0; i < subblock_w; ++i) {
+                //             pack_tile(i, cb_in);
+                //         }
+                //         cb_push_back(cb_in, subblock_w);
+                //         tile_regs_release();
+                //     }
+                // }
+
+                // DPRINT << "CB_IN before masking: g = " << g << ENDL();
+                // for (uint32_t i = 0; i < 3; i++) {
+                //     DPRINT << "Tile " << i << " of cb_in before masking: " << ENDL();
+                //     tt::compute::common::print_full_tile(cb_in, i, true);
+                // }
+
+                for (uint32_t w = 0; w < block_w_curr; w++) {
+                    index_h_offset = index_b_offset + index_g_offset;
+                    uint32_t index_h1_offset = 0;
+
+                    for (uint32_t i = 0; i < block_h; i++) {
                         tile_regs_acquire();
-                        for (uint32_t w = 0; w < subblock_w; ++w) {
-                            uint32_t index = w + index_subblock_w_offset;
-                            uint32_t index_mask = index;
-                            mul_tiles(cb_in, cb_in_negative_mask, index, index_mask, w);
-                        }
+                        uint32_t index_in = w + index_h_offset;
+                        uint32_t index_mask = w;
+
+                        mul_tiles(cb_in, cb_in_negative_mask, index_in, index_mask, dst0);
                         tile_regs_commit();
 
-                        cb_pop_front(cb_in, subblock_w);
-                        cb_reserve_back(cb_in, subblock_w);
-
                         tile_regs_wait();
-                        for (uint32_t i = 0; i < subblock_w; ++i) {
-                            pack_tile(i, cb_in);
-                        }
-                        cb_push_back(cb_in, subblock_w);
+                        pack_tile<true>(dst0, cb_in, index_in);
                         tile_regs_release();
+
+                        index_h_offset += per_core_N;
                     }
                 }
 
-                DPRINT << "DONE1" << ENDL();
+                // DPRINT << "DONE1" << ENDL();
                 reconfig_data_format_srcb(cb_in_negative_mask, cb_x);
                 // DPRINT << "CB_IN after masking: g = " << g << ENDL();
-                // for (uint32_t i = 0; i < 2; i++) {
+                // for (uint32_t i = 0; i < 3; i++) {
                 //     DPRINT << "Tile " << i << " of cb_in after masking: " << ENDL();
                 //     tt::compute::common::print_full_tile(cb_in, i, true);
                 // }
@@ -637,12 +687,16 @@ void MAIN {
                 add_tiles_init(cb_in, cb_x);
                 for (uint32_t w = 0; w < block_w_curr; ++w) {
                     index_h_offset = index_b_offset + index_g_offset;
+                    // DPRINT << "index_h_offset: " << index_h_offset << " g = " << g << ENDL();
                     uint32_t index_h1_offset = 0;
 
                     for (uint32_t i = 0; i < block_h; ++i) {
                         tile_regs_acquire();
                         uint32_t index_x = w + index_h1_offset;
                         uint32_t index = w + index_h_offset;
+                        if (w == 1) {
+                            // DPRINT << "index: " << index << " g = " << g << ENDL();
+                        }
 
                         add_tiles(cb_in, cb_x, index, index_x, dst0);
                         tile_regs_commit();
@@ -652,19 +706,6 @@ void MAIN {
 
                         index_h_offset += per_core_N;
                         index_h1_offset += block_w;
-                    }
-
-                    // update group tile offset
-                    if (index_block_w >= block_w_curr - 1) {
-                        index_block_w = 0;
-
-                        if (group_reset_index == num_groups_per_reset - 1) {
-                            group_reset_index = 0;
-                        } else {
-                            group_reset_index += 1;
-                        }
-                    } else {
-                        index_block_w += 1;
                     }
                 }
 

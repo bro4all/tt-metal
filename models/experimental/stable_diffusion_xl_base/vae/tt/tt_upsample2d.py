@@ -61,6 +61,7 @@ class TtUpsample2D(nn.Module):
             ttnn.deallocate(hidden_state_l1)
         else:
             hidden_states = hidden_state_l1
+        ttnn.DumpDeviceProfiler(self.device)
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_weights,

@@ -128,6 +128,7 @@ class TtDecoder(nn.Module):
             logger.info(f"Starting {idx}. up-block")
             hidden_states, [C, H, W] = up_block.forward(hidden_states, [B, C, H, W])
 
+        ttnn.DumpDeviceProfiler(self.device)
         logger.info("Executing out ops")
         hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
         hidden_states = ttnn.group_norm(
@@ -144,7 +145,7 @@ class TtDecoder(nn.Module):
         )
 
         hidden_states = ttnn.silu(hidden_states)
-
+        ttnn.DumpDeviceProfiler(self.device)
         [hidden_states, [H, W], [self.tt_conv_out_weights, self.tt_conv_out_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv_out_weights,

@@ -7,6 +7,7 @@ import ttnn
 
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import (
     prepare_gn_mask,
+    prepare_gn_mask_negative_mask,
     prepare_gn_beta_gamma,
     prepare_conv_params,
     prepare_split_conv_params,
@@ -64,7 +65,7 @@ class TtResnetBlock2D(nn.Module):
             conv_weights_3 = state_dict[f"{module_path}.conv_shortcut.weight"].squeeze()
             conv_bias_3 = state_dict[f"{module_path}.conv_shortcut.bias"]
 
-        if "up_blocks.2" in module_path:
+        if "up_blocks.5" in module_path:
             self.norm_1_blocks = 6 if "up_blocks.2.resnets.0" in module_path else 3
             core_x = core_y = 2 if "up_blocks.2.resnets.0" in module_path else 4
             self.norm_core_grid_1 = ttnn.CoreGrid(y=core_y, x=core_x)
@@ -82,6 +83,13 @@ class TtResnetBlock2D(nn.Module):
             self.input_mask_1 = prepare_gn_mask(
                 self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
             )
+            if "up_blocks.2" in module_path:
+                print("Using negative mask")
+                self.input_negative_mask_1 = prepare_gn_mask_negative_mask(
+                    self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
+                )
+            else:
+                self.input_negative_mask_1 = None
 
         self.gamma_t_2, self.beta_t_2 = prepare_gn_beta_gamma(
             device, norm_weights_2, norm_bias_2, self.norm_core_grid_2.y
@@ -148,20 +156,22 @@ class TtResnetBlock2D(nn.Module):
         B, C, H, W = input_shape
         hidden_states = input_tensor
 
-        if C >= 640 and H >= 128 and W >= 128:
-            hidden_states = ttnn.group_norm(
-                hidden_states,
-                num_groups=self.norm_groups,
-                input_mask=self.input_mask_1,
-                weight=self.gamma_t_1,
-                bias=self.beta_t_1,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                core_grid=self.norm_core_grid_1,
-                epsilon=self.norm_eps,
-                inplace=False,
-                num_out_blocks=self.norm_1_blocks,
-            )
-            hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
+        if C >= 640 and H >= 256 and W >= 256:
+            # pass
+            print("Hidden states shape for dram gn is", hidden_states.shape)
+            # hidden_states = ttnn.group_norm(
+            #     hidden_states,
+            #     num_groups=self.norm_groups,
+            #     input_mask=self.input_mask_1,
+            #     weight=self.gamma_t_1,
+            #     bias=self.beta_t_1,
+            #     memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            #     core_grid=self.norm_core_grid_1,
+            #     epsilon=self.norm_eps,
+            #     inplace=False,
+            #     num_out_blocks=self.norm_1_blocks,
+            # )
+            # hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
         else:
             hidden_states = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
             grid_coord = ttnn.CoreCoord(self.norm_core_grid_1.x - 1, self.norm_core_grid_1.y - 1)
@@ -171,18 +181,34 @@ class TtResnetBlock2D(nn.Module):
             sharded_mem_config = ttnn.MemoryConfig(
                 ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
             )
+            print("Sharded GN, shard shape is: ", shard_shape)
             hidden_states = ttnn.to_memory_config(hidden_states, sharded_mem_config)
 
-            hidden_states = ttnn.group_norm(
-                hidden_states,
-                num_groups=self.norm_groups,
-                input_mask=self.input_mask_1,
-                weight=self.gamma_t_1,
-                bias=self.beta_t_1,
-                memory_config=sharded_mem_config,
-                core_grid=self.norm_core_grid_1,
-                epsilon=self.norm_eps,
-            )
+            if self.input_negative_mask_1 is None:
+                hidden_states = ttnn.group_norm(
+                    hidden_states,
+                    num_groups=self.norm_groups,
+                    input_mask=self.input_mask_1,
+                    weight=self.gamma_t_1,
+                    bias=self.beta_t_1,
+                    memory_config=sharded_mem_config,
+                    core_grid=self.norm_core_grid_1,
+                    epsilon=self.norm_eps,
+                )
+            else:
+                print("Mask path")
+                hidden_states = ttnn.group_norm(
+                    hidden_states,
+                    num_groups=self.norm_groups,
+                    input_mask=self.input_mask_1,
+                    weight=self.gamma_t_1,
+                    bias=self.beta_t_1,
+                    memory_config=sharded_mem_config,
+                    core_grid=self.norm_core_grid_1,
+                    epsilon=self.norm_eps,
+                    negative_mask=self.input_negative_mask_1,
+                )
+                # hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
 
         hidden_states = ttnn.silu(hidden_states)
         # TBD: reshard
@@ -190,7 +216,12 @@ class TtResnetBlock2D(nn.Module):
             hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.L1_MEMORY_CONFIG)
 
         if self.split_conv:
-            hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
+            if "up_blocks.2" in self.module_path:
+                print("Using new path")
+                hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
+            else:
+                print("Callig RM path")
+                hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states, [C, H, W], [self.tt_conv1_weights, self.tt_conv1_bias] = split_conv2d(
                 device=self.device,
                 hidden_states=hidden_states,

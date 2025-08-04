@@ -32,6 +32,7 @@ class TtAutoencoderKL(nn.Module):
     def forward(self, hidden_states, input_shape):
         B, C, H, W = input_shape
 
+        ttnn.DumpDeviceProfiler(self.device)
         pre_conv_hidden_states = hidden_states
         hidden_states = ttnn.linear(
             hidden_states,
