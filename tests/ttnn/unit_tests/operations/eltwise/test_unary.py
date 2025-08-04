@@ -300,6 +300,23 @@ def test_sigmoid(device, h, w, vector_mode, approx_mode):
     )
 
 
+@pytest.mark.parametrize("input_source", ["file", "random"])
+def test_sigmoid_my_case(device, input_source):
+    if input_source == "file":
+        torch_input_tensor = torch.load("sig_ip.pt")
+    elif input_source == "random":
+        torch_input_tensor = torch.randn(1, 1, 256, 256)
+
+    print("torch_input_tensor=>", torch_input_tensor)
+
+    torch_output_tensor = torch.sigmoid(torch_input_tensor)
+    input_tensor = ttnn.from_torch(torch_input_tensor, layout=ttnn.TILE_LAYOUT, device=device)
+    output = ttnn.sigmoid(input_tensor)
+    output = ttnn.to_torch(output)
+
+    assert_with_pcc(torch_output_tensor, output)
+
+
 @pytest.mark.parametrize("h", [64])
 @pytest.mark.parametrize("w", [128])
 def test_cosh(device, h, w):
