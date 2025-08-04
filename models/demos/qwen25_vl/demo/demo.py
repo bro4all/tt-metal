@@ -12,6 +12,7 @@ from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLForConditionalGeneration
 
+import my_tools.tensor_io as tio
 import ttnn
 from models.demos.qwen25_vl.tt.common import (
     PagedAttentionConfig,
@@ -27,6 +28,7 @@ from models.demos.utils.llm_demo_utils import create_benchmark_data
 from models.perf.benchmarking_utils import BenchmarkProfiler
 from models.tt_transformers.tt.generator import SamplingParams
 from models.tt_transformers.tt.model_config import DecodersPrecision, ModelArgs, parse_decoder_json
+from my_tools.tensor_io import VarGetters
 
 
 def create_tt_model(
@@ -459,6 +461,20 @@ def test_demo(
             all_outputs[user].append(user_tok)
 
         out_tok = prefilled_token
+
+        # [INFO] let's see if the prefilling step is correct or not
+        tio.dump_local_vars(
+            [
+                "out_tok",
+                "current_pos",
+                "page_table",
+                VarGetters("tt_kv_cache", lambda x: x[0][0], tag="k_cache"),
+                VarGetters("tt_kv_cache", lambda x: x[0][1], tag="v_cache"),
+                VarGetters("model", lambda x: x.rope_setup.cos_matrix, tag="cos_matrix"),
+                VarGetters("model", lambda x: x.rope_setup.sin_matrix, tag="sin_matrix"),
+            ],
+            "/proj_sw/user_dev/gwang/tensor_graveyard/after_prefill/",
+        )
 
         logger.info(f"Starting decode loop...")
 
