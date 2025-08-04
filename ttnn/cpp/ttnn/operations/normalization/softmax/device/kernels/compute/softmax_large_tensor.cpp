@@ -414,7 +414,7 @@ void exp_cb(uint32_t cb_in, uint32_t cb_out, uint32_t cb_max, const uint32_t cb_
 #endif
         cb_pop_front(cb_in, blk);
         for (uint32_t cur_dst = 0; cur_dst < blk; cur_dst++) {
-            exp_tile<EXP_APPROX>(cur_dst);  // exp on DST[0]
+            exp_tile<EXP_APPROX, true, fasle, false, false>(cur_dst);  // exp on DST[0]
         }
         tile_regs_wait();
         tile_regs_commit();

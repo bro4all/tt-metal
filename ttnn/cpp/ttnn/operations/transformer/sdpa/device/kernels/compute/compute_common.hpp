@@ -121,7 +121,8 @@ void sub_exp_block_bcast_cols_inplace(uint32_t in1_cb, uint32_t reduce_cb) {
             tile_regs_acquire();
             for (uint32_t j = 0; j < dst_tiles; ++j) {
                 sub_tiles_bcast_cols(in0_cb, in1_cb, in0_index, i, j);
-                exp_tile<true, true>(j);
+                exp_tile<true, true, fasle, false, false>(j);
+
                 in0_index++;
             }
             tile_regs_commit();
@@ -328,7 +329,7 @@ void sub_exp_block(uint32_t in0_cb, uint32_t in1_cb, uint32_t out_cb, uint32_t n
 
         sub_tiles(in0_cb, in1_cb, i, i, 0);
 
-        exp_tile<EXP_APPROX_MODE, false, true, true>(0, static_cast<int>(VectorMode::C), scale_bf16);
+        exp_tile<EXP_APPROX_MODE, false, true, true, false>(0, static_cast<int>(VectorMode::C), scale_bf16);
 
         pack_tile(0, out_cb);
 

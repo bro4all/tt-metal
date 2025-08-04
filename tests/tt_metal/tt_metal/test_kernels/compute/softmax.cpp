@@ -86,7 +86,7 @@ void MAIN {
             cb_reserve_back(cb_exps, ndst);
             exp_tile_init<true>();
             for (uint32_t wt8 = 0; wt8 < ndst; wt8++) {
-                exp_tile<true>(wt8);      // exp on DST[0]
+                exp_tile<true, true, fasle, false, false>(wt8);  // exp on DST[0]
                 pack_tile(wt8, cb_exps);  // reuse the exps buffer again, this time in a circular manner
             }
             cb_push_back(cb_exps, ndst);
@@ -115,7 +115,7 @@ void MAIN {
             cb_reserve_back(cb_exps, ndst);
             exp_tile_init<true>();
             for (uint32_t wt8 = 0; wt8 < ndst; ++wt8) {
-                exp_tile<true>(wt8);      // exp on DST[0]
+                exp_tile<true, true, fasle, false, false>(wt8);  // exp on DST[0]
                 pack_tile(wt8, cb_exps);  // DST[0]->cb_id[wt]
             }
             cb_push_back(cb_exps, ndst);

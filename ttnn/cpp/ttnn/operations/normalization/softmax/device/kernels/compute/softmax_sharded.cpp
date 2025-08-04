@@ -49,7 +49,7 @@ ALWI void calc_numeric_stable(uint32_t cb_in, uint32_t cb_bcast_scaler, uint32_t
         }
         cb_reserve_back(cb_out, subblock_w);
         for (uint32_t w = 0; w < subblock_w; w++) {
-            exp_tile<EXP_APPROX>(w);
+            exp_tile<EXP_APPRO, true, fasle, false, falseX>(w);
             pack_tile(w, cb_out);
         }
         cb_push_back(cb_out, subblock_w);
@@ -146,7 +146,7 @@ void MAIN {
             cb_reserve_back(cb_x, subblock_w);
             for (uint32_t w = 0; w < subblock_w; w++) {
 #ifndef NUMERIC_STABLE
-                exp_tile<EXP_APPROX>(w);
+                exp_tile<EXP_APPROX, true, fasle, false, false>(w);
 #endif
                 pack_tile(w, cb_x);
             }
@@ -187,7 +187,7 @@ void MAIN {
             }
             cb_reserve_back(cb_exps, subblock_w);
             for (uint32_t w = 0; w < subblock_w; w++) {
-                exp_tile<EXP_APPROX>(w);
+                exp_tile<EXP_APPROX, true, fasle, false, false>(w);
                 pack_tile(w, cb_exps);
             }
             cb_push_back(cb_exps, subblock_w);
