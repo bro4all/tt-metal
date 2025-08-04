@@ -469,3 +469,226 @@ https://github.com/readthedocs/sphinx_rtd_theme/issues/1301
 .py.property {
   display: block !important;
 }
+
+/* =====================================================
+   PyTorch-inspired Operation Documentation Styles
+   ===================================================== */
+
+/* Function signature styling */
+.rst-content dl.data dt {
+  background: linear-gradient(135deg, #f8f9fb 0%, #f1f3f6 100%);
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-family: 'RMMono', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Parameter styling */
+.rst-content .field-list {
+  margin: 20px 0;
+}
+
+.rst-content .field-list .field-name {
+  background: var(--color-accent);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+  margin-right: 12px;
+}
+
+.rst-content .field-list .field-body {
+  margin-left: 0;
+  padding-left: 16px;
+}
+
+/* Mathematical formulas */
+.rst-content .math {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  text-align: center;
+  font-size: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Code blocks with PyTorch styling */
+.rst-content .highlight {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin: 20px 0;
+  overflow: hidden;
+}
+
+.rst-content .highlight pre {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  padding: 20px;
+  font-family: 'RMMono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+/* Section headers */
+.rst-content h1 {
+  color: var(--color-accent);
+  font-family: 'DegularDisplay', sans-serif;
+  font-size: 36px;
+  margin-bottom: 32px;
+  border-bottom: 3px solid var(--color-accent);
+  padding-bottom: 16px;
+}
+
+.rst-content h2 {
+  color: #2c3e50;
+  font-family: 'Degular', sans-serif;
+  font-size: 24px;
+  margin-top: 40px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 8px;
+}
+
+.rst-content h3 {
+  color: #34495e;
+  font-family: 'Degular', sans-serif;
+  font-size: 20px;
+  margin-top: 32px;
+  margin-bottom: 16px;
+}
+
+/* Special sections styling */
+.rst-content .note {
+  background: linear-gradient(135deg, #e8f4fd 0%, #d1ecf1 100%);
+  border-left: 4px solid #3498db;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 24px 0;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.1);
+}
+
+.rst-content .note .admonition-title {
+  color: #2980b9;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* Table styling for parameters */
+.rst-content table.docutils {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin: 24px 0;
+}
+
+.rst-content table.docutils th {
+  background: var(--color-accent);
+  color: white;
+  padding: 16px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.rst-content table.docutils td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f3f6;
+}
+
+.rst-content table.docutils tr:nth-child(even) {
+  background: #f8f9fa;
+}
+
+/* Cross-references and links */
+.rst-content a.reference {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.rst-content a.reference:hover {
+  color: var(--color-dark-purple);
+  text-decoration: underline;
+}
+
+/* Inline code styling */
+.rst-content code.literal {
+  background: #f1f3f6;
+  color: #e74c3c;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'RMMono', monospace;
+  font-size: 90%;
+  font-weight: 500;
+}
+
+/* Definition lists for parameters */
+.rst-content dl.field-list dt {
+  font-weight: 600;
+  color: var(--color-accent);
+  margin-bottom: 4px;
+}
+
+.rst-content dl.field-list dd {
+  margin-left: 20px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+/* Horizontal rules */
+.rst-content hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(to right, var(--color-accent), transparent);
+  margin: 32px 0;
+}
+
+/* Enhanced spacing and readability */
+.rst-content .section {
+  margin-bottom: 48px;
+}
+
+.rst-content p {
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+.rst-content ul, .rst-content ol {
+  margin-bottom: 20px;
+}
+
+.rst-content li {
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .rst-content h1 {
+    font-size: 28px;
+  }
+
+  .rst-content h2 {
+    font-size: 20px;
+  }
+
+  .rst-content .highlight pre {
+    padding: 16px;
+    font-size: 13px;
+  }
+
+  .rst-content dl.data dt {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}

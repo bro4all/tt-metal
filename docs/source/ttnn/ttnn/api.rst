@@ -171,7 +171,6 @@ Pointwise Unary
    ttnn.relu6
    ttnn.remainder
    ttnn.round
-   ttnn.rsqrt
    ttnn.selu
    ttnn.sigmoid
    ttnn.sigmoid_accurate
@@ -184,7 +183,6 @@ Pointwise Unary
    ttnn.softplus
    ttnn.softshrink
    ttnn.softsign
-   ttnn.sqrt
    ttnn.square
    ttnn.swiglu
    ttnn.swish
@@ -196,6 +194,20 @@ Pointwise Unary
    ttnn.triu
    ttnn.trunc
    ttnn.unary_chain
+
+.. autosummary::
+   :toctree: api
+   :nosignatures:
+   :template: beautiful_operation.rst
+
+   ttnn.sqrt
+   ttnn.rsqrt
+
+.. autosummary::
+   :toctree: api
+   :nosignatures:
+   :template: function.rst
+
    ttnn.clamp_bw
    ttnn.clip_bw
    ttnn.hardtanh_bw
