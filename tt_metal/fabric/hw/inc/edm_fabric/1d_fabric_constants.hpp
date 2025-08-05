@@ -335,14 +335,18 @@ constexpr std::array<size_t, NUM_SENDER_CHANNELS> sender_channel_ack_noc_ids =
 constexpr std::array<uint8_t, NUM_SENDER_CHANNELS> sender_channel_ack_cmd_buf_ids =
     fill_array_with_next_n_args<uint8_t, SENDER_CHANNEL_ACK_CMD_BUF_IDS_START_IDX, NUM_SENDER_CHANNELS>();
 
-constexpr size_t RX_CH_FWD_NOC_IDS_START_IDX = SENDER_CHANNEL_ACK_CMD_BUF_IDS_START_IDX + NUM_SENDER_CHANNELS;
-constexpr size_t RX_CH_FWD_DATA_CMD_BUF_IDS_START_IDX = RX_CH_FWD_NOC_IDS_START_IDX + NUM_RECEIVER_CHANNELS;
+constexpr size_t MAX_DOWNSTREAM_EDMS = 5;  // FabricEriscDatamoverConfig::max_downstream_edms
+constexpr size_t DOWNSTREAM_INTERFACE_FWD_NOC_IDS_START_IDX =
+    SENDER_CHANNEL_ACK_CMD_BUF_IDS_START_IDX + NUM_SENDER_CHANNELS;
+constexpr size_t RX_CH_FWD_DATA_CMD_BUF_IDS_START_IDX =
+    DOWNSTREAM_INTERFACE_FWD_NOC_IDS_START_IDX + MAX_DOWNSTREAM_EDMS;
 constexpr size_t RX_CH_FWD_SYNC_CMD_BUF_IDS_START_IDX = RX_CH_FWD_DATA_CMD_BUF_IDS_START_IDX + NUM_RECEIVER_CHANNELS;
 constexpr size_t RX_CH_LOCAL_WRITE_NOC_ID_IDX = RX_CH_FWD_SYNC_CMD_BUF_IDS_START_IDX + NUM_RECEIVER_CHANNELS;
 constexpr size_t RX_CH_LOCAL_WRITE_CMD_BUF_ID_IDX = RX_CH_LOCAL_WRITE_NOC_ID_IDX + NUM_RECEIVER_CHANNELS;
 
-constexpr std::array<size_t, NUM_RECEIVER_CHANNELS> receiver_channel_forwarding_noc_ids =
-    fill_array_with_next_n_args<size_t, RX_CH_FWD_NOC_IDS_START_IDX, NUM_RECEIVER_CHANNELS>();
+constexpr std::array<size_t, MAX_DOWNSTREAM_EDMS> downstream_interface_forwarding_noc_ids =
+    fill_array_with_next_n_args<size_t, DOWNSTREAM_INTERFACE_FWD_NOC_IDS_START_IDX, MAX_DOWNSTREAM_EDMS>();
+
 constexpr std::array<uint8_t, NUM_RECEIVER_CHANNELS> receiver_channel_forwarding_data_cmd_buf_ids =
     fill_array_with_next_n_args<uint8_t, RX_CH_FWD_DATA_CMD_BUF_IDS_START_IDX, NUM_RECEIVER_CHANNELS>();
 constexpr std::array<uint8_t, NUM_RECEIVER_CHANNELS> receiver_channel_forwarding_sync_cmd_buf_ids =
@@ -483,14 +487,21 @@ namespace tt::tt_fabric {
 static_assert(
     receiver_channel_local_write_noc_ids[0] == edm_to_local_chip_noc,
     "edm_to_local_chip_noc must equal to receiver_channel_local_write_noc_ids");
-static constexpr uint8_t edm_to_downstream_noc = receiver_channel_forwarding_noc_ids[0];
+static constexpr uint8_t edm_to_downstream_noc = downstream_interface_forwarding_noc_ids[0];
 #ifdef ARCH_BLACKHOLE
 static constexpr uint8_t worker_handshake_noc = noc_index;
 #else
 static constexpr uint8_t worker_handshake_noc = sender_channel_ack_noc_ids[0];
 #endif
 constexpr bool local_chip_noc_equals_downstream_noc =
-    receiver_channel_forwarding_noc_ids[0] == receiver_channel_local_write_noc_ids[0];
+#if defined(FABRIC_2D)
+    (downstream_interface_forwarding_noc_ids[0] == receiver_channel_local_write_noc_ids[0]) &&
+    (downstream_interface_forwarding_noc_ids[1] == receiver_channel_local_write_noc_ids[0]) &&
+    (downstream_interface_forwarding_noc_ids[2] == receiver_channel_local_write_noc_ids[0]) &&
+    (downstream_interface_forwarding_noc_ids[3] == receiver_channel_local_write_noc_ids[0]);
+#else
+    (downstream_interface_forwarding_noc_ids[0] == receiver_channel_local_write_noc_ids[0]);
+#endif
 static constexpr uint8_t local_chip_data_cmd_buf = receiver_channel_local_write_cmd_buf_ids[0];
 static constexpr uint8_t forward_and_local_write_noc_vc = get_compile_time_arg_val(EDM_NOC_VC_IDX);
 

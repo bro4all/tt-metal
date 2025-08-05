@@ -285,16 +285,22 @@ FORCE_INLINE void update_packet_header_for_next_hop(
 // !!!WARNING!!! * ENSURE DOWNSTREAM EDM HAS SPACE FOR PACKET BEFORE CALLING
 // !!!WARNING!!!
 // This function does a write, so needs to be volatile to avoid compiler optimizations
-template <bool enable_ring_support, bool stateful_api, bool increment_pointers = true, uint8_t NUM_SENDER_BUFFERS>
+template <
+    bool enable_ring_support,
+    bool stateful_api,
+    uint8_t noc_id,
+    bool increment_pointers = true,
+    uint8_t NUM_SENDER_BUFFERS>
 #ifndef FABRIC_2D
 FORCE_INLINE
 #endif
-void forward_payload_to_downstream_edm(
-    volatile tt_l1_ptr PACKET_HEADER_TYPE* packet_header,
-    uint16_t payload_size_bytes,
-    ROUTING_FIELDS_TYPE cached_routing_fields,
-    tt::tt_fabric::EdmToEdmSender<NUM_SENDER_BUFFERS>& downstream_edm_interface,
-    uint8_t transaction_id) {
+    void
+    forward_payload_to_downstream_edm(
+        volatile tt_l1_ptr PACKET_HEADER_TYPE* packet_header,
+        uint16_t payload_size_bytes,
+        ROUTING_FIELDS_TYPE cached_routing_fields,
+        tt::tt_fabric::EdmToEdmSender<NUM_SENDER_BUFFERS>& downstream_edm_interface,
+        uint8_t transaction_id) {
     // TODO: PERF - this should already be getting checked by the caller so this should be redundant make it an ASSERT
     ASSERT(downstream_edm_interface.edm_has_space_for_packet());  // best effort check
 
@@ -305,7 +311,7 @@ void forward_payload_to_downstream_edm(
     }
     downstream_edm_interface.template send_payload_non_blocking_from_address_with_trid<
         enable_ring_support,
-        tt::tt_fabric::edm_to_downstream_noc,
+        noc_id,
         stateful_api,
         increment_pointers>(
         reinterpret_cast<size_t>(packet_header), payload_size_bytes + sizeof(PACKET_HEADER_TYPE), transaction_id);

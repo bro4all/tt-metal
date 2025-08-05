@@ -1120,20 +1120,24 @@ void build_tt_fabric_program(
                 edm_builder1.config.edm_noc_vc = edm_noc_vc;
                 edm_builder2.config.edm_noc_vc = edm_noc_vc;
 
-                if (is_galaxy) {
-                    get_optimal_noc_for_edm(edm_builder1, edm_builder2, num_links, topology);
-                }
+                get_optimal_noc_for_edm(edm_builder1, edm_builder2, num_links, topology, dir1, dir2);
             }
         }
     };
 
     if (is_2D_routing) {
         // 2D Routing
+        log_info(tt::LogTest, "connecting RoutingDirection::N RoutingDirection::S");
         connect_downstream_builders(RoutingDirection::N, RoutingDirection::S);
+        log_info(tt::LogTest, "connecting RoutingDirection::E RoutingDirection::W");
         connect_downstream_builders(RoutingDirection::E, RoutingDirection::W);
+        log_info(tt::LogTest, "connecting RoutingDirection::N RoutingDirection::E");
         connect_downstream_builders(RoutingDirection::N, RoutingDirection::E);
+        log_info(tt::LogTest, "connecting RoutingDirection::N RoutingDirection::W");
         connect_downstream_builders(RoutingDirection::N, RoutingDirection::W);
+        log_info(tt::LogTest, "connecting RoutingDirection::S RoutingDirection::E");
         connect_downstream_builders(RoutingDirection::S, RoutingDirection::E);
+        log_info(tt::LogTest, "connecting RoutingDirection::S RoutingDirection::W");
         connect_downstream_builders(RoutingDirection::S, RoutingDirection::W);
     } else if (wrap_around_mesh && num_intra_chip_neighbors == 2) {
         // 1D Routing wrap the corner chips, fold the internal connections
@@ -1227,6 +1231,14 @@ std::unique_ptr<Program> create_and_compile_tt_fabric_program(IDevice* device) {
 std::unique_ptr<Program> create_and_compile_fabric_program(IDevice* device) {
     auto fabric_config = tt::tt_metal::MetalContext::instance().get_fabric_config();
     if (tt_fabric::is_tt_fabric_config(fabric_config)) {
+        const auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
+        auto fabric_node_id = control_plane.get_fabric_node_id_from_physical_chip_id(device->id());
+        log_info(
+            tt::LogTest,
+            "device id {} fabric_node_id mesh_id {} chip_id {}",
+            device->id(),
+            *(fabric_node_id.mesh_id),
+            fabric_node_id.chip_id);
         return create_and_compile_tt_fabric_program(device);
     }
     return nullptr;

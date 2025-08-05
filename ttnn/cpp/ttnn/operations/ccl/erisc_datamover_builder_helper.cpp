@@ -305,8 +305,8 @@ EdmLineFabricOpInterface::EdmLineFabricOpInterface(
                             edm_bwd.my_noc_y,
                             l);
                         for (uint32_t i = 0; i < edm_fwd.config.num_receiver_channels; i++) {
-                            edm_fwd.config.receiver_channel_forwarding_noc_ids[i] = 0;
-                            edm_bwd.config.receiver_channel_forwarding_noc_ids[i] = 1;
+                            edm_fwd.config.downstream_interface_forwarding_noc_ids[i] = 0;
+                            edm_bwd.config.downstream_interface_forwarding_noc_ids[i] = 1;
                         }
                         for (uint32_t i = 0; i < edm_fwd.config.num_receiver_channels; i++) {
                             edm_fwd.config.receiver_channel_local_write_noc_ids[i] = 1;
@@ -328,8 +328,8 @@ EdmLineFabricOpInterface::EdmLineFabricOpInterface(
                             edm_bwd.my_noc_y,
                             l);
                         for (uint32_t i = 0; i < edm_fwd.config.num_receiver_channels; i++) {
-                            edm_fwd.config.receiver_channel_forwarding_noc_ids[i] = 1;
-                            edm_bwd.config.receiver_channel_forwarding_noc_ids[i] = 0;
+                            edm_fwd.config.downstream_interface_forwarding_noc_ids[i] = 1;
+                            edm_bwd.config.downstream_interface_forwarding_noc_ids[i] = 0;
                         }
                         for (uint32_t i = 0; i < edm_fwd.config.num_receiver_channels; i++) {
                             edm_fwd.config.receiver_channel_local_write_noc_ids[i] = 1;

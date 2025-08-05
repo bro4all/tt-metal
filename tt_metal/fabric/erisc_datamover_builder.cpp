@@ -731,10 +731,15 @@ FabricEriscDatamoverConfig::FabricEriscDatamoverConfig(
         "Internal error - channel buffers spilled past the end of usable L1 region.");
 
     // set default noc and cmd bufs (current setup in TG 4U)
+    for (uint32_t i = 0; i < FabricEriscDatamoverConfig::max_downstream_edms; i++) {
+        this->downstream_interface_forwarding_noc_ids[i] = FabricEriscDatamoverConfig::DEFAULT_RECEIVER_FORWARDING_NOC;
+    }
     for (uint32_t i = 0; i < FabricEriscDatamoverConfig::num_receiver_channels; i++) {
-        this->receiver_channel_forwarding_noc_ids[i] = FabricEriscDatamoverConfig::DEFAULT_RECEIVER_FORWARDING_NOC;
         this->receiver_channel_forwarding_data_cmd_buf_ids[i] = FabricEriscDatamoverConfig::WR_REG_CMD_BUF;
-        this->receiver_channel_forwarding_sync_cmd_buf_ids[i] = FabricEriscDatamoverConfig::RD_CMD_BUF;
+        // use default atomic cmd buf for 2d, due to using read cmd buf will cause reg overwrite.
+        this->receiver_channel_forwarding_sync_cmd_buf_ids[i] = topology == Topology::Mesh
+                                                                    ? FabricEriscDatamoverConfig::AT_CMD_BUF
+                                                                    : FabricEriscDatamoverConfig::RD_CMD_BUF;
         this->receiver_channel_local_write_noc_ids[i] = FabricEriscDatamoverConfig::DEFAULT_RECEIVER_LOCAL_WRITE_NOC;
         this->receiver_channel_local_write_cmd_buf_ids[i] = FabricEriscDatamoverConfig::WR_CMD_BUF;
     }
@@ -1155,9 +1160,11 @@ std::vector<uint32_t> FabricEriscDatamoverBuilder::get_compile_time_args(uint32_
         ct_args.push_back(config.sender_channel_ack_cmd_buf_ids[i]);
     }
 
-    for (size_t i = 0; i < num_receiver_channels; i++) {
-        ct_args.push_back(config.receiver_channel_forwarding_noc_ids[i]);
+    // Populate downstream interface forwarding NOC IDs
+    for (size_t i = 0; i < FabricEriscDatamoverConfig::max_downstream_edms; i++) {
+        ct_args.push_back(config.downstream_interface_forwarding_noc_ids[i]);
     }
+
     for (size_t i = 0; i < num_receiver_channels; i++) {
         ct_args.push_back(
             config.receiver_channel_forwarding_data_cmd_buf_ids[i]);  // maps to
@@ -1204,6 +1211,7 @@ std::vector<uint32_t> FabricEriscDatamoverBuilder::get_compile_time_args(uint32_
     }
 
     ct_args.push_back(0x30c0ffee);
+
     return ct_args;
 }
 

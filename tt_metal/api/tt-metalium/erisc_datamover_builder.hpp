@@ -14,7 +14,7 @@
 #include <tt-metalium/fabric_edm_packet_header.hpp>
 #include <tt-metalium/edm_fabric_counters.hpp>
 #include <tt-metalium/routing_table_generator.hpp>  // for FabricNodeId
-#include <unordered_map>
+#include <tt-metalium/mesh_graph.hpp>               // for RoutingDirection
 #include <optional>
 #include <cstdint>
 #include <vector>
@@ -241,7 +241,6 @@ struct FabricEriscDatamoverConfig {
     Topology topology = Topology::Linear;
 
     // add the noc-usage and cmd_buf-usage here
-    std::array<std::size_t, num_receiver_channels> receiver_channel_forwarding_noc_ids = {};
     std::array<std::size_t, num_receiver_channels> receiver_channel_forwarding_data_cmd_buf_ids = {};
     std::array<std::size_t, num_receiver_channels> receiver_channel_forwarding_sync_cmd_buf_ids = {};
     std::array<std::size_t, num_receiver_channels> receiver_channel_local_write_noc_ids = {};
@@ -249,6 +248,8 @@ struct FabricEriscDatamoverConfig {
 
     std::array<std::size_t, num_sender_channels> sender_channel_ack_noc_ids = {};
     std::array<std::size_t, num_sender_channels> sender_channel_ack_cmd_buf_ids = {};
+
+    std::array<std::size_t, max_downstream_edms> downstream_interface_forwarding_noc_ids = {};
 
     // Dateline Upstream EDM skip connection flag
     bool skip_sender_channel_1_connection = false;

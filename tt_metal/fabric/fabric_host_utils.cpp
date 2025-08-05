@@ -9,6 +9,7 @@
 #include <tt-metalium/fabric_edm_types.hpp>
 #include <tt-metalium/fabric_types.hpp>
 #include <tt-metalium/assert.hpp>
+#include <tt-metalium/mesh_graph.hpp>                   // for RoutingDirection
 #include <umd/device/types/cluster_descriptor_types.h>  // chip_id_t
 #include <tt-metalium/metal_soc_descriptor.h>
 #include "impl/context/metal_context.hpp"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include "fabric/hw/inc/fabric_routing_mode.h"
 #include "fabric_context.hpp"
+#include "hostdevcommon/fabric_common.h"
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -161,16 +163,21 @@ void get_optimal_noc_for_edm(
     tt::tt_fabric::FabricEriscDatamoverBuilder& edm_builder1,
     tt::tt_fabric::FabricEriscDatamoverBuilder& edm_builder2,
     const uint32_t num_links,
-    const tt_fabric::Topology topology) {
+    const tt_fabric::Topology topology,
+    const RoutingDirection dir1,
+    const RoutingDirection dir2) {
     constexpr uint32_t ring_noc_selection_link_threshold = 3;
     constexpr uint32_t line_noc_selection_link_threshold = 2;
+    constexpr uint32_t mesh_noc_selection_link_threshold = 1;
     bool enable_noc_selection_opt = false;
     if (topology == tt_fabric::Topology::Ring) {
         enable_noc_selection_opt =
             (num_links > ring_noc_selection_link_threshold) && (edm_builder1.my_noc_y != edm_builder2.my_noc_y);
-    } else {
+    } else if (topology == tt_fabric::Topology::Linear) {
         enable_noc_selection_opt =
             (num_links > line_noc_selection_link_threshold) && (edm_builder1.my_noc_y != edm_builder2.my_noc_y);
+    } else if (topology == tt_fabric::Topology::Mesh || topology == tt_fabric::Topology::Torus) {
+        enable_noc_selection_opt = (num_links > mesh_noc_selection_link_threshold);
     }
     log_debug(
         tt::LogTest,
@@ -183,33 +190,105 @@ void get_optimal_noc_for_edm(
         edm_builder2.my_noc_y,
         num_links);
 
+    // Convert RoutingDirection to array index for 2D (EAST=0, WEST=1, NORTH=2, SOUTH=3)
+    auto routing_direction_to_index_2d = [](RoutingDirection dir) -> std::size_t {
+        switch (dir) {
+            case RoutingDirection::E: return 0;  // EAST
+            case RoutingDirection::W: return 1;  // WEST
+            case RoutingDirection::N: return 2;  // NORTH
+            case RoutingDirection::S: return 3;  // SOUTH
+            default: TT_THROW("invalid routing direction {}", dir);
+        }
+    };
+
+    // Get opposite direction
+    auto get_opposite_direction = [](RoutingDirection dir) -> RoutingDirection {
+        switch (dir) {
+            case RoutingDirection::E: return RoutingDirection::W;
+            case RoutingDirection::W: return RoutingDirection::E;
+            case RoutingDirection::N: return RoutingDirection::S;
+            case RoutingDirection::S: return RoutingDirection::N;
+            default: TT_THROW("invalid routing direction {}", dir);
+        }
+    };
+
+    // Determine NOC IDs based on position relationship for each builder
+    auto determine_noc_id = [](const tt::tt_fabric::FabricEriscDatamoverBuilder& self,
+                               const tt::tt_fabric::FabricEriscDatamoverBuilder& other) -> std::size_t {
+        if (self.my_noc_y == other.my_noc_y) {
+            // Same row: if self x smaller than other x, use noc 0, other one use noc 1
+            return (self.my_noc_x < other.my_noc_x) ? 0 : 1;
+        } else if (self.my_noc_x == other.my_noc_x) {
+            // Same column, different row: use noc 1 to avoid traffic interfere with fabric worker
+            return 1;
+        } else {  // different row/column, if self core is on the left, use noc 0, otherwise use noc 1
+            return (self.my_noc_x < other.my_noc_x) ? 0 : 1;
+        }
+    };
+
     if (enable_noc_selection_opt) {
-        if (edm_builder1.my_noc_x < edm_builder2.my_noc_x) {
-            for (uint32_t i = 0; i < edm_builder1.config.num_receiver_channels; i++) {
-                edm_builder1.config.receiver_channel_forwarding_noc_ids[i] = 0;
-                edm_builder2.config.receiver_channel_forwarding_noc_ids[i] = 1;
+        // Populate downstream_interface_forwarding_noc_ids for both builders
+        std::size_t noc_id1 = determine_noc_id(edm_builder1, edm_builder2);
+        std::size_t noc_id2 = determine_noc_id(edm_builder2, edm_builder1);
+
+        if (topology == tt_fabric::Topology::Mesh) {
+            // 2D Mesh: populate E,W,N,S indices and handle opposite direction (VC1)
+            edm_builder1.config.downstream_interface_forwarding_noc_ids[routing_direction_to_index_2d(dir2)] = noc_id1;
+            edm_builder2.config.downstream_interface_forwarding_noc_ids[routing_direction_to_index_2d(dir1)] = noc_id2;
+
+            // Index 4 is for opposite direction - only populate when connecting opposites
+            if (dir1 == get_opposite_direction(dir2)) {
+                edm_builder1.config
+                    .downstream_interface_forwarding_noc_ids[FabricEriscDatamoverConfig::max_downstream_edms - 1] =
+                    noc_id1;
+                edm_builder2.config
+                    .downstream_interface_forwarding_noc_ids[FabricEriscDatamoverConfig::max_downstream_edms - 1] =
+                    noc_id2;
             }
-            for (uint32_t i = 0; i < edm_builder1.config.num_receiver_channels; i++) {
-                edm_builder1.config.receiver_channel_local_write_noc_ids[i] = 1;
-                edm_builder2.config.receiver_channel_local_write_noc_ids[i] = 1;
-            }
+
+            // for 2d, use same noc as the sender_channel_ack_noc_ids is only used for open/close (won't interfere with
+            // traffic)
             for (uint32_t i = 0; i < edm_builder1.config.num_sender_channels; i++) {
-                edm_builder1.config.sender_channel_ack_noc_ids[i] = 1;
-                edm_builder2.config.sender_channel_ack_noc_ids[i] = 0;
+                edm_builder1.config.sender_channel_ack_noc_ids[i] = noc_id1;
+                edm_builder2.config.sender_channel_ack_noc_ids[i] = noc_id2;
             }
-        } else if (edm_builder1.my_noc_x > edm_builder2.my_noc_x) {
+        } else {
+            // 1D Mesh: populate first two indices with same NOC ID (for VC0 and VC1)
+            edm_builder1.config.downstream_interface_forwarding_noc_ids[0] = noc_id1;
+            edm_builder1.config.downstream_interface_forwarding_noc_ids[1] = noc_id1;
+
+            edm_builder2.config.downstream_interface_forwarding_noc_ids[0] = noc_id2;
+            edm_builder2.config.downstream_interface_forwarding_noc_ids[1] = noc_id2;
+
             for (uint32_t i = 0; i < edm_builder1.config.num_receiver_channels; i++) {
-                edm_builder1.config.receiver_channel_forwarding_noc_ids[i] = 1;
-                edm_builder2.config.receiver_channel_forwarding_noc_ids[i] = 0;
+                edm_builder1.config.downstream_interface_forwarding_noc_ids[i] = noc_id1;
+                edm_builder2.config.downstream_interface_forwarding_noc_ids[i] = noc_id2;
             }
-            for (uint32_t i = 0; i < edm_builder1.config.num_receiver_channels; i++) {
-                edm_builder1.config.receiver_channel_local_write_noc_ids[i] = 1;
-                edm_builder2.config.receiver_channel_local_write_noc_ids[i] = 1;
-            }
+
+            // for 1d, cannot mix-up the usage of noc0/1 for sender_channel_ack_noc_ids and
+            // downstream_interface_forwarding_noc_ids
             for (uint32_t i = 0; i < edm_builder1.config.num_sender_channels; i++) {
-                edm_builder1.config.sender_channel_ack_noc_ids[i] = 0;
-                edm_builder2.config.sender_channel_ack_noc_ids[i] = 1;
+                edm_builder1.config.sender_channel_ack_noc_ids[i] = 1 - noc_id1;
+                edm_builder2.config.sender_channel_ack_noc_ids[i] = 1 - noc_id2;
             }
+        }
+
+        log_info(
+            tt::LogTest,
+            "dir1 {} my_noc_x {} my_noc_y {} noc_id1 {},  dir2 {} my_noc_x {} my_noc_y {} noc_id2 {}",
+            dir1,
+            edm_builder1.my_noc_x,
+            edm_builder1.my_noc_y,
+            noc_id1,
+            dir2,
+            edm_builder2.my_noc_x,
+            edm_builder2.my_noc_y,
+            noc_id2);
+
+        // always use noc1 for local write
+        for (uint32_t i = 0; i < edm_builder1.config.num_receiver_channels; i++) {
+            edm_builder1.config.receiver_channel_local_write_noc_ids[i] = 1;
+            edm_builder2.config.receiver_channel_local_write_noc_ids[i] = 1;
         }
     }
 }

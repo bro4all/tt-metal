@@ -360,27 +360,25 @@ void DevicePool::initialize_host(IDevice* dev) const {
 }
 
 void DevicePool::init_fabric(const std::vector<tt_metal::IDevice*>& active_devices) const {
-    std::vector<std::shared_future<tt_metal::IDevice*>> events;
+    // Sequential fabric compilation for easier debugging
+    // TODO: Restore parallel compilation after debugging
+    std::vector<tt_metal::IDevice*> devices_with_fabric;
     for (uint32_t i = 0; i < active_devices.size(); i++) {
         auto& dev = active_devices[i];
-        events.emplace_back(detail::async([dev]() {
-            if (dev->compile_fabric()) {
-                return dev;
-            } else {
-                // compile failure mostly come from Nebula (TG)
-                log_trace(tt::LogMetal, "Did not build fabric on Device {}", dev->id());
-                return (tt_metal::IDevice*)nullptr;
-            }
-        }));
+        log_info(tt::LogTest, "Compiling fabric for device {}", dev->id());
+        if (dev->compile_fabric()) {
+            devices_with_fabric.push_back(dev);
+        } else {
+            // compile failure mostly come from Nebula (TG)
+            log_trace(tt::LogMetal, "Did not build fabric on Device {}", dev->id());
+        }
     }
 
     // Sequentially execute fabric configuration on all devices
     // Empirically TG hung when this is also parallelized
-    for (const auto& event : events) {
-        auto dev = event.get();
-        if (dev) {
-            dev->configure_fabric();
-        }
+    for (auto dev : devices_with_fabric) {
+        log_info(tt::LogTest, "Configuring fabric for device {}", dev->id());
+        dev->configure_fabric();
     }
 }
 

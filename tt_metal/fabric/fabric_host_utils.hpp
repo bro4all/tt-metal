@@ -38,7 +38,9 @@ void get_optimal_noc_for_edm(
     FabricEriscDatamoverBuilder& edm_builder1,
     FabricEriscDatamoverBuilder& edm_builder2,
     uint32_t num_links,
-    Topology topology);
+    Topology topology,
+    RoutingDirection dir1,
+    RoutingDirection dir2);
 
 // Helper: BFS distance map from a start chip to all reachable chips using the
 // provided adjacency map. Returned distances are expressed in hop count.
