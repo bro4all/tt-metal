@@ -9,9 +9,7 @@ from loguru import logger
 import statistics
 import json
 
-# clip scorer from sdxl utils (image-text score)
 from models.experimental.stable_diffusion_xl_base.utils.clip_encoder import CLIPEncoder
-
 from models.experimental.stable_diffusion_35_large.tests.utils.fid_score import calculate_fid_score
 from models.experimental.stable_diffusion_35_large.tt.fun_pipeline import TtStableDiffusion3Pipeline
 from models.experimental.stable_diffusion_35_large.tt.parallel_config import (
@@ -160,6 +158,7 @@ def test_accuracy_sd35(
             negative_prompt_3=[negative_prompt],
             num_inference_steps=num_inference_steps,
             seed=0,
+            traced=True,
         )
 
         profiler.end("denoising_loop")
@@ -228,7 +227,6 @@ def test_accuracy_sd35(
 
 
 def sd35_get_prompts(captions_path, start_from, num_prompts):
-    # bounds check because coco captions_source.tsv has 5k rows
     assert (
         0 <= start_from < 5000 and start_from + num_prompts <= 5000
     ), "start_from must be between 0 and 4999, and start_from + num_prompts must not exceed 5000."
