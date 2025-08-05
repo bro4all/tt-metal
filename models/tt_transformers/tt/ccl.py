@@ -2,7 +2,25 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import inspect
+
 import ttnn
+
+idx = 0
+log_file_path = "tt_ccl.log"
+
+
+def log_tensor_info_for_grayson(tensor, tag=""):
+    # Extract the CCL shapes (plus memory_config, layout, dtype, etc) used in the Qwen2.5-VL, so that we can verify our fabric CCLs support them.
+    global idx
+    with open(log_file_path, "a") as f:
+        f.write(f"--------------Tensor for {tag} #{idx}--------------\n")
+        f.write(f"Tensor shape: {tensor.shape}\n")
+        f.write(f"Tensor memory_config: {tensor.memory_config()}\n")
+        f.write(f"Tensor layout: {tensor.layout}\n")
+        f.write(f"Tensor dtype: {tensor.dtype}\n")
+        # logger.info(f"Tensor device: {tensor.device}") # HINT: this triggered "Reads are not supported during trace capture."
+    idx += 1
 
 
 # def tt_all_reduce(input_tensor, mesh_device, cluster_axis=0, dim=0, num_links=2, memory_config=None, sharded=False):
@@ -36,6 +54,9 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
+        log_tensor_info_for_grayson(
+            input_tensor, tag=f"ttnn.reduce_scatter@{__file__}:{inspect.currentframe().f_lineno}"
+        )
         reduced = ttnn.reduce_scatter(
             input_tensor,
             dim=dim,
@@ -59,6 +80,7 @@ def tt_all_reduce(
         input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
 
     if not use_composite:
+        log_tensor_info_for_grayson(input_tensor, tag=f"ttnn.all_gather@{__file__}:{inspect.currentframe().f_lineno}")
         gathered_tensor = ttnn.all_gather(
             input_tensor,
             dim,
@@ -72,6 +94,9 @@ def tt_all_reduce(
         if sharded:
             gathered_tensor = ttnn.to_memory_config(gathered_tensor, ttnn.L1_MEMORY_CONFIG)
 
+        log_tensor_info_for_grayson(
+            gathered_tensor, tag=f"ttnn.experimental.fast_reduce_nc@{__file__}:{inspect.currentframe().f_lineno}"
+        )
         reduced_tensor = ttnn.experimental.fast_reduce_nc(
             gathered_tensor,
             dims=[dim],
@@ -82,6 +107,9 @@ def tt_all_reduce(
         gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
+        log_tensor_info_for_grayson(
+            input_tensor, tag=f"ttnn.reduce_scatter@{__file__}:{inspect.currentframe().f_lineno}"
+        )
         reduced_tensor = ttnn.reduce_scatter(
             input_tensor,
             dim=dim,
@@ -92,7 +120,7 @@ def tt_all_reduce(
             topology=topology,
             memory_config=ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
         )
-
+        log_tensor_info_for_grayson(reduced_tensor, tag=f"ttnn.all_gather@{__file__}:{inspect.currentframe().f_lineno}")
         reduced_tensor = ttnn.all_gather(
             reduced_tensor,
             dim,
@@ -135,6 +163,7 @@ def tt_all_gather(
             input_tensor = ttnn.to_memory_config(input_tensor, memory_config, dtype)  # to sharded
 
     if cluster_axis is None:
+        log_tensor_info_for_grayson(input_tensor, tag=f"ttnn.all_gather@{__file__}:{inspect.currentframe().f_lineno}")
         gathered = ttnn.all_gather(
             input_tensor,
             dim,
@@ -143,6 +172,7 @@ def tt_all_gather(
             memory_config=memory_config,
         )
     else:
+        log_tensor_info_for_grayson(input_tensor, tag=f"ttnn.all_gather@{__file__}:{inspect.currentframe().f_lineno}")
         gathered = ttnn.all_gather(
             input_tensor,
             dim,
@@ -158,9 +188,11 @@ def tt_all_gather(
 
 def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_config):
     # Run distributed rmsnorm part 1
+    log_tensor_info_for_grayson(inp, tag=f"ttnn.rms_norm_pre_all_gather@{__file__}:{inspect.currentframe().f_lineno}")
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
     padded_shape = (1, 1, inp.shape[-2], 32)
     tt_stats = ttnn.reshape(tt_stats, ttnn.Shape(padded_shape))  # TODO: Figure out why we need this
+    log_tensor_info_for_grayson(tt_stats, tag=f"ttnn.reshape@{__file__}:{inspect.currentframe().f_lineno}")
     tt_stats_gathered = tt_all_gather(
         tt_stats,
         mesh_device=mesh_device,
@@ -173,6 +205,9 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_conf
     tt_stats.deallocate(True)
 
     # Run distributed rmsnorm part 2
+    log_tensor_info_for_grayson(
+        tt_stats_gathered, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}"
+    )
     tt_out = ttnn.rms_norm_post_all_gather(
         inp, tt_stats_gathered, epsilon=epsilon, weight=gamma, compute_kernel_config=compute_kernel_config
     )
@@ -189,9 +224,11 @@ def tt_sharded_distributed_rmsnorm(
     inp = ttnn.to_memory_config(inp, memory_config=ln_sharded_input_memcfg)
 
     # Run distributed rmsnorm part 1
+    log_tensor_info_for_grayson(inp, tag=f"ttnn.rms_norm_pre_all_gather@{__file__}:{inspect.currentframe().f_lineno}")
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, program_config=ln_sharded_progcfg)
 
     # All gather stats
+    log_tensor_info_for_grayson(tt_stats, tag=f"ttnn.all_gather@{__file__}:{inspect.currentframe().f_lineno}")
     tt_stats = ttnn.all_gather(
         tt_stats,
         3,
@@ -203,6 +240,9 @@ def tt_sharded_distributed_rmsnorm(
     )
 
     # Run distributed rmsnorm part 2
+    log_tensor_info_for_grayson(
+        tt_stats, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}"
+    )
     tt_out = ttnn.rms_norm_post_all_gather(
         inp,
         epsilon=epsilon,
