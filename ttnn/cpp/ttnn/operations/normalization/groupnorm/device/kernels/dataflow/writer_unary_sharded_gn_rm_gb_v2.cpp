@@ -9,6 +9,38 @@
 #include "ttnn/deprecated/tt_dnn/kernels/dataflow/generate_bcast_scalar.hpp"
 // #include "debug/dprint.h"
 
+FORCE_INLINE void generate_full_scaler(const uint32_t cb_id, const uint32_t scaler) {
+    cb_reserve_back(cb_id, 1);
+
+    constexpr uint32_t num_zeros_reads = 2048 / MEM_ZEROS_SIZE;
+    uint64_t zeros_noc_addr = get_noc_addr(MEM_ZEROS_BASE);
+    uint32_t write_addr = get_write_ptr(cb_id);
+    volatile tt_l1_ptr uint32_t* ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(write_addr);
+
+    // Fill tile with zeros
+    // TODO: src addr does not need to be rewritten. Update/add api for this
+    noc_async_read_one_packet_set_state(zeros_noc_addr, MEM_ZEROS_SIZE);
+    for (uint32_t i = 0; i < num_zeros_reads; ++i) {
+        noc_async_read_one_packet_with_state(zeros_noc_addr, write_addr);
+        write_addr += MEM_ZEROS_SIZE;
+    }
+    noc_async_read_barrier();
+
+    for (uint32_t i = 0; i < 512U; ++i) {
+        *ptr++ = scaler;
+    }
+    // if (scaler != 0) {
+    //     for (int k = 0; k < 4; ++k) {
+    //         uint32_t idx = k << 7;
+    //         for (int j = 0; j < 8; ++j) {
+    //             ptr[idx + j] = scaler;
+    //         }
+    //     }
+    // }
+
+    cb_push_back(cb_id, 1);
+}
+
 void kernel_main() {
     constexpr bool is_mcast_sender = get_compile_time_arg_val(0) == 1;
     constexpr bool fuse_gamma = get_compile_time_arg_val(1) == 1;
@@ -43,6 +75,7 @@ void kernel_main() {
     constexpr uint32_t cb_beta = tt::CBIndex::c_6;
     constexpr uint32_t cb_out0 = tt::CBIndex::c_16;
     constexpr uint32_t cb_input_mask = tt::CBIndex::c_7;
+    constexpr uint32_t cb_ones = tt::CBIndex::c_26;
 
     // constexpr uint32_t block_w = 4;
     const uint32_t single_tile_size_bytes = get_tile_size(cb_gamma);
@@ -98,6 +131,9 @@ void kernel_main() {
                 constexpr uint32_t cb_in_2 = tt::CBIndex::c_2;
                 const uint32_t scalar_w = get_arg_val<uint32_t>(1);
                 generate_reduce_scaler(cb_in_2, scalar_w);
+
+                const uint32_t ones = 1065369472;
+                generate_full_scaler(cb_ones, ones);
 
                 if constexpr (is_mcast_sender) {
                     constexpr uint32_t cb_in_4 = tt::CBIndex::c_4;
