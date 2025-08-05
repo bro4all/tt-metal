@@ -205,9 +205,7 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_conf
     tt_stats.deallocate(True)
 
     # Run distributed rmsnorm part 2
-    log_tensor_info_for_grayson(
-        tt_stats_gathered, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}"
-    )
+    log_tensor_info_for_grayson(inp, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}")
     tt_out = ttnn.rms_norm_post_all_gather(
         inp, tt_stats_gathered, epsilon=epsilon, weight=gamma, compute_kernel_config=compute_kernel_config
     )
@@ -240,9 +238,7 @@ def tt_sharded_distributed_rmsnorm(
     )
 
     # Run distributed rmsnorm part 2
-    log_tensor_info_for_grayson(
-        tt_stats, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}"
-    )
+    log_tensor_info_for_grayson(inp, tag=f"ttnn.rms_norm_post_all_gather@{__file__}:{inspect.currentframe().f_lineno}")
     tt_out = ttnn.rms_norm_post_all_gather(
         inp,
         epsilon=epsilon,
