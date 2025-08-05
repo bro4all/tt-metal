@@ -206,11 +206,11 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
             }
         }
     }
-    log_trace(tt::LogOp, "version: {}", static_cast<uint32_t>(version));
+    log_info(tt::LogOp, "version: {}", static_cast<uint32_t>(version));
 
     switch (version) {
         case AllGatherAsyncVersion::LLAMA_MINIMAL_SHARDED:
-            log_trace(tt::LogOp, "Detected all gather specialized shape. all_gather_async_llama_sharded is called");
+            log_info(tt::LogOp, "Detected all gather specialized shape. all_gather_async_llama_sharded is called");
             return all_gather_async_llama_sharded(
                 input_tensors[0],
                 target_device,
@@ -229,7 +229,7 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
                 this->use_optimal_ccl_for_llama);
 
         case AllGatherAsyncVersion::MINIMAL_DEFAULT:
-            log_trace(tt::LogOp, "Detected all gather specialized shape. all_gather_async_minimal_default is called");
+            log_info(tt::LogOp, "Detected all gather specialized shape. all_gather_async_minimal_default is called");
             return all_gather_async_minimal_default(
                 input_tensors[0],
                 target_device,
@@ -251,7 +251,7 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
 
         case AllGatherAsyncVersion::GENERIC:
         default:
-            log_trace(tt::LogOp, "Running generic all_gather_async_multi_core_with_workers");
+            log_info(tt::LogOp, "Running generic all_gather_async_multi_core_with_workers");
             return all_gather_async_multi_core_with_workers(
                 input_tensors[0],
                 target_device,

@@ -13,6 +13,12 @@ from tests.ttnn.unit_tests.operations.ccl.test_reduce_scatter_TG_nightly import 
 )
 
 
+def create_global_semaphores(mesh_device, cores, initial_value):
+    # create global semaphore handles
+    ccl_semaphore_handles = [ttnn.create_global_semaphore(mesh_device, cores, initial_value) for _ in range(3)]
+    return ccl_semaphore_handles
+
+
 def is_unsupported_case(input_shape, dim, math_op, mem_config, num_devices, num_links, input_dtype, layout):
     elem_size = 2 if input_dtype == ttnn.bfloat16 else 1
     tensor_size_bytes = elem_size
@@ -37,22 +43,30 @@ def run_with_trace(
     output_mem_config,
     num_iters=40,
     topology=ttnn.Topology.Ring,
+    ccl_semaphore_handles=None,
     from_remote_semaphore_handles=None,
     to_remote_semaphore_handles=None,
     worker_sub_device_id=None,
 ):
     # Compile Run
     logger.info("Compiling model")
-    output_tensor_mesh = ttnn.experimental.reduce_scatter_async(
+    output_tensor_mesh = ttnn.experimental.reduce_scatter_minimal_async(
         input_tensor_mesh,
+        persistent_output_buffers=None,
         dim=dim,
-        from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[0],
-        to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[0],
-        math_op=math_op,
+        multi_device_global_semaphore=ccl_semaphore_handles[0],
+        barrier_semaphore=None,
+        # from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[0],
+        # to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[0],
         num_links=num_links,
         memory_config=output_mem_config,
+        intermediate_memory_config=None,
         topology=topology,
         subdevice_id=worker_sub_device_id,
+        cluster_axis=None,
+        chunks_per_sync=None,
+        num_workers_per_link=None,
+        num_buffers_per_channel=None,
     )
     ttnn.synchronize_device(t3k_mesh_device)
 
@@ -60,18 +74,23 @@ def run_with_trace(
     logger.info("Capturing trace")
     trace_id = ttnn.begin_trace_capture(t3k_mesh_device, cq_id=0)
     for i in range(num_iters):
-        output_tensor_mesh = ttnn.experimental.reduce_scatter_async(
+        output_tensor_mesh = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor_mesh,
+            persistent_output_buffers=None,
             dim=dim,
-            from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[
-                i % len(from_remote_semaphore_handles)
-            ],
-            to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[i % len(to_remote_semaphore_handles)],
-            math_op=math_op,
+            multi_device_global_semaphore=ccl_semaphore_handles[0],
+            barrier_semaphore=None,
+            # from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[0],
+            # to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[0],
             num_links=num_links,
             memory_config=output_mem_config,
+            intermediate_memory_config=None,
             topology=topology,
             subdevice_id=worker_sub_device_id,
+            cluster_axis=None,
+            chunks_per_sync=None,
+            num_workers_per_link=None,
+            num_buffers_per_channel=None,
         )
     ttnn.end_trace_capture(t3k_mesh_device, trace_id, cq_id=0)
     ttnn.synchronize_device(t3k_mesh_device)
@@ -152,6 +171,8 @@ def run_reduce_scatter_test(
     sub_device_manager = mesh_device.create_sub_device_manager([worker_sub_device], 0)
     mesh_device.load_sub_device_manager(sub_device_manager)
     # create global semaphore handles
+    ccl_semaphore_handles = [create_global_semaphores(mesh_device, ccl_sub_device_crs, 0) for _ in range(num_iters)]
+
     from_remote_semaphore_handles = [
         ttnn.create_global_semaphore(mesh_device, ccl_sub_device_crs, 0) for _ in range(num_iters)
     ]
@@ -206,6 +227,7 @@ def run_reduce_scatter_test(
             output_mem_config,
             num_iters=num_iters,
             topology=topology,
+            ccl_semaphore_handles=ccl_semaphore_handles,
             from_remote_semaphore_handles=from_remote_semaphore_handles,
             to_remote_semaphore_handles=to_remote_semaphore_handles,
             worker_sub_device_id=worker_sub_device_id,
@@ -213,20 +235,23 @@ def run_reduce_scatter_test(
     else:
         logger.info(f"Running {num_iters} iterations of reduce scatter")
         for i in range(num_iters):
-            output_tensor_mesh = ttnn.experimental.reduce_scatter_async(
+            output_tensor_mesh = ttnn.experimental.reduce_scatter_minimal_async(
                 input_tensor_mesh,
+                persistent_output_buffers=None,
                 dim=dim,
-                from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[
-                    i % len(from_remote_semaphore_handles)
-                ],
-                to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[
-                    i % len(to_remote_semaphore_handles)
-                ],
-                math_op=math_op,
+                multi_device_global_semaphore=ccl_semaphore_handles[0],
+                barrier_semaphore=None,
+                # from_remote_multi_device_global_semaphore=from_remote_semaphore_handles[0],
+                # to_remote_multi_device_global_semaphore=to_remote_semaphore_handles[0],
                 num_links=num_links,
                 memory_config=output_mem_config,
+                intermediate_memory_config=None,
                 topology=topology,
                 subdevice_id=worker_sub_device_id,
+                cluster_axis=None,
+                chunks_per_sync=None,
+                num_workers_per_link=None,
+                num_buffers_per_channel=None,
             )
 
             logger.info(f"Waiting for op to finish all iterations")

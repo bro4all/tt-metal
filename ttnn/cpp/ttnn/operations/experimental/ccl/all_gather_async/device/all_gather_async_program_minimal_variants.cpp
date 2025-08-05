@@ -203,6 +203,11 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_async_minimal_default_h
     uint32_t num_cores_per_link =
         num_directions_per_link * (num_mux_cores_per_direction_per_link + num_workers_per_direction);
 
+    log_info(
+        tt::LogOp,
+        "[all_gather_async_minimal_default_helper] num_workers_per_direction: {}, num_cores_per_link: {}",
+        num_workers_per_direction,
+        num_cores_per_link);
     const auto [all_core_range, all_cores] =
         choose_worker_cores(num_links, num_cores_per_link, mesh_device, sub_device_id, core_grid_offset);
     std::set<CoreRange> sender_worker_core_ranges;

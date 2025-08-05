@@ -50,6 +50,32 @@ def run_all_reduce_test(
     debug = False
 
     logger.info(f"Per chip output shape: {per_chip_output_shape}, devices: {num_devices}")
+
+    # [1, 1, 32, 64]
+    tensor_mem_layout = ttnn.TensorMemoryLayout.WIDTH_SHARDED
+    shard_spec = ttnn.ShardSpec(
+        ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(1, 7))}),
+        (32, 64),
+        ttnn.ShardOrientation.ROW_MAJOR,
+    )
+    intermediate_shard_spec = ttnn.ShardSpec(
+        ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(1, 7))}),
+        (32, 512),
+        ttnn.ShardOrientation.ROW_MAJOR,
+    )
+    mem_config = ttnn.MemoryConfig(tensor_mem_layout, buffer_type=ttnn.BufferType.L1, shard_spec=shard_spec)
+    input_mem_config = mem_config
+    output_mem_config = mem_config
+    intermediate_mem_config = ttnn.MemoryConfig(
+        tensor_mem_layout, buffer_type=ttnn.BufferType.L1, shard_spec=intermediate_shard_spec
+    )
+
+    # input_mem_config = ttnn.MemoryConfig(buffer_type=ttnn.BufferType.L1)
+    # output_mem_config = ttnn.MemoryConfig(buffer_type=ttnn.BufferType.L1)
+
+    logger.info(f"Input memory config: {input_mem_config}")
+    logger.info(f"Output memory config: {output_mem_config}")
+
     # Generate input tensors
 
     canonical_input_tensors = []
@@ -60,8 +86,10 @@ def run_all_reduce_test(
         input_tensors[-1] = torch.arange(numel).reshape(per_chip_output_shape).bfloat16()
     for i in range(num_devices):
         input_tensor = torch.rand(per_chip_output_shape).bfloat16()
+        print(f"input_tensor shape: {input_tensor.shape}")
         canonical_input_tensors.append(input_tensor)
         input_tensor = input_tensor.view(1, -1, input_tensor.shape[2], input_tensor.shape[3])
+        print(f"input_tensor shape: {input_tensor.shape}")
         input_tensors.append(input_tensor)
 
     unchunked_input_tensor = torch.cat(input_tensors)
@@ -72,25 +100,58 @@ def run_all_reduce_test(
         dtype=input_dtype,
         layout=layout,
         device=mesh_device,
-        memory_config=mem_config,
+        memory_config=input_mem_config,
         mesh_mapper=ttnn.create_mesh_mapper(
             mesh_device,
             ttnn.MeshMapperConfig([ttnn.PlacementReplicate(), ttnn.PlacementShard(0)], ttnn.MeshShape(1, num_devices)),
         ),
     )
+
+    intermediate_tensor = torch.stack([torch.zeros_like(input_tensors[0]) for _ in range(num_devices)])
+    tt_intermediate_tensors = []
+    for i in range(1):
+        tt_intermediate_tensor = ttnn.from_torch(
+            intermediate_tensor,
+            device=mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=input_dtype,
+            memory_config=intermediate_mem_config,
+            mesh_mapper=ttnn.create_mesh_mapper(
+                mesh_device,
+                ttnn.MeshMapperConfig(
+                    [ttnn.PlacementReplicate(), ttnn.PlacementShard(0)], ttnn.MeshShape(1, num_devices)
+                ),
+            ),
+        )
+
+        tt_intermediate_tensors.append(tt_intermediate_tensor)
+
     # Run the op
     for i in range(num_iters):
         output_tensor_mesh = ttnn.experimental.all_reduce_async(
             input_tensor_mesh,
-            from_remote_multi_device_global_semaphore=from_remote_semaphore_handles,
-            to_remote_multi_device_global_semaphore=to_remote_semaphore_handles,
-            gather_multi_device_global_semaphore=gather_semaphore_handles,
-            math_op=math_op,
-            num_links=num_links,
-            memory_config=mem_config,
+            tt_intermediate_tensors[0],
+            cluster_axis=1,
+            mesh_device=mesh_device,
+            multi_device_global_semaphore=gather_semaphore_handles,
+            memory_config=output_mem_config,
+            dtype=ttnn.bfloat16,
             topology=topology,
+            num_links=num_links,
             subdevice_id=worker_sub_device_id,
         )
+
+        # output_tensor_mesh = ttnn.experimental.all_reduce_async(
+        #     input_tensor_mesh,
+        #     from_remote_multi_device_global_semaphore=from_remote_semaphore_handles,
+        #     to_remote_multi_device_global_semaphore=to_remote_semaphore_handles,
+        #     gather_multi_device_global_semaphore=gather_semaphore_handles,
+        #     math_op=math_op,
+        #     num_links=num_links,
+        #     memory_config=output_mem_config,
+        #     topology=topology,
+        #     subdevice_id=worker_sub_device_id,
+        # )
         ttnn.synchronize_device(mesh_device, sub_device_ids=sub_device_stall_group)
     ttnn.synchronize_device(mesh_device, sub_device_ids=sub_device_stall_group)
 

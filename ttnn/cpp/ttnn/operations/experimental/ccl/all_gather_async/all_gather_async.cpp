@@ -21,28 +21,29 @@ bool use_all_gather_async_llama_sharded(const Tensor& input_tensor, const Memory
     bool input_is_sharded = input_tensor_memory_config.shard_spec().has_value();
     bool output_is_sharded = output_mem_config.shard_spec().has_value();
 
-    log_trace(tt::LogOp, "[select_version] input_tensor_shape: {}", input_tensor_shape);
-    log_trace(tt::LogOp, "[select_version] input_tensor_memory_config: {}", input_tensor_memory_config);
-    log_trace(tt::LogOp, "[select_version] output_mem_config: {}", output_mem_config);
+    log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] input_tensor_shape: {}", input_tensor_shape);
+    log_info(
+        tt::LogOp, "[use_all_gather_async_llama_sharded] input_tensor_memory_config: {}", input_tensor_memory_config);
+    log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] output_mem_config: {}", output_mem_config);
 
-    log_trace(tt::LogOp, "[select_version] input_is_sharded: {}", input_is_sharded);
-    log_trace(tt::LogOp, "[select_version] output_is_sharded: {}", output_is_sharded);
+    log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] input_is_sharded: {}", input_is_sharded);
+    log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] output_is_sharded: {}", output_is_sharded);
 
     // Check for minimal sharded case
     if (input_is_sharded && output_is_sharded) {
         uint32_t input_shard_num_cores = input_tensor_memory_config.shard_spec()->grid.num_cores();
         uint32_t output_shard_num_cores = output_mem_config.shard_spec()->grid.num_cores();
 
-        log_trace(tt::LogOp, "[select_version] input_shard_num_cores: {}", input_shard_num_cores);
-        log_trace(tt::LogOp, "[select_version] output_shard_num_cores: {}", output_shard_num_cores);
+        log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] input_shard_num_cores: {}", input_shard_num_cores);
+        log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] output_shard_num_cores: {}", output_shard_num_cores);
 
-        log_trace(
+        log_info(
             tt::LogOp,
-            "[select_version] input_tensor_memory_config.shard_spec()->shape: {}",
+            "[use_all_gather_async_llama_sharded] input_tensor_memory_config.shard_spec()->shape: {}",
             input_tensor_memory_config.shard_spec()->shape);
-        log_trace(
+        log_info(
             tt::LogOp,
-            "[select_version] output_mem_config.shard_spec()->shape: {}",
+            "[use_all_gather_async_llama_sharded] output_mem_config.shard_spec()->shape: {}",
             output_mem_config.shard_spec()->shape);
 
         // Check for llama post binary mult+silu case
@@ -55,9 +56,10 @@ bool use_all_gather_async_llama_sharded(const Tensor& input_tensor, const Memory
             input_tensor_memory_config.shard_spec()->shape[1] == 32 && output_mem_config.shard_spec()->shape[0] == 32 &&
             output_mem_config.shard_spec()->shape[1] == 160 && input_shard_num_cores == 30 &&
             output_shard_num_cores == 24) {
-            log_trace(
+            log_info(
                 tt::LogOp,
-                "Matching conditions for Llama post binary mult+silu, using LLAMA_MINIMAL_SHARDED implementation");
+                "[use_all_gather_async_llama_sharded] Matching conditions for Llama post binary mult+silu, using "
+                "LLAMA_MINIMAL_SHARDED implementation");
             return true;
         }
 
@@ -71,7 +73,10 @@ bool use_all_gather_async_llama_sharded(const Tensor& input_tensor, const Memory
             input_tensor_memory_config.shard_spec()->shape[1] == 128 &&
             output_mem_config.shard_spec()->shape[0] == 32 && output_mem_config.shard_spec()->shape[1] == 128 &&
             input_shard_num_cores == 8 && output_shard_num_cores == 32) {
-            log_trace(tt::LogOp, "Matching conditions for Llama post SDPA, using LLAMA_MINIMAL_SHARDED implementation");
+            log_info(
+                tt::LogOp,
+                "[use_all_gather_async_llama_sharded] Matching conditions for Llama post SDPA, using "
+                "LLAMA_MINIMAL_SHARDED implementation");
             return true;
         }
 
@@ -85,12 +90,14 @@ bool use_all_gather_async_llama_sharded(const Tensor& input_tensor, const Memory
             input_tensor_memory_config.shard_spec()->shape[1] == 32 && output_mem_config.shard_spec()->shape[0] == 32 &&
             output_mem_config.shard_spec()->shape[1] == 128 && input_shard_num_cores == 1 &&
             output_shard_num_cores == 1) {
-            log_trace(
-                tt::LogOp, "Matching conditions for Llama rms norm case, using LLAMA_MINIMAL_SHARDED implementation");
+            log_info(
+                tt::LogOp,
+                "[use_all_gather_async_llama_sharded] Matching conditions for Llama rms norm case, using "
+                "LLAMA_MINIMAL_SHARDED implementation");
             return true;
         }
     }
-
+    log_info(tt::LogOp, "[use_all_gather_async_llama_sharded] No matching conditions found");
     return false;
 }
 
@@ -113,16 +120,22 @@ bool use_composite_all_gather(
 
     // Remove once deepseek is routed to minimal instead of command processor
     if (input_memory_config.memory_layout() != output_memory_config.memory_layout() && semaphore_size == 1) {
+        log_info(
+            tt::LogOp,
+            "use_composite_all_gather return true because input and output memory layout differ and semaphore size is "
+            "1");
         return true;
     }
 
     // Route to command processor
     if (semaphore_size == 1) {
+        log_info(tt::LogOp, "use_composite_all_gather return false because semaphore size is 1");
         return false;
     }
 
     // Use composite for row-major tensors
     if (input_tensor.layout() == Layout::ROW_MAJOR) {
+        log_info(tt::LogOp, "use_composite_all_gather return true because input tensor is row-major");
         return true;
     }
 
@@ -131,14 +144,21 @@ bool use_composite_all_gather(
         input_tensor.layout() == Layout::TILE && ((gather_dim == 2 && input_shape[2] % tile_height != 0) ||
                                                   (gather_dim == 3 && input_shape[3] % tile_width != 0));
     if (is_tiled_and_padded_on_gather_dim) {
+        log_info(
+            tt::LogOp, "use_composite_all_gather return true because input tensor is tiled and padded on gather dim");
         return true;
     }
 
     // Use composite if gathering on dim 0 or dim 1, and input_shape[0] != 1 or input_shape[1] != 1
     if ((gather_dim == 0 || gather_dim == 1) && (input_shape[0] != 1 || input_shape[1] != 1)) {
+        log_info(
+            tt::LogOp,
+            "use_composite_all_gather return true because gathering on dim 0 or 1 and input_shape[0] != 1 or "
+            "input_shape[1] != 1");
         return true;
     }
 
+    log_info(tt::LogOp, "use_composite_all_gather return false");
     return false;
 }
 
