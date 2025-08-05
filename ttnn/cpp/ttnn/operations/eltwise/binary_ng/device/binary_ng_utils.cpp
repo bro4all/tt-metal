@@ -4,11 +4,12 @@
 
 #include "binary_ng_utils.hpp"
 #include "ttnn/operations/eltwise/unary/common/unary_op_utils.hpp"
+#include <tt-metalium/hal.hpp>
 #include <tt-metalium/assert.hpp>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
-#include <magic_enum/magic_enum.hpp>
+#include <enchantum/enchantum.hpp>
 
 namespace ttnn::operations::binary_ng {
 
@@ -314,6 +315,13 @@ OpConfig::OpConfig(BinaryOpType binary_op_type, std::in_place_type_t<EnumT>) : b
                 TT_THROW("Unsupported binary op for FPU {}", binary_op_type);
             }
             break;
+        case BinaryOpType::XLOGY:
+            if (is_sfpu_op()) {
+                binary_op = SfpuBinaryOp::XLOGY;
+            } else {
+                TT_THROW("Unsupported binary op for FPU {}", binary_op_type);
+            }
+            break;
         default: TT_THROW("Unsupported binary op {}", binary_op_type);
     }
 }
@@ -411,6 +419,7 @@ std::pair<std::string, std::string> get_sfpu_init_fn(OpConfig::SfpuBinaryOp sfpu
             return {"requant_tile_init(get_arg_val<uint32_t>(QUANT_ZERO_POINT_RT_ARGS_IDX));", "requant_tile"};
         case DEQUANT:
             return {"dequant_tile_init(get_arg_val<uint32_t>(QUANT_ZERO_POINT_RT_ARGS_IDX));", "dequant_tile"};
+        case XLOGY: return {"xlogy_binary_tile_init();", "xlogy_binary_tile"};
         default: TT_THROW("Unsupported sfpu binary op {}", sfpu_binary_op);
     }
 }
@@ -420,7 +429,7 @@ std::map<std::string, std::string> OpConfig::as_defines(DataType dtype) const {
 
     if (!is_sfpu_op()) {
         auto fpu_binary_op = std::get<FpuBinaryOp>(binary_op);
-        auto binary_op_str = magic_enum::enum_name(fpu_binary_op);
+        auto binary_op_str = enchantum::to_string(fpu_binary_op);
         defines["BINARY_OP"] = fmt::format("{}_tiles", Lowercase{binary_op_str});
         defines["BINARY_OP_TYPE"] = fmt::format("EltwiseBinaryType::ELW{}", binary_op_str);
         return defines;
@@ -511,6 +520,12 @@ uint32_t pack_scalar_runtime_arg(const float scalar, const DataType dtype, const
     }
     if (dtype == DataType::UINT32) {
         return std::bit_cast<uint32_t>(scalar);
+    }
+    // +-inf and nan, value must be truncated to make sure it's still special value in device code
+    if (scalar == tt::tt_metal::hal::get_inf() || scalar == -tt::tt_metal::hal::get_inf() ||
+        scalar == tt::tt_metal::hal::get_nan()) {
+        uint16_t bf16_bits = (*reinterpret_cast<const uint32_t*>(&scalar)) >> 16;
+        return pack_two_bfloat16_into_uint32({bf16_bits, bf16_bits});
     }
     return pack_two_bfloat16_into_uint32({scalar, scalar});
 }
