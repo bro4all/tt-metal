@@ -160,14 +160,14 @@ void MAIN {
                 }
                 sticks_left -= num_pages_to_8;
 
-                dprint_tensix_dest_reg(0);
-                dprint_tensix_dest_reg(1);
-                dprint_tensix_dest_reg(2);
-                dprint_tensix_dest_reg(3);
-                dprint_tensix_dest_reg(4);
-                dprint_tensix_dest_reg(5);
-                dprint_tensix_dest_reg(6);
-                dprint_tensix_dest_reg(7);
+                // dprint_tensix_dest_reg(0);
+                // dprint_tensix_dest_reg(1);
+                // dprint_tensix_dest_reg(2);
+                // dprint_tensix_dest_reg(3);
+                // dprint_tensix_dest_reg(4);
+                // dprint_tensix_dest_reg(5);
+                // dprint_tensix_dest_reg(6);
+                // dprint_tensix_dest_reg(7);
 
                 tile_regs_commit();
 

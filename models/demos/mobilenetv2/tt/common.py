@@ -57,6 +57,8 @@ class TtMobileNetV2Conv2D:
         self.weights, self.bias = self.parameters
 
     def _initialize_conv_config(self):
+        print("Initializing Conv2D Config")
+        print(self.activation_function)
         conv_config = ttnn.Conv2dConfig(
             weights_dtype=ttnn.bfloat8_b,
             activation=self.activation_function if self.activation_function is not None else "",
