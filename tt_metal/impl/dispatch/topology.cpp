@@ -1116,12 +1116,42 @@ void build_tt_fabric_program(
                 edm_builder2.connect_to_downstream_edm(edm_builder1);
 
                 // select VC based on the current link
-                auto edm_noc_vc = edm_builder1.config.DEFAULT_NOC_VC + (link % edm_builder1.config.NUM_EDM_NOC_VCS);
-                edm_builder1.config.edm_noc_vc = edm_noc_vc;
-                edm_builder2.config.edm_noc_vc = edm_noc_vc;
+                uint32_t vc1 = 0, vc2 = 0;
+                bool change_vc = false;
+                if (edm_builder1.my_noc_y < edm_builder2.my_noc_y) {
+                    vc1 = link % edm_builder1.config.NUM_EDM_NOC_VCS;
+                    vc2 = (num_links - link - 1) % edm_builder1.config.NUM_EDM_NOC_VCS;
+                    change_vc = true;
+                } else if (edm_builder1.my_noc_y > edm_builder2.my_noc_y) {
+                    vc1 = (num_links - link - 1) % edm_builder1.config.NUM_EDM_NOC_VCS;
+                    vc2 = link % edm_builder1.config.NUM_EDM_NOC_VCS;
+                    change_vc = true;
+                }
+
+                if (change_vc) {
+                    auto edm_noc_vc1 = edm_builder1.config.DEFAULT_NOC_VC + vc1;
+                    auto edm_noc_vc2 = edm_builder1.config.DEFAULT_NOC_VC + vc2;
+                    edm_builder1.config.edm_noc_vc = edm_noc_vc1;
+                    edm_builder2.config.edm_noc_vc = edm_noc_vc2;
+                }
 
                 if (is_galaxy) {
                     get_optimal_noc_for_edm(edm_builder1, edm_builder2, num_links, topology);
+
+                    log_info(
+                        tt::LogTest,
+                        "Fabric MeshId {} ChipId {} edm_builder1 {} {} is connecting to edm_builder2 {} {} with NoC {} "
+                        "and {}, using VC {} and {}",
+                        *(edm_builder1.local_fabric_node_id.mesh_id),
+                        edm_builder1.local_fabric_node_id.chip_id,
+                        edm_builder1.my_noc_x,
+                        edm_builder1.my_noc_y,
+                        edm_builder2.my_noc_x,
+                        edm_builder2.my_noc_y,
+                        edm_builder1.config.receiver_channel_forwarding_noc_ids[0],
+                        edm_builder2.config.receiver_channel_forwarding_noc_ids[0],
+                        edm_builder1.config.edm_noc_vc,
+                        edm_builder2.config.edm_noc_vc);
                 }
             }
         }
