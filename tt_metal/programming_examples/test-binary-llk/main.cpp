@@ -236,45 +236,40 @@ int main() {
         CloseDevice(device);
     }
 
-    // Print results
-    fmt::print("Test Binary LLK Example Results:\n");
-    fmt::print("Number of tiles processed: {}\n", num_tiles);
-    fmt::print("Elements per tile: {}\n", elements_per_tile);
-
     size_t elements_to_print = data0.size();
 
     // Print first few elements for verification
-    fmt::print("\nFirst {} elements:\n", elements_to_print);
+    fmt::print("----- [float32] \n");
+
     for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
         fmt::print(
-            "[float32] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}\n",
+            "Input[{}]: {:.6f}, {:6f} -> {:.6f} [{:x}]\n",
             i,
             input0_data_f32[i],
             input1_data_f32[i],
-            i,
-            output_data_f32[i]);
+            output_data_f32[i],
+            std::bit_cast<uint32_t>(output_data_f32[i]));
     }
-    fmt::print("-----");
+    fmt::print("\n----- [bfloat16] \n");
 
     for (int i = 0; i < elements_to_print && i < input0_data_bf16.size(); i++) {
         fmt::print(
-            "[bfloat16] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}\n",
+            "Input[{}]: {:.6f}, {:6f} -> {:.6f} [{:x}]\n",
             i,
             input0_data_bf16[i].to_float(),
             input1_data_bf16[i].to_float(),
-            i,
-            output_data_bf16[i].to_float());
+            output_data_bf16[i].to_float(),
+            std::bit_cast<uint16_t>(output_data_bf16[i]));
     }
-    fmt::print("-----");
+    fmt::print("\n----- [float32 reference] \n");
 
     for (int i = 0; i < elements_to_print && i < input0_data_f32.size(); i++) {
         float truth = powf(input0_data_f32[i], input1_data_f32[i]);
         fmt::print(
-            "[float32 reference] Input[{}]: {:.6f}, {:6f} -> Output[{}]: {:.6f}, bf16 = {:6f}\n",
+            "Input[{}]: {:.6f}, {:6f} -> {:.6f}, bf16 = {:6f}\n",
             i,
             input0_data_f32[i],
             input1_data_f32[i],
-            i,
             truth,
             bfloat16(truth).to_float());
     }
