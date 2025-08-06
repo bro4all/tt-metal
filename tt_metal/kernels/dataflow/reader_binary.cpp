@@ -28,6 +28,7 @@ inline void print_cb_details(uint32_t cb_id) {
 }
 
 void kernel_main() {
+/*
     uint32_t src0_addr = get_arg_val<uint32_t>(0);
     uint32_t src0_bank_id = get_arg_val<uint32_t>(1);
     uint32_t src1_addr = get_arg_val<uint32_t>(2);
@@ -79,4 +80,5 @@ void kernel_main() {
 
         src1_addr += ublock_size_bytes_1;
     }
+    */
 }

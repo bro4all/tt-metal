@@ -20,9 +20,8 @@ inline void print_full_tile(uint32_t cb_id, uint32_t tile_id = 0, bool untilize 
     DPRINT << "++++++" << ENDL();
 }
 
-/*
 inline void print_cb_details(uint32_t cb_id) {
-    DPRINT(
+    DPRINT <<
         "cb_id " << cb_id << ": { "
                  << "size: " << get_local_cb_interface(cb_id).fifo_size << ", "
                  << "limit: " << get_local_cb_interface(cb_id).fifo_limit << ", "
@@ -30,9 +29,9 @@ inline void print_cb_details(uint32_t cb_id) {
                  << "num_pages: " << get_local_cb_interface(cb_id).fifo_num_pages << ", "
                  << "rd_ptr: " << get_local_cb_interface(cb_id).fifo_rd_ptr << ", "
                  << "wr_ptr: " << get_local_cb_interface(cb_id).fifo_wr_ptr << ", "
-                 << "wr_tile_ptr: " << get_local_cb_interface(cb_id).fifo_wr_tile_ptr << " }");
+                 << "wr_tile_ptr: " << get_local_cb_interface(cb_id).fifo_wr_tile_ptr << " }" << ENDL();
 }
-*/
+
 namespace NAMESPACE {
 void MAIN {
     // Args for reading data from DRAM
@@ -66,31 +65,38 @@ void MAIN {
     // Initialize the parts that required specifically for this binary operatoins
     binary_tiles_init_st<false, EltwiseBinaryType::ELWADD>(cb_in0, cb_in1);
 
+    UNPACK(
     DPRINT << "NOC INDEX" << noc_index << ENDL();
+    DPRINT << "src0_addr " << src0_addr << " src0_bank_id " << src0_bank_id << " src1_addr " << src1_addr << " src1_bank_id " << src1_bank_id << ENDL();
+    print_cb_details(cb_in0););
     for (uint32_t block = 0; block < per_core_block_cnt; block += per_core_block_size) {
-        /*
+	    
             UNPACK(
                 // Read a tile to cb_in0 from DRAM
                 uint64_t src0_noc_addr = get_noc_addr_from_bank_id<true>(src0_bank_id, src0_addr);
                 cb_reserve_back_df(cb_in0, per_core_block_size);
                 l1_write_addr_in0 = get_write_ptr(cb_in0);
-                noc_async_read(src0_noc_addr, l1_write_addr_in0, ublock_size_bytes_0, 1);
+		DPRINT << "src0_noc_addr " << src0_noc_addr << " l1_write_addr_in0 " << l1_write_addr_in0 << " ublocksize_bytes_0 " << ublock_size_bytes_0 << ENDL();
+
+		DPRINT << "rd_ptr: " << get_local_cb_interface(cb_in0).fifo_rd_ptr << ENDL();
+                noc_async_read(src0_noc_addr, l1_write_addr_in0 << 4, ublock_size_bytes_0, 1);
                 noc_async_read_barrier(1);
                 cb_push_back_df(cb_in0, per_core_block_size);
                 src0_addr += ublock_size_bytes_0;
-            print_full_tile(cb_in0, 0);
+                print_full_tile(cb_in0, 0);
 
 
                 // Read a tile to cb_in0 from DRAM
                 uint64_t src1_noc_addr = get_noc_addr_from_bank_id<true>(src1_bank_id, src1_addr);
                 cb_reserve_back_df(cb_in1, per_core_block_size);
                 l1_write_addr_in1 = get_write_ptr(cb_in1);
-                noc_async_read(src1_noc_addr, l1_write_addr_in1, ublock_size_bytes_1, 1);
+                noc_async_read(src1_noc_addr, l1_write_addr_in1 << 4, ublock_size_bytes_1, 1);
                 noc_async_read_barrier(1);
                 cb_push_back_df(cb_in1, per_core_block_size);
                 src1_addr += ublock_size_bytes_1;
             print_full_tile(cb_in1, 0););
-             */
+
+
         // Wait for the input circular buffers to be filled with per_core_block_size tiles
         cb_wait_front(cb_in0, per_core_block_size);
         cb_wait_front(cb_in1, per_core_block_size);

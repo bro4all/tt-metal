@@ -127,7 +127,7 @@ int main() {
         /*
          * Create source data and write to DRAM.
          */
-        constexpr float val_to_add_ph = -3.0f;
+        constexpr float val_to_add_ph = -1.0f;
         std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(dram_buffer_size, val_to_add_ph);
 
         //std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(
