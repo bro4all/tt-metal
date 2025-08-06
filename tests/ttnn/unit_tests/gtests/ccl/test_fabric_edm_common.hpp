@@ -443,6 +443,51 @@ void run_programs(std::vector<Program>& programs, const std::vector<IDevice*>& d
     }
 }
 
+void run_programs_new(
+    std::vector<Program>& programs,
+    const std::vector<std::shared_ptr<tt::tt_metal::distributed::MeshDevice>>& devices) {
+    EXPECT_EQ(programs.size(), devices.size());
+    const size_t num_programs = programs.size();
+    try {
+        for (size_t i = 0; i < num_programs; i++) {
+            tt::tt_metal::detail::CompileProgram(
+                devices.at(i)->get_view().get_device(distributed::MeshCoordinate(0, i)), programs.at(i));
+        }
+    } catch (std::exception& e) {
+        log_error(tt::LogTest, "Failed compile: {}", e.what());
+        throw e;
+    }
+
+    log_trace(tt::LogTest, "Running...");
+
+    auto mesh_workload = tt::tt_metal::distributed::CreateMeshWorkload();
+
+    std::vector<std::thread> threads;
+    threads.reserve(num_programs);
+    if (std::getenv("TT_METAL_SLOW_DISPATCH_MODE")) {
+        for (size_t i = 0; i < num_programs; i++) {
+            threads.emplace_back(std::thread([&] {
+                tt_metal::detail::LaunchProgram(
+                    devices.at(i)->get_view().get_device(distributed::MeshCoordinate(0, i)), programs.at(i));
+            }));
+        }
+
+        std::ranges::for_each(threads, [](std::thread& t) { t.join(); });
+    } else {
+        for (size_t i = 0; i < num_programs; i++) {
+            auto target_devices = tt::tt_metal::distributed::MeshCoordinateRange(devices.at(i)->shape());
+            tt::tt_metal::distributed::AddProgramToMeshWorkload(
+                mesh_workload, std::move(programs.at(i)), target_devices);
+            tt::tt_metal::distributed::EnqueueMeshWorkload(devices.at(i)->mesh_command_queue(), mesh_workload, false);
+        }
+
+        log_debug(tt::LogTest, "Calling Finish");
+        for (size_t i = 0; i < num_programs; i++) {
+            tt::tt_metal::distributed::Finish(devices.at(i)->mesh_command_queue());
+        }
+    }
+}
+
 std::tuple<std::shared_ptr<Buffer>, std::vector<uint32_t>> build_input_buffer(
     IDevice* first_device, size_t tensor_size_bytes, const BankedConfig& test_config) {
     auto inputs = std::vector<uint32_t>(tensor_size_bytes / sizeof(uint32_t), 0);
@@ -915,7 +960,8 @@ void generate_multi_input_test_worker_kernels_for_local_tensor_write(
 }
 
 bool RunLocalTestWithMultiInputReaders(
-    const std::vector<tt_metal::IDevice*>& devices,
+    std::vector<IDevice*> devices,
+    const std::vector<std::shared_ptr<tt::tt_metal::distributed::MeshDevice>>& mesh_devices,
     std::vector<Program>& programs,
     std::optional<ttnn::ccl::EdmLineFabricOpInterface>& line_fabric,
 
@@ -1035,7 +1081,7 @@ bool RunLocalTestWithMultiInputReaders(
     ////////////////////////////////////////////////////////////////////////////
     //                      Compile and Execute Application
     ////////////////////////////////////////////////////////////////////////////
-    run_programs(programs, std::vector<IDevice*>{devices[0]});
+    run_programs_new(programs, std::vector<std::shared_ptr<tt::tt_metal::distributed::MeshDevice>>{mesh_devices[0]});
     log_info(tt::LogTest, "Finished");
 
     bool pass = true;
@@ -1554,6 +1600,12 @@ inline bool TestMultiInputReaderKernel(
         mesh_devices.push_back(mesh_device->create_submesh(MeshShape(1, 1), MeshCoordinate(0, i)));
     }
 
+    std::vector<IDevice*> devices_as_idevice;
+    devices_as_idevice.reserve(mesh_devices.size());
+    for (auto& mesh_device : mesh_devices) {
+        devices_as_idevice.push_back(mesh_device.get());
+    }
+
     std::vector<Program> programs(1);
     std::optional<SubdeviceInfo> subdevice_managers = std::nullopt;
     std::optional<std::vector<Program>> fabric_programs;
@@ -1585,6 +1637,7 @@ inline bool TestMultiInputReaderKernel(
     auto launch_ccl_command_interpreter_workers = [&](std::vector<Program>& _programs) {
         return RunLocalTestWithMultiInputReaders(
             devices,
+            mesh_devices,
             _programs,
             line_fabric,
 

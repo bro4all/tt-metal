@@ -423,7 +423,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage1) {
 // which are not supported with Mesh workloads now that we are using the new distributed API.
 // Mo model currently uses the multi input reader kernel currently.
 
-TEST(WorkerCclCommandProcessingKernelFabricUnicastMode, DISABLED_MultiInputReader_SinglePageTile_OneHop_PersistentFabric) {
+TEST(WorkerCclCommandProcessingKernelFabricUnicastMode, MultiInputReader_SinglePageTile_OneHop_PersistentFabric) {
     ttnn::Shape tensor_shape({1, 1, 32, 32});
     constexpr size_t distance_dest_device = 1;
     constexpr size_t num_devices = 4;
