@@ -259,6 +259,11 @@ void cb_pop_front(int32_t operand, int32_t num_pages) {
     }
 }
 
+FORCE_INLINE
+void cb_pop_front_df(int32_t operand, int32_t num_pages) {
+     cb_pop_front(operand, num_pages);
+}
+
 #ifdef DATA_FORMATS_DEFINED
 
 // this API is used by both the reader and writer side of the CB
@@ -501,6 +506,11 @@ void cb_wait_front(int32_t operand, int32_t num_pages) {
         pages_received = ((uint16_t)reg_read(pages_received_ptr)) - pages_acked;
     } while (pages_received < num_pages);
     WAYPOINT("CWFD");
+}
+
+FORCE_INLINE
+void cb_wait_front_df(int32_t operand, int32_t num_pages) {
+	cb_wait_front(operand, num_pages);
 }
 
 // NOC transfers

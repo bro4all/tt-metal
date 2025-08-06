@@ -47,6 +47,10 @@ void MAIN {
     // How many tiles per block
     uint32_t per_core_block_size = get_arg_val<uint32_t>(6);
 
+    // For writing out the results
+    uint32_t dst_addr  = get_arg_val<uint32_t>(7);
+    uint32_t dst_bank_id = get_arg_val<uint32_t>(8);
+
     // Input and output circular buffer ids.
     constexpr auto cb_in0 = tt::CBIndex::c_0;
     constexpr auto cb_in1 = tt::CBIndex::c_1;
@@ -55,6 +59,7 @@ void MAIN {
     // single-tile ublocks
     uint32_t ublock_size_bytes_0 = get_tile_size(cb_in0);
     uint32_t ublock_size_bytes_1 = get_tile_size(cb_in1);
+    uint32_t ublock_size_bytes_dst = get_tile_size(cb_out0);
 
     uint32_t l1_write_addr_in0;
     uint32_t l1_write_addr_in1;
@@ -122,6 +127,16 @@ void MAIN {
         // Pop out the used input tiles
         cb_pop_front(cb_in0, per_core_block_size);
         cb_pop_front(cb_in1, per_core_block_size);
+
+	UNPACK(
+	uint64_t dst_noc_addr = get_noc_addr_from_bank_id<true>(dst_bank_id, dst_addr);
+        cb_wait_front_df(cb_out0, per_core_block_size);
+        uint32_t l1_read_addr = get_read_ptr(cb_out0);
+        noc_async_write(l1_read_addr << 4, dst_noc_addr, ublock_size_bytes_dst);
+        noc_async_write_barrier();
+        cb_pop_front_df(cb_out0, per_core_block_size);
+        dst_addr += ublock_size_bytes_dst;);
+
     }
 }
 }  // namespace NAMESPACE

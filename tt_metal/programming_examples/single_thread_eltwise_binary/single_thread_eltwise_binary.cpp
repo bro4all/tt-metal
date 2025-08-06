@@ -45,7 +45,7 @@ int main() {
         constexpr CoreCoord core = {0, 0};
 
         constexpr uint32_t single_tile_size = 2 * 1024;
-        constexpr uint32_t num_tiles = 1;
+        constexpr uint32_t num_tiles = 8;
         constexpr uint32_t dram_buffer_size =
             single_tile_size * num_tiles;  // num_tiles of FP16_B, hard-coded in the reader/writer kernels
 
@@ -127,11 +127,8 @@ int main() {
         /*
          * Create source data and write to DRAM.
          */
-        constexpr float val_to_add_ph = -1.0f;
-        std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(dram_buffer_size, val_to_add_ph);
-
-        //std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(
-        //    dram_buffer_size, 1, std::chrono::system_clock::now().time_since_epoch().count());
+        std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(
+            dram_buffer_size, 1, std::chrono::system_clock::now().time_since_epoch().count());
 
         EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, false);
 
@@ -160,7 +157,10 @@ int main() {
              src1_bank_id,
              num_tiles,
              num_tiles,
-             1});
+             1, 
+	     dst_dram_buffer->address(),
+	     dst_bank_id,
+	     num_tiles});
 
         SetRuntimeArgs(program, unary_writer_kernel_id, core, {dst_dram_buffer->address(), dst_bank_id, num_tiles});
 
