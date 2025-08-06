@@ -283,10 +283,16 @@ void kernel_main() {
         cb_push_back(in_scalar_cb_id_0, 1);
     }
 
+    uint32_t block_size = TILE_HEIGHT * TILE_WIDTH / 2;
+    uint32_t offset = TILE_HEIGHT * TILE_WIDTH;
+
     if constexpr (reader_id == 0) {
-        fill_with_val(get_write_ptr(weight_cb_id), TILE_HEIGHT * TILE_WIDTH / 2, 0x3f80);
+        fill_with_val(get_write_ptr(weight_cb_id), 32, 0x7F7F);
+
+        fill_with_val(get_write_ptr(weight_cb_id) + 64, 512, 0x4040);
+
     } else {
-        fill_with_val(get_write_ptr(weight_cb_id) + TILE_HEIGHT * TILE_WIDTH / 2, TILE_HEIGHT * TILE_WIDTH / 2, 0x3f80);
+        // fill_with_val(get_write_ptr(weight_cb_id) + offset, block_size, 0x3f80);
     }
 
     const uint32_t in_l1_read_base_addr = get_read_ptr(in_shard_cb_id);

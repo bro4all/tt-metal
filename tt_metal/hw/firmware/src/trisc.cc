@@ -125,7 +125,13 @@ int main(int argc, char *argv[]) {
 #endif
             invalidate_l1_cache();
         }
-        DeviceZoneScopedMainN("TRISC-FW");
+#if defined(UCK_CHLKC_PACK)
+        DeviceZoneScopedMainN("TRISC-FW-PACK");
+#elif defined(UCK_CHLKC_UNPACK)
+        DeviceZoneScopedMainN("TRISC-FW-UNPACK");
+#elif defined(UCK_CHLKC_MATH)
+        DeviceZoneScopedMainN("TRISC-FW-MATH");
+#endif
 
         uint32_t launch_msg_rd_ptr = mailboxes->launch_msg_rd_ptr;
         launch_msg_t* launch_msg = &(mailboxes->launch[launch_msg_rd_ptr]);

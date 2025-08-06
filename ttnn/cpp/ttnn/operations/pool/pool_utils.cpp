@@ -137,8 +137,8 @@ FactoryParameters get_factory_parameters(
 
     const auto& input_shape = input.padded_shape();
 
-    auto dtype = input.dtype() == DataType::BFLOAT8_B ? DataType::BFLOAT16 : input.dtype();
-    tt::DataFormat data_format = datatype_to_dataformat_converter(dtype);
+    // Allow BFP8_B format for weight buffer instead of converting to BFLOAT16
+    tt::DataFormat data_format = datatype_to_dataformat_converter(input.dtype());
     uint32_t nbytes = datum_size(data_format);
 
     uint32_t kernel_size_hw = kernel_h * kernel_w;  // number of valid rows, to read

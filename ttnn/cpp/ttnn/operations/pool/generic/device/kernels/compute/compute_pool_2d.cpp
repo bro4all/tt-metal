@@ -93,7 +93,7 @@ void MAIN {
     uint32_t curr_in_cb_id = in_cb_id_0;
 
     while (sticks_left) {
-        DeviceZoneScopedN("iteration");
+        // DeviceZoneScopedN("iteration");
         const uint32_t curr_scalar_cb_id = in_scalar_cb_id_0;
         if constexpr (!one_scalar_per_core) {
             cb_wait_front(curr_scalar_cb_id, 1);
@@ -111,10 +111,13 @@ void MAIN {
                 }
             }
             for (uint32_t chunk = 0; chunk < interm_reduction_chunks; chunk++) {
-                UNPACK((llk_unpack_tilize_uninit(curr_in_cb_id)));
-                // UNPACK((llk_unpack_AB_init<BroadcastType::NONE>(curr_in_cb_id, weight_cb_id)));
-                PACK((pack_untilize_uninit(mul_cb_id)));
-                mul_tiles_init(curr_in_cb_id, weight_cb_id);
+                {
+                    // DeviceZoneScopedN("init 1");
+                    UNPACK((llk_unpack_tilize_uninit(curr_in_cb_id)));
+                    // UNPACK((llk_unpack_AB_init<BroadcastType::NONE>(curr_in_cb_id, weight_cb_id)));
+                    PACK((pack_untilize_uninit(mul_cb_id)));
+                    mul_tiles_init(curr_in_cb_id, weight_cb_id);
+                }
 
                 tile_regs_acquire();
 
@@ -122,63 +125,97 @@ void MAIN {
                     num_pages_to_8--;
                 }
 
-                DPRINT << "hajde " << num_pages_to_8 << ENDL();
+                // DPRINT << "hajde " << num_pages_to_8 << ENDL();
+
+                uint32_t effective_tiles = (window_size_hw * tiles_to_reduce * 32 + 1023) / 1024;
+                // DPRINT << "effective_tiles: " << effective_tiles << ENDL();
+                // DPRINT << "tiles_to_reduce: " << tiles_to_reduce << ENDL();
 
                 for (uint32_t j = 0; j < num_pages_to_8; j++) {
-                    DeviceZoneScopedN("wait and mul tiles");
-                    cb_wait_front(curr_in_cb_id, tiles_to_reduce);
+                    // DeviceZoneScopedN("wait and mul tiles");
+                    {
+                        // DeviceZoneScopedN("wait");
+                        cb_wait_front(curr_in_cb_id, tiles_to_reduce);
 
-                    for (uint32_t i = 0; i < tiles_to_reduce; ++i) {
+                        // tensix_sync();
+                    }
+
+                    // UNPACK( DPRINT << "weight tile: " << ENDL() );
+                    // UNPACK( tt::compute::common::print_full_tile(weight_cb_id, 0) );
+
+                    // for (uint32_t i = 0; i < tiles_to_reduce; ++i) {
+                    //     UNPACK( DPRINT << "unpack tile: " << i << ENDL() );
+                    //     UNPACK( tt::compute::common::print_full_tile(curr_in_cb_id, i) );
+                    // }
+
+                    for (uint32_t i = 0; i < effective_tiles; ++i) {
+                        // DeviceZoneScopedN("mul tiles");
                         mul_tiles(curr_in_cb_id, weight_cb_id, i, 0, j * tiles_to_reduce + i);
                     }
                     cb_pop_front(curr_in_cb_id, tiles_to_reduce);
 
-                    sticks_left--;
                     curr_in_cb_id = (curr_in_cb_id == in_cb_id_0) ? in_cb_id_1 : in_cb_id_0;
-                    tensix_sync();
+                    // tensix_sync();
                 }
+                sticks_left -= num_pages_to_8;
+
+                dprint_tensix_dest_reg(0);
+                dprint_tensix_dest_reg(1);
+                dprint_tensix_dest_reg(2);
+                dprint_tensix_dest_reg(3);
+                dprint_tensix_dest_reg(4);
+                dprint_tensix_dest_reg(5);
+                dprint_tensix_dest_reg(6);
+                dprint_tensix_dest_reg(7);
 
                 tile_regs_commit();
 
                 tile_regs_wait();
-                cb_reserve_back(mul_cb_id, tiles_to_reduce * num_pages_to_8);
+                cb_reserve_back(mul_cb_id, effective_tiles * num_pages_to_8);
                 for (uint32_t j = 0; j < num_pages_to_8; j++) {
-                    DeviceZoneScopedN("pack tiles");
-                    for (uint32_t i = 0; i < tiles_to_reduce; ++i) {
+                    // PACK( DeviceZoneScopedN("pack tiles") );
+                    for (uint32_t i = 0; i < effective_tiles; ++i) {
                         pack_tile(j * tiles_to_reduce + i, mul_cb_id, i);
                     }
-                    tensix_sync();
+                    // tensix_sync();
                 }
-                cb_push_back(mul_cb_id, tiles_to_reduce * num_pages_to_8);  // TR2 zabo
+                cb_push_back(mul_cb_id, effective_tiles * num_pages_to_8);  // TR2 zabo
 
                 tile_regs_release();
 
-                UNPACK((llk_unpack_tilizeA_B_init<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
-                    mul_cb_id, curr_scalar_cb_id, tiles_to_reduce, num_faces_in_output_tile, face_r_dim, 1)));
-                MATH((llk_math_reduce_init<REDUCE_OP, REDUCE_DIM, MATH_FIDELITY>()));
-                PACK((llk_pack_untilize_init<tiles_to_reduce, tiles_to_reduce, false, false, TILE_C_DIM>(
-                    out_cb_id, 1, num_faces_in_output_tile)));
-                PACK((llk_init_packer_dest_offset_registers<true, false>()));
+                {
+                    // DeviceZoneScopedN("init 2");
+                    UNPACK((llk_unpack_tilizeA_B_init<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
+                        mul_cb_id, curr_scalar_cb_id, tiles_to_reduce, num_faces_in_output_tile, face_r_dim, 1)));
+                    MATH((llk_math_reduce_init<REDUCE_OP, REDUCE_DIM, MATH_FIDELITY>()));
+                    PACK((llk_pack_untilize_init<tiles_to_reduce, tiles_to_reduce, false, false, TILE_C_DIM>(
+                        out_cb_id, 1, num_faces_in_output_tile)));
+                    // PACK((llk_init_packer_dest_offset_registers<true, false>()));
+                }
 
                 tile_regs_acquire();
 
                 for (uint32_t j = 0; j < num_pages_to_8; j++) {
-                    DeviceZoneScopedN("unpack and reduce tiles");
-                    cb_wait_front(mul_cb_id, tiles_to_reduce);
+                    // DeviceZoneScopedN("unpack and reduce tiles");
+                    cb_wait_front(mul_cb_id, effective_tiles);
+                    // for (uint32_t i = 0; i < effective_tiles; ++i) {
+                    //     UNPACK( DPRINT << "mul tile: " << i << ENDL() );
+                    //     UNPACK( tt::compute::common::print_full_tile(mul_cb_id, i) );
+                    // }
                     unpack_tilizeA_B_block<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
                         mul_cb_id, curr_scalar_cb_id, tiles_to_reduce, 0, num_faces_in_input_tile, face_r_dim);
                     for (uint32_t math_tile_idx = 0; math_tile_idx < tiles_to_reduce; ++math_tile_idx) {
                         reduce_tile_math(j * tiles_to_reduce + math_tile_idx, num_faces_in_input_tile);
                     }
-                    cb_pop_front(mul_cb_id, tiles_to_reduce);
-                    tensix_sync();
+                    cb_pop_front(mul_cb_id, effective_tiles);
+                    // tensix_sync();
                 }
                 tile_regs_commit();
 
                 tile_regs_wait();
 
                 for (uint32_t i = 0; i < num_pages_to_8; i++) {
-                    DeviceZoneScopedN("pack output tiles");
+                    // DeviceZoneScopedN("pack output tiles");
                     cb_reserve_back(out_cb_id, tiles_to_reduce);
                     pack_untilize_dest<partial_iter_output_tiles>(
                         out_cb_id,
@@ -188,7 +225,7 @@ void MAIN {
                         num_faces_in_output_tile,
                         i * tiles_to_reduce); /* pack 1 row (1x16 or 1x32) */
                     cb_push_back(out_cb_id, tiles_to_reduce);
-                    tensix_sync();
+                    // tensix_sync();
                 }
 
                 tile_regs_release();
@@ -205,7 +242,7 @@ void MAIN {
         if constexpr (!one_scalar_per_core) {
             cb_pop_front(curr_scalar_cb_id, 1);
         }
-        tensix_sync();
+        // // tensix_sync();
     }
 }
 

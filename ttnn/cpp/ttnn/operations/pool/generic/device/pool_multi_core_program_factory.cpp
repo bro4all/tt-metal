@@ -5,6 +5,7 @@
 #include "tt-metalium/circular_buffer.hpp"
 #include "tt-metalium/circular_buffer_config.hpp"
 #include "tt-metalium/constants.hpp"
+#include "tt-metalium/tt_backend_api_types.hpp"
 #include "ttnn/operations/cb_utils.hpp"
 #include "ttnn/operations/pool/pool_utils.hpp"
 #include "tt-metalium/host_buffer.hpp"
@@ -362,7 +363,7 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
     }
 
     auto [weight_cb_id, cb_weight] = tt::tt_metal::create_cb(
-        next_cb_index++, program, all_cores, tt::constants::TILE_HW * params.nbytes, 1, params.data_format);
+        next_cb_index++, program, all_cores, tt::constants::TILE_HW * params.nbytes, 1, tt::DataFormat::Bfp8_b);
 
     auto [mul_cb_id, cb_mul] = tt::tt_metal::create_cb(
         next_cb_index++,
