@@ -137,7 +137,22 @@ XtensorAdapter<typename Expression::value_type> concat_ndim(
         return XtensorAdapter<DataType>(std::move(data), std::move(shape_vec));
     }
 
+    if (expressions.size() == 1) {
+        const auto& expr = expressions.front();
+        std::vector<DataType> data(expr.begin(), expr.end());
+        std::vector<size_t> shape_vec(expr.shape().cbegin(), expr.shape().cend());
+        return XtensorAdapter<DataType>(std::move(data), std::move(shape_vec));
+    }
+
     const auto& first_expr = expressions.front();
+    if (first_expr.dimension() == 0) {
+        TT_FATAL(expressions.size() == 1, "Cannot concatenate multiple scalars; expected a single scalar expression.");
+        std::vector<DataType> data(first_expr.begin(), first_expr.end());
+        std::vector<size_t> shape_vec(first_expr.shape().cbegin(), first_expr.shape().cend());
+        TT_FATAL(shape_vec.empty(), "Scalar input must have an empty shape.");
+        return XtensorAdapter<DataType>(std::move(data), std::move(shape_vec));
+    }
+
     const auto& expected_shape = first_expr.shape();
     const size_t num_dims = first_expr.dimension();
     for (const auto& expr : expressions) {
