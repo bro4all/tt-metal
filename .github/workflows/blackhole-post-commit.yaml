@@ -101,6 +101,12 @@ jobs:
               civ2_viommu_matrix=$(echo "$runner_label" | sed 's/"P150"/"P150b-viommu"/g')
             fi
           fi
+
+          # Inject "self-hosted" at the beginning of each matrix
+          matrix=$(echo "$matrix" | sed 's/\[/["self-hosted", /')
+          civ2_matrix=$(echo "$civ2_matrix" | sed 's/\[/["self-hosted", /')
+          civ2_viommu_matrix=$(echo "$civ2_viommu_matrix" | sed 's/\[/["self-hosted", /')
+
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
           echo "civ2-matrix=$civ2_matrix" >> $GITHUB_OUTPUT
           echo "civ2-viommu-matrix=$civ2_viommu_matrix" >> $GITHUB_OUTPUT
