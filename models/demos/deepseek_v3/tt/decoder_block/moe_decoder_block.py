@@ -13,6 +13,7 @@ from models.demos.deepseek_v3.tt.decoder_block.decoder_block_base import Decoder
 from models.demos.deepseek_v3.tt.mlp.shared_expert import SharedExpert
 from models.demos.deepseek_v3.tt.moe import MoE
 from models.demos.deepseek_v3.utils.config_dataclass import AllGatherAsyncConfig, ConvertToDPConfig
+from models.demos.deepseek_v3.utils.config_helpers import sub_state_dicts
 from models.demos.deepseek_v3.utils.run_config import (
     ModelDecodeConfig,
     ModelPrefillConfig,
@@ -38,15 +39,15 @@ class MoEDecoderBlock(DecoderBlockBase):
         ), "Number of state dicts must match the number of mesh device rows"
         return {
             "shared_expert": SharedExpert.convert_weights(
-                hf_config, state_dicts, output_path / "shared_expert", mesh_device
+                hf_config, sub_state_dicts(state_dicts, "shared_experts."), output_path / "shared_experts", mesh_device
             ),
             "moe": [
                 (
                     MoE.convert_weights(hf_config, state_dict, output_path / "moe", mesh_device)
-                    if state_dict is not None
+                    if state_dict is not None and i == 0
                     else None
                 )
-                for state_dict in state_dicts
+                for i, state_dict in enumerate(state_dicts)
             ],
         }
 
@@ -61,29 +62,27 @@ class MoEDecoderBlock(DecoderBlockBase):
         assert mesh_device.shape[0] == len(
             is_padding_layer
         ), "Number of mesh device rows must match the number of padding or non-padding layers"
-        return [
-            None
-            if is_padding
-            else {
-                "moe": MoE.prefill_model_config(hf_config, mesh_device),
-                "shared_expert": SharedExpert.prefill_model_config(hf_config, mesh_device),
-                "apply_dp": ConvertToDPConfig(
-                    mesh_device=mesh_device,
-                    dim=0,  # Batch dimension
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    cluster_axis=0,
-                ),
-                "revert_dp": AllGatherAsyncConfig(
-                    mesh_device=mesh_device,
-                    dim=0,  # Batch dimension
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    cluster_axis=0,
-                    topology=ttnn.Topology.Linear,
-                    num_links=3,
-                ),
-            }
-            for is_padding in is_padding_layer
-        ]
+        return {
+            "shared_expert": SharedExpert.prefill_model_config(hf_config, mesh_device),
+            "moe": [
+                None if is_padding else MoE.prefill_model_config(hf_config, mesh_device)
+                for is_padding in is_padding_layer
+            ],
+            "apply_dp": ConvertToDPConfig(
+                mesh_device=mesh_device,
+                dim=0,  # Batch dimension
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                cluster_axis=0,
+            ),
+            "revert_dp": AllGatherAsyncConfig(
+                mesh_device=mesh_device,
+                dim=0,  # Batch dimension
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                cluster_axis=0,
+                topology=ttnn.Topology.Linear,
+                num_links=3,
+            ),
+        }
 
     @classmethod
     @abstractmethod
@@ -96,29 +95,27 @@ class MoEDecoderBlock(DecoderBlockBase):
         assert mesh_device.shape[0] == len(
             is_padding_layer
         ), "Number of mesh device rows must match the number of padding or non-padding layers"
-        return [
-            None
-            if is_padding
-            else {
-                "moe": MoE.decode_model_config(hf_config, mesh_device),
-                "shared_expert": SharedExpert.decode_model_config(hf_config, mesh_device),
-                "apply_dp": ConvertToDPConfig(
-                    mesh_device=mesh_device,
-                    dim=0,  # Batch dimension
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    cluster_axis=0,
-                ),
-                "revert_dp": AllGatherAsyncConfig(
-                    mesh_device=mesh_device,
-                    dim=0,  # Batch dimension
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    cluster_axis=0,
-                    topology=ttnn.Topology.Linear,
-                    num_links=3,
-                ),
-            }
-            for is_padding in is_padding_layer
-        ]
+        return {
+            "shared_expert": SharedExpert.decode_model_config(hf_config, mesh_device),
+            "moe": [
+                None if is_padding else MoE.decode_model_config(hf_config, mesh_device)
+                for is_padding in is_padding_layer
+            ],
+            "apply_dp": ConvertToDPConfig(
+                mesh_device=mesh_device,
+                dim=0,  # Batch dimension
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                cluster_axis=0,
+            ),
+            "revert_dp": AllGatherAsyncConfig(
+                mesh_device=mesh_device,
+                dim=0,  # Batch dimension
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                cluster_axis=0,
+                topology=ttnn.Topology.Linear,
+                num_links=3,
+            ),
+        }
 
     @classmethod
     @abstractmethod
@@ -129,21 +126,16 @@ class MoEDecoderBlock(DecoderBlockBase):
         is_padding_layer: tuple[bool, ...],
         ccl: CCL1D,
     ) -> ModelState:
-        return [
-            None
-            if is_padding
-            else {
-                "moe": MoE.create_state(hf_config, mesh_device, ccl),
-                "shared_expert": SharedExpert.create_state(hf_config, mesh_device, ccl),
-                "apply_dp": {
-                    "global_semaphore": ccl.get_semaphore(0),
-                },
-                "revert_dp": {
-                    "multi_device_global_semaphore": ccl.get_semaphore(0),
-                },
-            }
-            for is_padding in is_padding_layer
-        ]
+        return {
+            "moe": [MoE.create_state(hf_config, mesh_device, ccl) for is_padding in is_padding_layer],
+            "shared_expert": SharedExpert.create_state(hf_config, mesh_device, ccl),
+            "apply_dp": {
+                "global_semaphore": ccl.get_semaphore(0),
+            },
+            "revert_dp": {
+                "multi_device_global_semaphore": ccl.get_semaphore(0),
+            },
+        }
 
     @classmethod
     def apply_data_parallelism(
