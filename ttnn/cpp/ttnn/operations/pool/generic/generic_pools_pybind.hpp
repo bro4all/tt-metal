@@ -10,6 +10,7 @@ namespace py = pybind11;
 
 namespace ttnn::operations::pool {
 
+// stay active
 void bind_max_pool2d_operation(py::module& module);
 void py_module(py::module& module);
 
