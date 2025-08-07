@@ -115,7 +115,11 @@ uint32_t CircularBuffer::page_size(uint32_t buffer_index) const {
     return page_size;
 }
 
-uint32_t CircularBuffer::num_pages(uint32_t buffer_index) const { return this->size() / this->page_size(buffer_index); }
+uint32_t CircularBuffer::num_pages(uint32_t buffer_index) const {
+    uint32_t num_pages = this->size() / this->page_size(buffer_index);
+    TT_FATAL(num_pages <= 0x7fff, "Number of pages {} is greater than 15 bits. Can cause wraparound in the CB.", num_pages);
+    
+    return this->size() / this->page_size(buffer_index); }
 
 DataFormat CircularBuffer::data_format(uint32_t buffer_index) const {
     if (not this->uses_buffer_index(buffer_index)) {
