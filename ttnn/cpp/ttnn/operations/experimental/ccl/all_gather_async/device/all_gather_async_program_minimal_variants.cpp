@@ -365,6 +365,11 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_async_minimal_default_h
                 uint32_t chunks_per_sync_val = chunks_per_sync.value_or(
                     std::max((input_tile_id_end - input_tile_id_start) / num_tiles_to_write_per_packet, (uint32_t)1));
 
+                uint32_t self_write_done_semaphore;
+                if (fuse_op) {
+                    self_write_done_semaphore = CreateSemaphore(program, {core}, 0);
+                }
+
                 // Reader
                 std::vector<uint32_t> sender_reader_compile_args = {
                     ring_index,                                        // my_chip_id
@@ -422,6 +427,7 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_async_minimal_default_h
                     } else {
                         fused_op_signaler_backward->push_all_gather_fused_op_rt_args(reader_rt_args, 1, 0, 0);
                     }
+                    reader_rt_args.push_back(self_write_done_semaphore);
                 }
 
                 tt::tt_metal::SetRuntimeArgs(program, worker_sender_reader_kernel_id, {core}, reader_rt_args);
@@ -506,6 +512,7 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_async_minimal_default_h
                 }
                 if (fuse_op) {
                     fused_op_signaler_sender_workers->push_all_gather_fused_op_rt_args(writer_rt_args, 1, 0, 1);
+                    writer_rt_args.push_back(self_write_done_semaphore);
                 }
                 tt::tt_metal::SetRuntimeArgs(program, worker_sender_writer_kernel_id, {core}, writer_rt_args);
             }
