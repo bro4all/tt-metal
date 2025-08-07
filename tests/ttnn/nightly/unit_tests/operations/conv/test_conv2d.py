@@ -4080,8 +4080,8 @@ def test_conv_sharded_rm_input(
         # (1, 32 * 8, 32 * 8, 16, 16, 32 * 8, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat16, ttnn.bfloat16, ttnn.bfloat16, "relu6", True, True), # + 30k
         # (1, 32 * 8 * 4, 32 * 8 * 4, 16, 16, 32 * 8 * 4, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat16, ttnn.bfloat16, ttnn.bfloat16, "relu6", True, True), # + 30k
         # (1, 320, 320, 80, 80, 320, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "silu", False, False), # +80k
-         (10, 576, 576, 14, 14, 576, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "relu6", True, True), # +40k
-        # (10, 960, 960, 7, 7, 960, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "relu6", True, True), # +19k
+        #  (10, 576, 576, 14, 14, 576, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "relu6", True, True), # +40k
+        (10, 960, 960, 7, 7, 960, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "relu6", True, True), # +19k
         # (10, 384, 384, 14, 14, 384, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.BLOCK_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "relu6", True, True), # + 30k
         # (1, 320, 320, 80, 80, 320, (3, 3), (1, 1), (1, 1), (1, 1), ttnn.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.bfloat8_b, ttnn.bfloat8_b, ttnn.bfloat8_b, "silu", False, False), # +80k
     ),
@@ -4094,9 +4094,7 @@ def test_groups_vs_pool2(device, torch_tensor_map, batch, input_channels, output
     conv_weight_shape = (output_channels, input_channels // groups, kernel[0], kernel[1])
     conv_bias_shape = (1, 1, 1, output_channels)
 
-    torch_input_tensor_nchw = randomize_torch_tensor(
-        torch_tensor_map, conv_input_shape,
-    )
+    torch_input_tensor_nchw = torch.randn(conv_input_shape, dtype=torch.bfloat16)
 
     torch_input_tensor = torch.permute(torch_input_tensor_nchw, (0, 2, 3, 1))
 

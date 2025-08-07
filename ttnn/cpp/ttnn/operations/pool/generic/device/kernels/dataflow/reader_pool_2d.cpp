@@ -88,6 +88,7 @@ ALWI void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_read_base
         in_nblocks_c > 1 && in_ntiles_c % MAX_TILES_PER_REDUCTION != 0 && (window_h * window_w) <= 16;
     constexpr uint32_t max_write_inc =
         wide_reduction ? MAX_BYTES_PER_REDUCTION : in_nbytes_c;  // in_cb is MAX_BYTES_PER_REDUCTION for wide reductions
+    constexpr uint32_t effective_tiles = (window_h * window_w * in_ntiles_c * 32 + 1023) / 1024;
 
     uint32_t in_l1_write_addr_base = get_write_ptr(in_cb_id);
     for (uint32_t c_i = 0; c_i < in_nblocks_c; c_i++) {
@@ -157,7 +158,7 @@ ALWI void read_window_with_top_left_index(uint32_t ind, uint32_t in_l1_read_base
         }
         if constexpr (!is_large_kernel) {
             noc_async_read_barrier();
-            cb_push_back(in_cb_id, in_ntiles_c);
+            cb_push_back(in_cb_id, effective_tiles);
             // DPRINT << "send:" << ENDL();
             // tt::data_movement::common::print_bf16_pages(get_read_ptr(in_cb_id), 128, 32);
         }
@@ -288,11 +289,9 @@ void kernel_main() {
 
     if constexpr (reader_id == 0) {
         fill_with_val(get_write_ptr(weight_cb_id), 32, 0x7F7F);
-
-        fill_with_val(get_write_ptr(weight_cb_id) + 64, 512, 0x4040);
-
+        fill_with_val(get_write_ptr(weight_cb_id) + 32 * 2, 240, 0x4040);
     } else {
-        // fill_with_val(get_write_ptr(weight_cb_id) + offset, block_size, 0x3f80);
+        fill_with_val(get_write_ptr(weight_cb_id) + 32 * 2 + 240 * 2, 272, 0x4040);
     }
 
     const uint32_t in_l1_read_base_addr = get_read_ptr(in_shard_cb_id);

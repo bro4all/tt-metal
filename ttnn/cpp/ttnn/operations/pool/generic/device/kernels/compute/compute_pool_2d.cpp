@@ -93,7 +93,7 @@ void MAIN {
     uint32_t curr_in_cb_id = in_cb_id_0;
 
     while (sticks_left) {
-        // DeviceZoneScopedN("iteration");
+        // DeviceZoneScopedN("compute iteration");
         const uint32_t curr_scalar_cb_id = in_scalar_cb_id_0;
         if constexpr (!one_scalar_per_core) {
             cb_wait_front(curr_scalar_cb_id, 1);
@@ -104,6 +104,7 @@ void MAIN {
             const bool first_c_block = c_i == 0;
             const uint32_t tiles_to_reduce =
                 tilize_reconfig ? (last_c_block ? partial_iter_output_tiles : max_tiles_per_iter) : max_tiles_per_iter;
+            const uint32_t effective_tiles = (window_size_hw * tiles_to_reduce * 32 + 1023) / 1024;
             if constexpr (tilize_reconfig) {
                 if (first_c_block || last_c_block) {
                     UNPACK((llk_unpack_tilizeA_B_init<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
@@ -126,17 +127,11 @@ void MAIN {
                     num_pages_to_8--;
                 }
 
-                // DPRINT << "hajde " << num_pages_to_8 << ENDL();
-
-                uint32_t effective_tiles = (window_size_hw * tiles_to_reduce * 32 + 1023) / 1024;
-                // DPRINT << "effective_tiles: " << effective_tiles << ENDL();
-                // DPRINT << "tiles_to_reduce: " << tiles_to_reduce << ENDL();
-
                 for (uint32_t j = 0; j < num_pages_to_8; j++) {
                     // DeviceZoneScopedN("wait and mul tiles");
                     {
                         // DeviceZoneScopedN("wait");
-                        cb_wait_front(curr_in_cb_id, tiles_to_reduce);
+                        cb_wait_front(curr_in_cb_id, effective_tiles);
 
                         // tensix_sync();
                     }
@@ -153,7 +148,7 @@ void MAIN {
                         // DeviceZoneScopedN("mul tiles");
                         mul_tiles(curr_in_cb_id, weight_cb_id, i, 0, j * tiles_to_reduce + i);
                     }
-                    cb_pop_front(curr_in_cb_id, tiles_to_reduce);
+                    cb_pop_front(curr_in_cb_id, effective_tiles);
 
                     curr_in_cb_id = (curr_in_cb_id == in_cb_id_0) ? in_cb_id_1 : in_cb_id_0;
                     // tensix_sync();
