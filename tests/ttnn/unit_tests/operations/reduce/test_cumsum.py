@@ -150,15 +150,11 @@ def test_cumsum(size, dim, dtypes, device):
 @pytest.mark.parametrize(
     "size_nchw, memory_config",
     [
-        (
-            [1, 256, 12, 40],
-            ttnn.L1_MEMORY_CONFIG,
-        ),
-        (
-            [1, 256, 24, 80],
-            ttnn.L1_MEMORY_CONFIG,
-        ),
+        # fmt: off
+        ([1, 256, 12,  40], ttnn.L1_MEMORY_CONFIG),
+        ([1, 256, 24,  80], ttnn.DRAM_MEMORY_CONFIG),
         ([1, 256, 48, 160], ttnn.DRAM_MEMORY_CONFIG),
+        # fmt: on
     ],
 )
 @pytest.mark.parametrize(
@@ -215,31 +211,6 @@ def test_integral_image(size_nchw, dtypes, memory_config, device):
     signpost(header="integral_image_end")
     passing, output = comp_pcc(expected_output_nchw, tt_output_nchw, 0.998)
     logger.info(f"Integral image test {passing} {output}")
-
-
-# def integral_matmul(images_nchw):
-#     N, C, H, W = images_nchw.shape
-#     row_mat = torch.tril(torch.ones((H, H), dtype=images_nchw.dtype, device=images_nchw.device)).unsqueeze(0)
-#     col_mat = torch.tril(torch.ones((W, W), dtype=images_nchw.dtype, device=images_nchw.device)).unsqueeze(0)
-#     x = images_nchw.reshape(-1, H, W)
-#     x = torch.matmul(row_mat, x)
-#     x = torch.matmul(x, col_mat)
-#     return x.reshape(N, C, H, W)
-
-# def integral_cumsum(features_nchw):
-#     return torch.cumsum(torch.cumsum(features_nchw, dim=-1), dim=-2)
-
-# @pytest.mark.parametrize("shape", [(1, 256, 24, 80)])
-# def test_integral_image_equivalence(shape):
-#     # Create random input tensor
-#     x = torch.randn(shape, dtype=torch.float32)
-
-#     # Compute integral images
-#     out_matmul = integral_matmul(x)
-#     out_cumsum = integral_cumsum(x)
-
-#     # Assert the two results are close within tolerance
-#     assert torch.allclose(out_matmul, out_cumsum, atol=1e-6), "Integral image outputs differ!"
 
 
 @pytest.mark.parametrize(
