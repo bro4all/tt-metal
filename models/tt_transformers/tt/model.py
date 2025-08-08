@@ -308,6 +308,10 @@ class Transformer(LightweightModule):
         )
         ttnn.copy(ttnn.to_layout(result, layout=ttnn.ROW_MAJOR_LAYOUT), current_pos)
 
+        ttnn.deallocate(current_pos_tiled)
+        ttnn.deallocate(predicate)
+        ttnn.deallocate(result)
+
         # We need to cast to int32 to avoid issues with cast from float to uint32
         rot_mat_idxs_signed = ttnn.typecast(ttnn.to_layout(rot_mat_idxs, layout=ttnn.TILE_LAYOUT), ttnn.int32)
         # Update only active positions (rot_mat_idxs_signed != 0)
@@ -319,6 +323,10 @@ class Transformer(LightweightModule):
         )
         result = ttnn.typecast(result, ttnn.uint32)
         ttnn.copy(ttnn.to_layout(result, layout=ttnn.ROW_MAJOR_LAYOUT), rot_mat_idxs)
+
+        ttnn.deallocate(rot_mat_idxs_signed)
+        ttnn.deallocate(predicate)
+        ttnn.deallocate(result)
 
         return current_pos, rot_mat_idxs
 
