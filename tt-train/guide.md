@@ -68,3 +68,15 @@ or
 ```
 tail -f nano_gpt_45.err
 ```
+
+##  Misc Steps
+```
+git clone -b asrinivasan/training https://github.com/tenstorrent/tt-metal
+cd tt-metal
+export TT_METAL_HOME=$(pwd)
+./build_metal.sh
+cd tt-train
+sudo apt update && sudo apt upgrade -y
+./build_all.sh
+sbatch 3tier.sh
+```
