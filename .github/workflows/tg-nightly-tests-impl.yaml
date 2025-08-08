@@ -47,7 +47,6 @@ jobs:
     runs-on:
       - arch-wormhole_b0
       - ${{ inputs.topology }}
-      - pipeline-functional
       - ${{ inputs.extra-tag }}
     container:
       image: ${{ inputs.docker-image || 'docker-image-unresolved!' }}
