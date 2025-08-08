@@ -43,6 +43,7 @@ def test_accuracy_sdxl(
     coco_statistics_path,
     evaluation_range,
 ):
+    os.environ["TT_MM_THROTTLE_PERF"] = "5"
     start_from, num_prompts = evaluation_range
 
     assert (
