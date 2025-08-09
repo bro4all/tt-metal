@@ -217,6 +217,9 @@ class Generator:
         ), "Currently only supporting greedy decoding (temperature=0) on device"
         argmax_on_device = sampling_params is not None and sampling_params.temperature == 0
 
+        # Debug prints disabled for performance-critical decode path
+        # If needed, gate with an environment variable or a logger at debug level
+
         B = tokens.shape[0]
         tokens = torch.chunk(tokens, self.data_parallel, 0)
         start_pos = torch.chunk(start_pos, self.data_parallel, 0)
@@ -239,6 +242,46 @@ class Generator:
             return to_host
         else:
             return tt_logits
+
+    def decode_forward_text_multi_step(
+        self,
+        tokens,
+        start_pos,
+        steps: int,
+        page_table=None,
+        kv_cache=None,
+        enable_trace: bool = True,
+        read_from_device: bool = True,
+        sampling_params: SamplingParams | None = None,
+    ):
+        """
+        Greedy-decodes multiple steps by repeatedly invoking decode_forward_text with device sampling.
+        Returns a tensor of shape [B, steps] of token ids when read_from_device=True.
+        """
+        assert steps >= 1
+        if sampling_params is None:
+            sampling_params = SamplingParams(temperature=0.0, top_k=-1, top_p=1.0)
+
+        outputs: list[torch.Tensor] = []
+        current_tokens = tokens
+        current_pos = start_pos.clone()
+        for _ in range(steps):
+            token_ids = self.decode_forward_text(
+                current_tokens,
+                current_pos,
+                page_table=page_table,
+                kv_cache=kv_cache,
+                enable_trace=enable_trace,
+                read_from_device=read_from_device,
+                sampling_params=sampling_params,
+            )  # [B]
+            if isinstance(token_ids, list):
+                token_ids = torch.as_tensor(token_ids, dtype=torch.long)
+            outputs.append(token_ids.unsqueeze(1))  # [B,1]
+            current_tokens = token_ids.unsqueeze(1)
+            current_pos = current_pos + 1
+
+        return torch.cat(outputs, dim=1) if read_from_device else outputs
 
     def _decode_forward_no_trace_text(
         self,
@@ -1277,6 +1320,116 @@ class Generator:
 
         if hasattr(super(Generator, self), "__del__"):
             super().__del__()
+
+    #    def verify_forward_text(self, input_tokens_tt, prompt_lens, page_table, kv_cache):
+    #        """
+    #        A forward pass similar to prefill, but it returns all logits for the verification step
+    #        in speculative decoding instead of just the last one.
+    #        """
+    #        # This assumes the model's forward pass can return all logits.
+    #        # The implementation would be very similar to prefill_forward_text but without slicing the last logit.
+    #        logits = self.model[0].forward(
+    #            input_tokens_tt,
+    #            page_table=page_table,
+    #            prompt_lens=prompt_lens,
+    #            kv_cache=kv_cache,
+    #        )
+    #        return logits # Returns full [B, S, V] tensor
+
+    def verify_forward_text(
+        self,
+        input_tokens_tt,
+        start_pos,
+        page_table,
+        kv_cache,
+        enable_trace=True,
+        read_from_device=True,
+        tokens_only: bool = False,
+    ):
+        """
+        Performs a batched forward pass for speculative decoding verification.
+        For each input in the batch, calls decode_forward_text and collects outputs.
+        If tokens_only is False: returns logits stacked as [B, S, V].
+        If tokens_only is True: returns greedy token ids stacked as [B].
+        """
+        # input_tokens_tt: [B, S]
+        # start_pos: [B, S] or [B] (positions for each token in sequence)
+        # page_table: [B, ...] or None
+        # kv_cache: model-specific
+
+        B, S = input_tokens_tt.shape
+        outputs_list = []
+
+        # Fast batched path: tokens_only with S==1 → one batched decode call
+        if tokens_only and S == 1:
+            # Only use batched path if model is compiled for this batch size
+            try:
+                max_bs = self.model[0].args.max_batch_size
+            except Exception:
+                max_bs = None
+            if max_bs is None or max_bs != B:
+                # Fallback to per-item path when batch size doesn't match compiled max batch size
+                pass
+            else:
+                sampling_params = SamplingParams(temperature=0.0, top_k=-1, top_p=1.0)
+                batched_tokens = self.decode_forward_text(
+                    input_tokens_tt,
+                    start_pos,
+                    page_table=page_table,
+                    kv_cache=kv_cache,
+                    enable_trace=enable_trace,
+                    read_from_device=read_from_device,
+                    sampling_params=sampling_params,
+                )  # [B]
+                return batched_tokens
+
+        for i in range(B):
+            # Select the i-th sequence and its positions
+            tokens_i = input_tokens_tt[i].unsqueeze(0)  # [1, S]
+            if start_pos is not None:
+                if start_pos.dim() == 2:
+                    start_pos_i = start_pos[i].unsqueeze(0)  # [1, S]
+                else:
+                    start_pos_i = start_pos[i].unsqueeze(0)  # [1]
+            else:
+                start_pos_i = None
+
+            page_table_i = page_table[i].unsqueeze(0) if page_table is not None else None
+            kv_cache_i = kv_cache  # kv_cache may be shared or per-batch; pass as is
+
+            # Call decode_forward_text for this sequence
+            sampling_params = SamplingParams(temperature=0.0, top_k=-1, top_p=1.0) if tokens_only else None
+            logits_i = self.decode_forward_text(
+                tokens_i,
+                start_pos_i,
+                page_table=page_table_i,
+                kv_cache=kv_cache_i,
+                enable_trace=enable_trace,
+                read_from_device=read_from_device,
+                sampling_params=sampling_params,
+            )  # [1, S, V] or [1, V] if S==1
+
+            if tokens_only:
+                # Ensure tokens tensor shape [1]
+                if isinstance(logits_i, list):
+                    token_tensor = torch.as_tensor(logits_i, dtype=torch.long).view(1)
+                else:
+                    token_tensor = logits_i.view(1)
+                outputs_list.append(token_tensor)
+            else:
+                # Ensure logits_i is [1, S, V]
+                if logits_i.dim() == 2:
+                    logits_i = logits_i.unsqueeze(1)  # [1, 1, V]
+                outputs_list.append(logits_i)
+
+        if tokens_only:
+            # [B]
+            batched_tokens = torch.cat(outputs_list, dim=0)
+            return batched_tokens
+        else:
+            # Stack along batch dimension: [B, S, V]
+            batched_logits = torch.cat(outputs_list, dim=0)
+            return batched_logits
 
 
 def create_submeshes(mesh_device, data_parallel):
