@@ -259,7 +259,20 @@ void cb_pop_front(int32_t operand, int32_t num_pages) {
 
 FORCE_INLINE
 void cb_pop_front_df(int32_t operand, int32_t num_pages) {
-     cb_pop_front(operand, num_pages);
+    volatile tt_reg_ptr uint32_t* pages_acked_ptr = get_cb_tiles_acked_ptr(operand);
+    pages_acked_ptr[0] += num_pages;
+
+    uint32_t num_words = num_pages * get_local_cb_interface(operand).fifo_page_size;
+
+    get_local_cb_interface(operand).fifo_rd_ptr += num_words;
+
+    // this will basically reset fifo_rd_ptr to fifo_addr -- no other wrap is legal
+    // consumer always reads from contiguous memory, it cannot wrap
+    ASSERT(get_local_cb_interface(operand).fifo_rd_ptr <= get_local_cb_interface(operand).fifo_limit);
+    if (get_local_cb_interface(operand).fifo_rd_ptr == get_local_cb_interface(operand).fifo_limit) {
+        // TODO: change this to fifo_wr_ptr
+        get_local_cb_interface(operand).fifo_rd_ptr -= get_local_cb_interface(operand).fifo_size;
+    }
 }
 
 #ifdef DATA_FORMATS_DEFINED
@@ -413,28 +426,6 @@ void cb_reserve_back(int32_t operand, int32_t num_pages) {
     WAYPOINT("CRBD");
 }
 
-FORCE_INLINE
-void cb_reserve_back_df(int32_t operand, int32_t num_pages) {
-    uint32_t pages_acked_ptr = (uint32_t)get_cb_tiles_acked_ptr(operand);
-
-    // while the producer (write-side interface) is waiting for space to free up "tiles_pushed" is not changing
-    // "tiles_pushed" is updated by the producer only when the tiles are pushed
-    uint32_t pages_received = get_cb_tiles_received_ptr(operand)[0];
-
-    int32_t free_space_pages;
-    WAYPOINT("CRBW");
-    do {
-        // uint16_t's here because Tensix updates the val at tiles_acked_ptr as uint16 in llk_pop_tiles
-        // TODO: I think we could have TRISC update tiles_acked_ptr, and we wouldn't need uint16 here
-        invalidate_l1_cache();
-        uint16_t pages_acked = (uint16_t)reg_read(pages_acked_ptr);
-        uint16_t free_space_pages_wrap =
-            get_local_cb_interface(operand).fifo_num_pages - (pages_received - pages_acked);
-        free_space_pages = (int32_t)free_space_pages_wrap;
-    } while (free_space_pages < num_pages);
-    WAYPOINT("CRBD");
-}
-
 // clang-format off
 /**
  * A non-blocking call that tells the caller if the specified number of pages are available in the specified circular
@@ -504,11 +495,6 @@ void cb_wait_front(int32_t operand, int32_t num_pages) {
         pages_received = ((uint16_t)reg_read(pages_received_ptr)) - pages_acked;
     } while (pages_received < num_pages);
     WAYPOINT("CWFD");
-}
-
-FORCE_INLINE
-void cb_wait_front_df(int32_t operand, int32_t num_pages) {
-	cb_wait_front(operand, num_pages);
 }
 
 // NOC transfers
