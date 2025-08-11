@@ -31,8 +31,6 @@
 #include "dataflow_api_addrgen.h"
 #include "tools/profiler/kernel_profiler.hpp"
 
-#include "debug/dprint.h"
-
 #if not defined(COMPILE_FOR_TRISC)
 
 // clang-format off
@@ -589,20 +587,15 @@ inline void noc_async_read(
         Read requests - use static VC
         Read responses - assigned VCs dynamically
     */
-    DPRINT << "Reads issued before " <<  noc_reads_num_issued[noc] << ENDL();
     RECORD_NOC_EVENT_WITH_ADDR(NocEventType::READ,src_noc_addr,size, -1);
-    DPRINT << NOC_MAX_BURST_SIZE << " " << max_page_size << " " << (uint32_t) noc_index << " " << (uint32_t) noc_mode << " " << size << ENDL();
     if constexpr (max_page_size <= NOC_MAX_BURST_SIZE) {
-	DPRINT << "IN IF " << ENDL();
         noc_async_read_one_packet(src_noc_addr, dst_local_l1_addr, size, noc);
     } else {
-	DPRINT << "IN ELSE " << ENDL();
         WAYPOINT("NARW");
         DEBUG_SANITIZE_NOC_READ_TRANSACTION(noc, src_noc_addr, dst_local_l1_addr, size);
         ncrisc_noc_fast_read_any_len<noc_mode>(noc, read_cmd_buf, src_noc_addr, dst_local_l1_addr, size);
         WAYPOINT("NARD");
     }
-    DPRINT << "Reads issued after " <<  noc_reads_num_issued[noc] << ENDL();
 }
 
 // TODO: write docs
