@@ -2046,3 +2046,27 @@ void noc_async_write_barrier_with_trid(uint32_t trid, uint8_t noc = noc_index) {
     invalidate_l1_cache();
     WAYPOINT("NWTD");
 }
+
+#if defined(COMPILE_FOR_TRISC)
+
+inline void cb_push_back_from_dram(
+    uint32_t dram_bank_id, uint32_t dram_addr, uint32_t cb_id, uint32_t num_tiles, uint32_t noc = noc_index) {
+    UNPACK(uint32_t tile_size_bytes = get_tile_size(cb_id);
+           uint64_t dram_noc_addr = get_noc_addr_from_bank_id<true>(dram_bank_id, dram_addr);
+           uint32_t l1_write_addr = get_write_ptr(cb_id);
+           noc_async_read(dram_noc_addr, l1_write_addr << 4, tile_size_bytes * num_tiles, noc);
+           noc_async_read_barrier(noc);
+           cb_push_back_df(cb_id, num_tiles););
+}
+
+inline void cb_pop_front_to_dram(
+    uint32_t dram_bank_id, uint32_t dram_addr, uint32_t cb_id, uint32_t num_tiles, uint32_t noc = noc_index) {
+    UNPACK(uint32_t tile_size_bytes = get_tile_size(cb_id);
+           uint64_t dram_noc_addr = get_noc_addr_from_bank_id<true>(dram_bank_id, dram_addr);
+           uint32_t l1_read_addr = get_read_ptr(cb_id);
+           noc_async_write(l1_read_addr << 4, dram_noc_addr, tile_size_bytes * num_tiles, noc);
+           noc_async_write_barrier(noc);
+           cb_pop_front_df(cb_id, num_tiles););
+}
+
+#endif
