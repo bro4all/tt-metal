@@ -27,12 +27,6 @@ uint32_t math_sync_tile_dst_index = 0;
 uint32_t gl_alu_format_spec_reg = 0;
 uint32_t op_info_offset = 0;
 
-uint32_t noc_reads_num_issued[NUM_NOCS];
-uint32_t noc_nonposted_writes_num_issued[NUM_NOCS];
-uint32_t noc_nonposted_writes_acked[NUM_NOCS];
-uint32_t noc_nonposted_atomics_acked[NUM_NOCS];
-uint32_t noc_posted_writes_num_issued[NUM_NOCS];
-
 namespace ckernel
 {
 volatile tt_reg_ptr uint * regfile = reinterpret_cast<volatile uint *>(REGFILE_BASE);
@@ -60,8 +54,7 @@ uint32_t kernel_launch(uint32_t kernel_base_addr) {
 
     if constexpr (NOC_MODE == DM_DEDICATED_NOC) {
 	// The initialization happens in local memory
-        noc_local_state_init(0);
-        noc_local_state_init(1);
+        noc_local_state_init(NOC_INDEX);
     }
 
 #if defined(UCK_CHLKC_UNPACK)
