@@ -11,8 +11,6 @@
 #include "stream_io_map.h"
 #include "tools/profiler/kernel_profiler.hpp"
 
-#include "debug/dprint.h"
-
 using namespace ckernel;
 
 // Wait for N tiles available in the incoming stream
@@ -40,7 +38,6 @@ inline void llk_pop_tiles(
         (volatile std::uint32_t*)((((volatile std::uint32_t)get_cb_tiles_acked_ptr(operand)) >> 2) & 0x3ffff);
     std::uint32_t num_words = num_tiles * get_local_cb_interface(operand).fifo_page_size;
 
-    DPRINT << " page size " << get_local_cb_interface(operand).fifo_page_size << " rd ptr " << get_local_cb_interface(input).fifo_rd_ptr << ENDL();
     get_local_cb_interface(input).tiles_acked += num_tiles;
     TT_SETDMAREG(0, get_local_cb_interface(input).tiles_acked, 0, LO_16(4));
     TTI_STALLWAIT(p_stall::STALL_THCON, p_stall::UNPACK);
