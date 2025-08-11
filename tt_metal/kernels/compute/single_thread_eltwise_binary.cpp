@@ -39,7 +39,8 @@ void MAIN {
     // Args for computing the results
     // How many blocks of tiles to work on
     uint32_t per_core_block_cnt = get_arg_val<uint32_t>(5);
-    // How many tiles per block
+
+    // How many tiles per block (1 or 2 due to limitations)
     uint32_t per_core_block_size = get_arg_val<uint32_t>(6);
 
     // For writing out the results
@@ -64,10 +65,10 @@ void MAIN {
 
     for (uint32_t block = 0; block < per_core_block_cnt; block += per_core_block_size) {
         cb_push_back_from_dram(src0_bank_id, src0_addr, cb_in0, per_core_block_size);
-        src0_addr += ublock_size_bytes_0;
+        src0_addr += ublock_size_bytes_0 * per_core_block_size;
 
         cb_push_back_from_dram(src1_bank_id, src1_addr, cb_in1, per_core_block_size);
-        src1_addr += ublock_size_bytes_1;
+        src1_addr += ublock_size_bytes_1 * per_core_block_size;
 
         // Perform the elementwise operation on the tiles in the block
         // and store them in the destination register
@@ -84,7 +85,7 @@ void MAIN {
         // Update the write pointer and counts for the output circular buffer.
         cb_push_back_st(cb_out0, per_core_block_size);
         cb_pop_front_to_dram(dst_bank_id, dst_addr, cb_out0, per_core_block_size);
-        dst_addr += ublock_size_bytes_dst;
+        dst_addr += ublock_size_bytes_dst * per_core_block_size;
 
         // Pop out the used input tiles
         cb_pop_front(cb_in0, per_core_block_size);
