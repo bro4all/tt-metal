@@ -30,7 +30,7 @@ namespace ckernel {
  * | ntiles    | The number of free tiles to wait for | uint32_t | It must be less or equal than the size of the CB (the total number of tiles that fit into the CB) | True     |
  */
  // clang-format on
-ALWI void cb_reserve_back_st(uint32_t cbid, uint32_t ntiles) {
+ALWI void cb_reserve_back_(uint32_t cbid, uint32_t ntiles) {
     UNPACK((llk_wait_for_free_tiles<false, false, false>(cbid, ntiles)));
 }
 
