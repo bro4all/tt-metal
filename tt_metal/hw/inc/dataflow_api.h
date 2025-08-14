@@ -733,7 +733,7 @@ void noc_async_write_one_packet(
  * | max_page_size (template argument) | Maximum size of a single transaction in bytes           | uint32_t | Any uint32_t number              | False    |
  */
 // clang-format on
-template <uint32_t max_page_size = NOC_MAX_BURST_SIZE + 1>
+template <uint32_t max_page_size = NOC_MAX_BURST_SIZE + 1, bool posted = false>
 inline void noc_async_write(uint32_t src_local_l1_addr, uint64_t dst_noc_addr, uint32_t size, uint8_t noc = noc_index) {
     RECORD_NOC_EVENT_WITH_ADDR(NocEventType::WRITE_, dst_noc_addr, size, NOC_UNICAST_WRITE_VC);
 
@@ -743,7 +743,17 @@ inline void noc_async_write(uint32_t src_local_l1_addr, uint64_t dst_noc_addr, u
         WAYPOINT("NAWW");
         DEBUG_SANITIZE_NOC_WRITE_TRANSACTION(noc, dst_noc_addr, src_local_l1_addr, size);
         ncrisc_noc_fast_write_any_len<noc_mode>(
-            noc, write_cmd_buf, src_local_l1_addr, dst_noc_addr, size, NOC_UNICAST_WRITE_VC, false, false, 1, true);
+            noc,
+            write_cmd_buf,
+            src_local_l1_addr,
+            dst_noc_addr,
+            size,
+            NOC_UNICAST_WRITE_VC,
+            false,
+            false,
+            1,
+            true,
+            posted);
         WAYPOINT("NAWD");
     }
 }

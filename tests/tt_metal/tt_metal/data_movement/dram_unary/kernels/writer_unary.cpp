@@ -19,6 +19,7 @@ void kernel_main() {
 
     constexpr bool dram = true;
     uint64_t dram_noc_addr = get_noc_addr_from_bank_id<dram>(dram_channel, dram_addr);
+    auto curr_l1_addr = local_l1_addr;
 
     uint32_t sem_addr = get_semaphore(sem_id);
     auto sem_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(sem_addr);

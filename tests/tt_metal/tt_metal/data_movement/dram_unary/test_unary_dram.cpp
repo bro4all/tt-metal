@@ -83,18 +83,14 @@ bool run_dm(IDevice* device, const DramConfig& test_config) {
         "tests/tt_metal/tt_metal/data_movement/dram_unary/kernels/reader_unary.cpp",
         test_config.core_coord,
         DataMovementConfig{
-            .processor = DataMovementProcessor::RISCV_1,
-            .noc = NOC::RISCV_1_default,
-            .compile_args = reader_compile_args});
+            .processor = DataMovementProcessor::RISCV_0, .noc = NOC::NOC_1, .compile_args = reader_compile_args});
 
     auto writer_kernel = CreateKernel(
         program,
         "tests/tt_metal/tt_metal/data_movement/dram_unary/kernels/writer_unary.cpp",
         test_config.core_coord,
         DataMovementConfig{
-            .processor = DataMovementProcessor::RISCV_0,
-            .noc = NOC::RISCV_0_default,
-            .compile_args = writer_compile_args});
+            .processor = DataMovementProcessor::RISCV_1, .noc = NOC::NOC_0, .compile_args = writer_compile_args});
 
     // Assign unique id
     log_info(tt::LogTest, "Running Test ID: {}, Run ID: {}", test_config.test_id, unit_tests::dm::runtime_host_id);
@@ -148,12 +144,19 @@ void directed_ideal_test(
     CoreCoord core_coord = {0, 0},
     uint32_t dram_channel = 0) {
     // Physical Constraints
-    auto [bytes_per_page, max_transmittable_bytes, max_transmittable_pages] =
-        tt::tt_metal::unit_tests::dm::compute_physical_constraints(arch_, devices_.at(0));
+    // auto [bytes_per_page, max_transmittable_bytes, max_transmittable_pages] =
+    //     tt::tt_metal::unit_tests::dm::compute_physical_constraints(arch_, devices_.at(0));
 
     // Parameters
-    uint32_t num_of_transactions = 1;
-    uint32_t pages_per_transaction = max_transmittable_pages;
+    uint32_t num_of_transactions = 64;
+    uint32_t pages_per_transaction = 1;
+    uint32_t bytes_per_page = 2048 * 8;
+    log_info(
+        tt::LogTest,
+        "Running test with num_of_transactions: {}, pages_per_transaction: {}",
+        num_of_transactions,
+        pages_per_transaction);
+    log_info(tt::LogTest, "Num of dram channels: {}", devices_.at(0)->num_dram_channels());
 
     // Test config
     unit_tests::dm::dram::DramConfig test_config = {
@@ -163,7 +166,7 @@ void directed_ideal_test(
         .bytes_per_page = bytes_per_page,
         .l1_data_format = DataFormat::Float16_b,
         .core_coord = core_coord,
-        .dram_channel = dram_channel};
+        .dram_channel = dram_channel + 1};
 
     // Run
     for (unsigned int id = 0; id < num_devices_; id++) {
