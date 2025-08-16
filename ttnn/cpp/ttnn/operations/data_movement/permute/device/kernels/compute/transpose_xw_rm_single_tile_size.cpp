@@ -11,6 +11,8 @@
 #include "compute_kernel_api/pack_untilize.h"
 
 #include "debug/dprint.h"
+#include "debug/dprint_pages.h"
+#include "debug/dprint_tensix.h"
 
 namespace NAMESPACE {
 
