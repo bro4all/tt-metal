@@ -285,6 +285,10 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
         all_cores,
         tt::tt_metal::WriterDataMovementConfig(writer_compile_time_args));
 
+    std::map<std::string, std::string> compute_defines;
+    compute_defines["UNOPS"] = std::to_string(std::getenv("UNOPS") ? std::stoi(std::getenv("UNOPS")) : 0);
+    compute_defines["MNOPS"] = std::to_string(std::getenv("MNOPS") ? std::stoi(std::getenv("MNOPS")) : 0);
+    compute_defines["PNOPS"] = std::to_string(std::getenv("PNOPS") ? std::stoi(std::getenv("PNOPS")) : 0);
     std::vector<uint32_t> compute_kernel_args = {x_block_size, w_block_size};
     bool fp32_dest_acc_en = cb_data_format_output == tt::DataFormat::Float32;
     auto compute_kernel_id = tt::tt_metal::CreateKernel(
@@ -292,9 +296,7 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
         "ttnn/cpp/ttnn/operations/data_movement/permute/device/kernels/compute/transpose_xw_rm_single_tile_size.cpp",
         all_cores,
         tt::tt_metal::ComputeConfig{
-            .fp32_dest_acc_en = fp32_dest_acc_en,
-            .compile_args = compute_kernel_args,
-        });
+            .fp32_dest_acc_en = fp32_dest_acc_en, .compile_args = compute_kernel_args, .defines = compute_defines});
 
     auto input_shape_view = input_tensor.logical_shape().view();
 

@@ -11,6 +11,30 @@
 #include "compute_kernel_api/pack_untilize.h"
 
 namespace NAMESPACE {
+
+template <const int n>
+inline void add_nops() {
+    for (int i = 0; i < n; i++) {
+        // asm("nop");
+        TTI_NOP;
+    }
+}
+
+template <const int U, const int M, const int P>
+inline void add_trisc_nops() {
+    if constexpr (U) {
+        UNPACK(add_nops<U>());
+    }
+
+    if constexpr (M) {
+        MATH(add_nops<M>());
+    }
+
+    if constexpr (P) {
+        PACK(add_nops<P>());
+    }
+}
+
 void MAIN {
     constexpr uint32_t x_block_size = get_compile_time_arg_val(0);
     constexpr uint32_t w_block_size = get_compile_time_arg_val(1);
@@ -39,6 +63,9 @@ void MAIN {
 
         // transpose input
         cb_wait_front(cb_tilize, 1);
+
+        add_trisc_nops<UNOPS, MNOPS, PNOPS>();
+
         transpose_wh_init_short(cb_tilize);
         pack_untilize_dest_init<1>(cb_out);
 

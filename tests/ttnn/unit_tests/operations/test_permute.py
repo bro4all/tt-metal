@@ -2,6 +2,8 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+
 import pytest
 
 import torch
@@ -12,7 +14,7 @@ import itertools
 from tests.ttnn.utils_for_testing import assert_with_pcc, assert_equal
 from models.utility_functions import is_blackhole, skip_for_wormhole_b0
 
-iterations = 10
+iterations = 1
 
 
 def random_torch_tensor(dtype, shape):
@@ -31,6 +33,7 @@ def random_torch_tensor(dtype, shape):
 
 # @pytest.mark.parametrize("shape", [(3, 65, 3, 3, 65)])
 # @pytest.mark.parametrize("shape", [(3, 33, 3, 3, 33)])
+# @pytest.mark.parametrize("shape", [(3, 33, 3, 2, 33)]) # Most efficient so far
 # @pytest.mark.parametrize("shape", [(3, 33, 2, 2, 33)])
 @pytest.mark.parametrize("shape", [(3, 33, 3, 2, 33)])
 @pytest.mark.parametrize("perm", [(4, 0, 3, 2, 1)])
@@ -45,18 +48,33 @@ def random_torch_tensor(dtype, shape):
 )
 def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
     torch.manual_seed(520)
-    for i in range(iterations):
-        input_a = random_torch_tensor(dtype, shape)
-        torch_output = torch.permute(input_a, perm)
+    input_a = random_torch_tensor(dtype, shape)
+    torch_output = torch.permute(input_a, perm)
 
-        tt_input = ttnn.from_torch(
-            input_a, device=device, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=dtype, memory_config=memory_config
-        )
+    my_it = 10
+    my_nop = 500
+    min_nop = 0
+    min_it = my_it
 
-        tt_output = ttnn.permute(tt_input, perm)
-        tt_output = ttnn.to_torch(tt_output)
+    for nops in range(my_nop):
+        os.environ["UNOPS"] = str(nops)
+        counter = 0
+        for i in range(my_it):
+            tt_input = ttnn.from_torch(
+                input_a, device=device, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=dtype, memory_config=memory_config
+            )
 
-        assert_equal(torch_output, tt_output)
+            tt_output = ttnn.permute(tt_input, perm)
+            tt_output = ttnn.to_torch(tt_output)
+
+            # assert_equal(torch_output, tt_output)
+            if torch.equal(torch_output, tt_output):
+                counter = counter + 1
+        print("Nops ", nops, " Counter ", counter)
+        if min_it > counter:
+            min_nop = nops
+            min_it = counter
+    print("Min nops ", min_nop, " Counter ", min_it)
 
 
 '''
