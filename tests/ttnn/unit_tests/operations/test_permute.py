@@ -35,7 +35,7 @@ def random_torch_tensor(dtype, shape):
 # @pytest.mark.parametrize("shape", [(3, 33, 3, 3, 33)])
 # @pytest.mark.parametrize("shape", [(3, 33, 3, 2, 33)]) # Most efficient so far
 # @pytest.mark.parametrize("shape", [(3, 33, 2, 2, 33)])
-@pytest.mark.parametrize("shape", [(3, 33, 2, 2, 33)])
+@pytest.mark.parametrize("shape", [(1, 33, 1, 1, 31)])
 @pytest.mark.parametrize("perm", [(4, 0, 3, 2, 1)])
 @pytest.mark.parametrize("memory_config", [ttnn.L1_MEMORY_CONFIG])
 @pytest.mark.parametrize(
@@ -48,23 +48,26 @@ def random_torch_tensor(dtype, shape):
 )
 def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
     device.disable_and_clear_program_cache()
-    nop_types_sentence = "UNOPS MNOPS PNOPS"
+    # nop_types_sentence = "UNOPS MNOPS PNOPS"
+    nop_types_sentence = "MNOPS"
     nop_types = nop_types_sentence.split()
 
     torch.manual_seed(520)
     input_a = random_torch_tensor(dtype, shape)
     torch_output = torch.permute(input_a, perm)
 
-    for is_risc in range(2):
+    # for is_risc in range(2):
+    for is_risc in range(1):
         print("RISCV ", is_risc)
         os.environ["RISCV"] = str(is_risc)
         for core_nop in nop_types:
             print("NOP TYPE ", core_nop)
-            my_it = 10
-            my_nop = 50
+            my_it = 1  # 10
+            my_nop = 100
             min_nop = 0
             min_it = my_it
-            for nops in range(my_nop):
+            # for nops in range(my_nop):
+            for nops in range(51, 55):
                 os.environ[core_nop] = str(nops)
                 counter = 0
                 for i in range(my_it):
@@ -78,7 +81,7 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
                     # assert_equal(torch_output, tt_output)
                     if torch.equal(torch_output, tt_output):
                         counter = counter + 1
-                # print("Nops ", nops, " Counter ", counter)
+                print("Nops ", nops, " Counter ", counter)
                 if min_it > counter:
                     min_nop = nops
                     min_it = counter
