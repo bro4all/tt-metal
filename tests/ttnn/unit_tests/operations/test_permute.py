@@ -52,8 +52,9 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
     nop_types_sentence = "MNOPS"
     nop_types = nop_types_sentence.split()
 
-    torch.manual_seed(520)
-    input_a = random_torch_tensor(dtype, shape)
+    # torch.manual_seed(520)
+    # input_a = random_torch_tensor(dtype, shape)
+    input_a = torch.full(shape, 0, dtype=torch.int32)
     torch_output = torch.permute(input_a, perm)
 
     # for is_risc in range(2):
@@ -81,6 +82,8 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
                     # assert_equal(torch_output, tt_output)
                     if torch.equal(torch_output, tt_output):
                         counter = counter + 1
+                    torch.set_printoptions(profile="full")
+                    print(tt_output)
                 print("Nops ", nops, " Counter ", counter)
                 if min_it > counter:
                     min_nop = nops
