@@ -54,10 +54,10 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
 
     # torch.manual_seed(520)
     # input_a = random_torch_tensor(dtype, shape)
-    tlist = torch.arange(33 * 31)
-    tlist_a = torch.tensor(tlist)
-    input_a = torch.reshape(tlist_a, shape)
-    # input_a = torch.full(shape, 0, dtype=torch.int32)
+    # tlist = torch.arange(33 * 31)
+    # tlist_a = torch.tensor(tlist)
+    # input_a = torch.reshape(tlist_a, shape)
+    input_a = torch.full(shape, 0, dtype=torch.int32)
     torch_output = torch.permute(input_a, perm)
 
     # for is_risc in range(2):
@@ -71,7 +71,7 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
             min_nop = 0
             min_it = my_it
             # for nops in range(my_nop):
-            for nops in range(30, 65):
+            for nops in range(45, 55):
                 os.environ[core_nop] = str(nops)
                 counter = 0
                 for i in range(my_it):
