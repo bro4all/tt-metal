@@ -71,7 +71,8 @@ def test_permute_5d_blocked(device, shape, perm, memory_config, dtype):
             min_nop = 0
             min_it = my_it
             # for nops in range(my_nop):
-            for nops in range(45, 55):
+            # failed with 47 nops in versim
+            for nops in range(47, 48):
                 os.environ[core_nop] = str(nops)
                 counter = 0
                 for i in range(my_it):
