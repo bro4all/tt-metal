@@ -24,7 +24,6 @@ on:
           - ASan
           - TSan
         default: "Release"
-<<<<<<< HEAD
       topology:
         required: false
         type: choice
@@ -40,34 +39,6 @@ on:
         required: false
         type: boolean
         default: true
-=======
-      extra-tag: # set in-service and topology-6u by default
-        description: "You can specify only one topology, 'topology-6u' or 'config-tg'. Default is config-tg."
-        required: true
-        type: string
-        default: "in-service,config-tg"
-      tg-quick:
-        required: false
-        type: boolean
-        default: false
-      tg-demo:
-        required: false
-        type: boolean
-        default: false
-      tg-unit:
-        required: false
-        type: boolean
-        default: false
-      tg-frequent:
-        required: false
-        type: boolean
-        default: false
-      tg-model-perf:
-        description: "tg-model-perf (Requires tracy build)"
-        required: false
-        type: boolean
-        default: false
->>>>>>> main
       tg-stress:
         required: false
         type: boolean
