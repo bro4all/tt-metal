@@ -136,11 +136,7 @@ jobs:
     needs: determine-tests
     with:
       build-type: ${{ inputs.build-type }}
-<<<<<<< HEAD
       tracy: false
-=======
-      tracy: ${{ needs.determine-tests.outputs.run-model-perf == 'true' }}
->>>>>>> main
       build-wheel: true
       version: 22.04
   tg-quick:
@@ -153,56 +149,6 @@ jobs:
       docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
       wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
       build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-<<<<<<< HEAD
-=======
-      topology-4u: ${{ needs.determine-tests.outputs.is-config-tg == 'true'}}
-      topology-6u: ${{ needs.determine-tests.outputs.is-config-tg == 'false'}}
-
-  tg-unit-tests:
-    if: ${{ needs.determine-tests.outputs.run-unit == 'true' }}
-    needs: [build-artifact, determine-tests]
-    secrets: inherit
-    uses: ./.github/workflows/tg-unit-tests-impl.yaml
-    with:
-      extra-tag: ${{ needs.determine-tests.outputs.clean-extra-tag }}
-      docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
-      wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
-      build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-      topology: ${{ needs.determine-tests.outputs.is-config-tg == 'true' && 'config-tg' || 'topology-6u' }}
-  tg-frequent-tests:
-    if: ${{ needs.determine-tests.outputs.run-frequent == 'true' }}
-    needs: [build-artifact, determine-tests]
-    secrets: inherit
-    uses: ./.github/workflows/tg-frequent-tests-impl.yaml
-    with:
-      extra-tag: ${{ needs.determine-tests.outputs.clean-extra-tag }}
-      docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
-      wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
-      build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-      topology: ${{ needs.determine-tests.outputs.is-config-tg == 'true' && 'config-tg' || 'topology-6u' }}
-  tg-demo-tests:
-    if: ${{ needs.determine-tests.outputs.run-demo == 'true' }}
-    needs: [build-artifact, determine-tests]
-    secrets: inherit
-    uses: ./.github/workflows/tg-demo-tests-impl.yaml
-    with:
-      extra-tag: ${{ needs.determine-tests.outputs.clean-extra-tag }}
-      docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
-      wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
-      build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-      topology: ${{ needs.determine-tests.outputs.is-config-tg == 'true' && 'config-tg' || 'topology-6u' }}
-  tg-model-perf-tests:
-    if: ${{ needs.determine-tests.outputs.run-model-perf == 'true' }}
-    needs: [build-artifact, determine-tests]
-    secrets: inherit
-    uses: ./.github/workflows/tg-model-perf-tests-impl.yaml
-    with:
-      extra-tag: ${{ needs.determine-tests.outputs.clean-extra-tag }}
-      docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
-      wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
-      build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-      topology: ${{ needs.determine-tests.outputs.is-config-tg == 'true' && 'config-tg' || 'topology-6u' }}
->>>>>>> main
   tg-stress-test:
     if: ${{ needs.determine-tests.outputs.run-stress == 'true' }}
     needs: [build-artifact, determine-tests]
@@ -213,8 +159,3 @@ jobs:
       docker-image: ${{ needs.build-artifact.outputs.dev-docker-image }}
       wheel-artifact-name: ${{ needs.build-artifact.outputs.wheel-artifact-name }}
       build-artifact-name: ${{ needs.build-artifact.outputs.build-artifact-name }}
-<<<<<<< HEAD
-=======
-      topology-4u: ${{ needs.determine-tests.outputs.is-config-tg == 'true'}}
-      topology-6u: ${{ needs.determine-tests.outputs.is-config-tg == 'false'}}
->>>>>>> main
