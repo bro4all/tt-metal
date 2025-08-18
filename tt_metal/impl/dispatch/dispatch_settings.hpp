@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <magic_enum/magic_enum.hpp>
 #include <umd/device/tt_core_coordinates.h>
 #include <array>
 #include <cstdint>
@@ -77,9 +76,6 @@ public:
     // Setter for dispatch_s_buffer_size and update dispatch_s_buffer_pages
     DispatchSettings& dispatch_s_buffer_size(uint32_t val);
 
-    // Setter for tunneling_buffer_size and update tunneling_buffer_pages
-    DispatchSettings& tunneling_buffer_size(uint32_t val);
-
     // Sets pointer values based on L1 alignment
     DispatchSettings& with_alignment(uint32_t l1_alignment);
 
@@ -114,7 +110,7 @@ public:
 
     static constexpr uint32_t DISPATCH_GO_SIGNAL_NOC_DATA_ENTRIES = 64;
 
-    // dispatch_s CB page size is 256 bytes. This should currently be enough to accomodate all commands that
+    // dispatch_s CB page size is 256 bytes. This should currently be enough to accommodate all commands that
     // are sent to it. Change as needed.
     static constexpr uint32_t DISPATCH_S_BUFFER_LOG_PAGE_SIZE = 8;
 
@@ -173,10 +169,6 @@ public:
     uint32_t dispatch_pages_;  // total buffer size / page size
     uint32_t dispatch_s_buffer_size_;
     uint32_t dispatch_s_buffer_pages_;  // dispatch_s_buffer_size_ / DISPATCH_S_BUFFER_LOG_PAGE_SIZE
-
-    // packet_mux, packet_demux, vc_eth_tunneler, vc_packet_router
-    uint32_t tunneling_buffer_size_;
-    uint32_t tunneling_buffer_pages_;  // tunneling_buffer_size_ / PREFETCH_D_BUFFER_LOG_PAGE_SIZE
 
     CoreType core_type_;  // Which core this settings is for
 };

@@ -78,8 +78,9 @@ target_sources(
         TYPE HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            api/tt-metalium/buffer_types.hpp
             api/tt-metalium/circular_buffer_constants.h
-            api/tt-metalium/fabric_host_interface.h
+            api/tt-metalium/constants.hpp
             api/tt-metalium/fabric_edm_packet_header.hpp
             api/tt-metalium/fabric_edm_types.hpp
             api/tt-metalium/edm_fabric_counters.hpp
@@ -92,6 +93,7 @@ target_sources(
             fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.yaml
             fabric/mesh_graph_descriptors/p150_x2_mesh_graph_descriptor.yaml
             fabric/mesh_graph_descriptors/p150_x4_mesh_graph_descriptor.yaml
+            fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.yaml
             fabric/mesh_graph_descriptors/single_galaxy_mesh_graph_descriptor.yaml
             fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.yaml
             fabric/mesh_graph_descriptors/tg_mesh_graph_descriptor.yaml
@@ -100,20 +102,15 @@ target_sources(
             impl/dispatch/kernels/cq_common.hpp
             impl/dispatch/kernels/cq_relay.hpp
             impl/dispatch/kernels/cq_helpers.hpp
-            impl/dispatch/kernels/packet_queue.hpp
-            impl/dispatch/kernels/packet_queue_ctrl.hpp
             ${COMPUTE_KERNEL_API}
             soc_descriptors/blackhole_140_arch.yaml
             soc_descriptors/wormhole_b0_80_arch.yaml
             tools/profiler/kernel_profiler.hpp
+            tools/profiler/fabric_event_profiler.hpp
             # Kernel sources
             impl/dispatch/kernels/cq_dispatch.cpp
             impl/dispatch/kernels/cq_dispatch_subordinate.cpp
             impl/dispatch/kernels/cq_prefetch.cpp
-            impl/dispatch/kernels/packet_demux.cpp
-            impl/dispatch/kernels/packet_mux.cpp
-            impl/dispatch/kernels/vc_eth_tunneler.cpp
-            impl/dispatch/kernels/vc_packet_router.cpp
             fabric/impl/kernels/edm_fabric/fabric_erisc_datamover.cpp
             fabric/impl/kernels/tt_fabric_mux.cpp
             kernels/compute/blank.cpp
@@ -133,7 +130,7 @@ target_link_libraries(
     tt_metal
     PUBLIC
         umd::device
-        magic_enum::magic_enum
+        enchantum::enchantum
         fmt::fmt-header-only
         TracyClient
         nlohmann_json::nlohmann_json
@@ -150,8 +147,6 @@ target_link_libraries(
         detail
         distributed
         fabric
-        HAL::wormhole
-        HAL::blackhole
         FlatBuffers::FlatBuffers
         TT::Metalium::Logging
 )
@@ -235,9 +230,8 @@ if(TT_INSTALL)
     install(
         TARGETS
             reflect
-            magic_enum
+            enchantum
             TracyClient
-            span
             small_vector
             tt-logger
         EXPORT Metalium

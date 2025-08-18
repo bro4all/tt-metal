@@ -4,7 +4,6 @@
 
 #include "tt_metal/impl/program/dispatch.hpp"
 
-#include <magic_enum/magic_enum.hpp>
 #include <mesh_workload.hpp>
 #include <stddef.h>
 #include <string.h>
@@ -17,7 +16,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -50,6 +48,7 @@
 #include "semaphore.hpp"
 #include <tt_stl/span.hpp>
 #include <tt_stl/strong_type.hpp>
+#include <tt_stl/overloaded.hpp>
 #include "dispatch/system_memory_manager.hpp"
 #include "tt_memory.h"
 #include "tt_metal/impl/dispatch/data_collection.hpp"
@@ -84,21 +83,6 @@ std::shared_ptr<Kernel> GetKernel(const ProgramImpl& program, KernelHandle kerne
 namespace program_dispatch {
 
 namespace {
-
-struct CommandConstants {
-    CoreType dispatch_core_type;
-    NOC noc_index;
-    uint32_t max_prefetch_command_size;
-    uint32_t packed_write_max_unicast_sub_cmds;
-};
-
-enum DispatchWriteOffsets {
-    DISPATCH_WRITE_OFFSET_ZERO = 0,
-    DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE = 1,
-    DISPATCH_WRITE_OFFSET_TENSIX_BINARY_L1_CONFIG_BASE = 2,
-    DISPATCH_WRITE_OFFSET_ETH_L1_CONFIG_BASE = 3,
-};
-
 CoreCoord get_sub_device_worker_origin(
     const tt::tt_metal::IDevice* device,
     tt::tt_metal::SubDeviceId sub_device_id,
@@ -110,19 +94,20 @@ CoreCoord get_sub_device_worker_origin(
     return grid.bounding_box().start_coord;
 }
 
-DispatchWriteOffsets get_dispatch_write_offset(CoreType core_type, bool prefer_zero = false) {
-    switch (core_type) {
-        case CoreType::ETH:
-        case CoreType::ACTIVE_ETH:
-        case CoreType::IDLE_ETH: return DispatchWriteOffsets::DISPATCH_WRITE_OFFSET_ETH_L1_CONFIG_BASE;
-        case CoreType::WORKER:
-            return prefer_zero ? DispatchWriteOffsets::DISPATCH_WRITE_OFFSET_ZERO
-                               : DispatchWriteOffsets::DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE;
-        default: TT_THROW("Invalid core type get_dispatch_write_offset {}", magic_enum::enum_name(core_type));
-    }
-}
-
+struct CommandConstants {
+    CoreType dispatch_core_type;
+    NOC noc_index;
+    uint32_t max_prefetch_command_size;
+    uint32_t packed_write_max_unicast_sub_cmds;
+};
 };  // namespace
+
+enum DispatchWriteOffsets {
+    DISPATCH_WRITE_OFFSET_ZERO = 0,
+    DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE = 1,
+    DISPATCH_WRITE_OFFSET_TENSIX_BINARY_L1_CONFIG_BASE = 2,
+    DISPATCH_WRITE_OFFSET_ETH_L1_CONFIG_BASE = 3,
+};
 
 uint32_t configure_rta_offsets_for_kernel_groups(
     uint32_t programmable_core_type_index,
@@ -310,53 +295,59 @@ uint32_t finalize_kernel_bins(
 
         for (int class_id = 0; class_id < DISPATCH_CLASS_MAX; class_id++) {
             auto& optional_id = kg->kernel_ids[class_id];
-            if (!optional_id.has_value()) {
-                continue;
-            }
-            const auto& kernel = kernels.at(optional_id.value());
-            const auto& kernel_impl = KernelImpl::from(*kernel);
-            const std::vector<const ll_api::memory*>& binaries = kernel_impl.binaries(
-                BuildEnvManager::get_instance().get_device_build_env(device->build_id()).build_key);
-            // TODO: this is really ugly, save me future-HAL!
-            if (programmable_core_type_index == hal.get_programmable_core_type_index(HalProgrammableCoreType::TENSIX)) {
-                const auto binary_packed_size = kernel_impl.get_binary_packed_size(device, 0);
+            if (optional_id) {
+                const auto& kernel = kernels.at(optional_id.value());
+                const auto& kernel_impl = KernelImpl::from(*kernel);
+                const std::vector<const ll_api::memory*>& binaries = kernel_impl.binaries(
+                    BuildEnvManager::get_instance().get_device_build_env(device->build_id()).build_key);
+                // TODO: this is really ugly, save me future-HAL!
+                if (programmable_core_type_index ==
+                    hal.get_programmable_core_type_index(HalProgrammableCoreType::TENSIX)) {
+                    uint32_t binary_packed_size = kernel_impl.get_binary_packed_size(device, 0);
 
-                if (class_id == DISPATCH_CLASS_TENSIX_COMPUTE) {
-                    constexpr uint32_t k_MaxMathProcessorsCount = 3;
-                    for (uint32_t proc_type_index = 0; proc_type_index < k_MaxMathProcessorsCount; proc_type_index++) {
-                        uint32_t binary_packed_size = kernel_impl.get_binary_packed_size(device, proc_type_index);
-                        kg->kernel_bin_sizes[2 + proc_type_index] = binary_packed_size;
-                        kg->kernel_text_offsets[2 + proc_type_index] = offset;
-                        kg->launch_msg.kernel_config.kernel_text_offset[2 + proc_type_index] = offset;
+                    if (class_id == DISPATCH_CLASS_TENSIX_DM0) {
+                        kg->kernel_bin_sizes[0] = binary_packed_size;
+                        kg->kernel_text_offsets[0] = offset;
+                        kg->launch_msg.kernel_config.kernel_text_offset[0] = offset;
                         offset += binary_packed_size;
                         offset = tt::align(offset, l1_alignment);
+                    } else if (class_id == DISPATCH_CLASS_TENSIX_DM1) {
+                        kg->kernel_bin_sizes[1] = binary_packed_size;
+                        kg->kernel_text_offsets[1] = offset;
+                        kg->launch_msg.kernel_config.kernel_text_offset[1] = offset;
+                        offset += binary_packed_size;
+                        offset = tt::align(offset, l1_alignment);
+
+                        uint32_t binary_text_size = kernel_impl.get_binary_text_size(device, 0);
+                        TT_ASSERT(binary_text_size >> 4 <= std::numeric_limits<uint16_t>::max());
+                        kg->launch_msg.kernel_config.ncrisc_kernel_size16 = (binary_text_size + 15) >> 4;
+                    } else {
+                        constexpr uint32_t max_math_processors_count = 3;
+                        for (uint32_t proc_type_index = 0; proc_type_index < max_math_processors_count;
+                             proc_type_index++) {
+                            uint32_t binary_packed_size = kernel_impl.get_binary_packed_size(device, proc_type_index);
+                            kg->kernel_bin_sizes[2 + proc_type_index] = binary_packed_size;
+                            kg->kernel_text_offsets[2 + proc_type_index] = offset;
+                            kg->launch_msg.kernel_config.kernel_text_offset[2 + proc_type_index] = offset;
+                            offset += binary_packed_size;
+                            offset = tt::align(offset, l1_alignment);
+                        }
                     }
                 } else {
+                    uint32_t binary_packed_size = kernel_impl.get_binary_packed_size(device, 0);
                     kg->kernel_bin_sizes[class_id] = binary_packed_size;
-                    kg->kernel_text_offsets[class_id] = offset;
-                    kg->launch_msg.kernel_config.kernel_text_offset[class_id] = offset;
-                    offset += binary_packed_size;
-                    offset = tt::align(offset, l1_alignment);
 
-                    // Provide text size for copying to NCRISC IRAM (not used in other processors)
-                    const auto binary_text_size = kernel_impl.get_binary_text_size(device, 0);
-                    TT_ASSERT(binary_text_size >> 4 <= std::numeric_limits<uint16_t>::max());
-                    kg->launch_msg.kernel_config.ncrisc_kernel_size16 = (binary_text_size + 15) >> 4;
-                }
-            } else {
-                // All other core types
-                const auto binary_packed_size = kernel_impl.get_binary_packed_size(device, 0);
-                kg->kernel_bin_sizes[class_id] = binary_packed_size;
-
-                if (hal.get_core_has_kernel_config_buffer(
-                        hal.get_programmable_core_type(programmable_core_type_index))) {
-                    kg->kernel_text_offsets[class_id] = offset;
-                    kg->launch_msg.kernel_config.kernel_text_offset[class_id] = offset;
-                    offset += binary_packed_size;
-                    offset = tt::align(offset, l1_alignment);
-                } else {
-                    kg->kernel_text_offsets[class_id] = binaries[0]->get_text_addr();
-                    kg->launch_msg.kernel_config.kernel_text_offset[class_id] = binaries[0]->get_text_addr();
+                    // No kernel config buffer on active eth yet
+                    if (hal.get_programmable_core_type(kg->programmable_core_type_index) ==
+                        HalProgrammableCoreType::IDLE_ETH) {
+                        kg->kernel_text_offsets[class_id] = offset;
+                        kg->launch_msg.kernel_config.kernel_text_offset[class_id] = offset;
+                        offset += binary_packed_size;
+                        offset = tt::align(offset, l1_alignment);
+                    } else {
+                        kg->kernel_text_offsets[class_id] = binaries[0]->get_text_addr();
+                        kg->launch_msg.kernel_config.kernel_text_offset[class_id] = binaries[0]->get_text_addr();
+                    }
                 }
             }
         }
@@ -441,15 +432,15 @@ void generate_runtime_args_cmds(
                 (no_stride ? 1 : num_packed_cmds) * tt::align(runtime_args_len * sizeof(uint32_t), l1_alignment);
             return dispatch_cmd_sizeB + aligned_runtime_data_sizeB;
         };
-    thread_local static auto get_runtime_args_data_offset =
-        [](uint32_t num_packed_cmds, uint32_t /*runtime_args_len*/, bool is_unicast) {
-            uint32_t l1_alignment = MetalContext::instance().hal().get_alignment(HalMemType::L1);
-            uint32_t sub_cmd_sizeB =
-                is_unicast ? sizeof(CQDispatchWritePackedUnicastSubCmd) : sizeof(CQDispatchWritePackedMulticastSubCmd);
-            uint32_t dispatch_cmd_sizeB =
-                sizeof(CQDispatchCmd) + tt::align(num_packed_cmds * sub_cmd_sizeB, l1_alignment);
-            return sizeof(CQPrefetchCmd) + dispatch_cmd_sizeB;
-        };
+    thread_local static auto get_runtime_args_data_offset = [](uint32_t num_packed_cmds,
+                                                               uint32_t /*runtime_args_len*/,
+                                                               bool is_unicast) {
+        uint32_t l1_alignment = MetalContext::instance().hal().get_alignment(HalMemType::L1);
+        uint32_t sub_cmd_sizeB =
+            is_unicast ? sizeof(CQDispatchWritePackedUnicastSubCmd) : sizeof(CQDispatchWritePackedMulticastSubCmd);
+        uint32_t dispatch_cmd_sizeB = sizeof(CQDispatchCmd) + tt::align(num_packed_cmds * sub_cmd_sizeB, l1_alignment);
+        return sizeof(CQPrefetchCmd) + dispatch_cmd_sizeB;
+    };
 
     constexpr bool unicast = std::is_same<PackedSubCmd, CQDispatchWritePackedUnicastSubCmd>::value;
 
@@ -705,7 +696,7 @@ BatchedTransfers assemble_runtime_args_commands(
                         transfers[std::make_pair(noc_xy_addr, transfer_info.num_dests)][crta_offset] =
                             std::vector<Transfer>{Transfer{
                                 .start = crta_offset,
-                                .data = tt::stl::Span(
+                                .data = tt::stl::Span<const uint8_t>(
                                     reinterpret_cast<uint8_t*>(kernel->common_runtime_args().data()), size),
                                 .cbs = {},
                                 .rta_data = &kernel->common_runtime_args_data()}};
@@ -772,7 +763,8 @@ BatchedTransfers assemble_runtime_args_commands(
                     unique_rt_args_data,
                     constants,
                     false,
-                    get_dispatch_write_offset(core_type));
+                    core_type == CoreType::WORKER ? DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE
+                                                  : DISPATCH_WRITE_OFFSET_ETH_L1_CONFIG_BASE);
                 for (auto& data_per_kernel : unique_rt_data_and_sizes) {
                     for (auto& data_and_sizes : data_per_kernel) {
                         RecordDispatchData(program.get_id(), DISPATCH_DATA_RTARGS, std::get<1>(data_and_sizes));
@@ -869,7 +861,8 @@ BatchedTransfers assemble_runtime_args_commands(
                                 common_rt_args_data,
                                 constants,
                                 true,
-                                get_dispatch_write_offset(core_type));
+                                core_type == CoreType::WORKER ? DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE
+                                                              : DISPATCH_WRITE_OFFSET_ETH_L1_CONFIG_BASE);
                             sub_cmds.clear();
                         },
                         common_sub_cmds);
@@ -940,7 +933,7 @@ public:
                     batched_transfers[std::make_pair(noc_xy_addr, dst_noc_info.num_dests)][start_addr] =
                         std::vector<Transfer>{
                             {{.start = start_addr,
-                              .data = tt::stl::Span(
+                              .data = tt::stl::Span<const uint8_t>(
                                   reinterpret_cast<const uint8_t*>(&semaphore_data.back()), sizeof(uint32_t))}}};
                 }
             } else if (semaphore.core_type() == CoreType::ETH) {
@@ -1065,7 +1058,7 @@ public:
 
                 batched_transfers[std::make_pair(noc_xy_addr, core_range.size())][start_addr] = std::vector<Transfer>{
                     {.start = start_addr,
-                     .data = tt::stl::Span(
+                     .data = tt::stl::Span<const uint8_t>(
                          reinterpret_cast<const uint8_t*>(cb_config_payload.data()), max_index * sizeof(uint32_t)),
                      .cbs = circular_buffers_on_corerange}};
                 i++;
@@ -1095,18 +1088,14 @@ public:
         const uint32_t max_paged_length_per_sub_cmd =
             max_length_per_sub_cmd / HostMemDeviceCommand::PROGRAM_PAGE_SIZE * HostMemDeviceCommand::PROGRAM_PAGE_SIZE;
         for (const auto& [cores, num_mcast_dests, kg_transfer_info] : program_transfer_info.kernel_bins) {
-            bool write_linear;
-            uint32_t noc_encoding;
-            std::visit(
-                [&](auto&& cores) {
-                    using T = std::decay_t<decltype(cores)>;
-                    if constexpr (std::is_same_v<T, CoreRange>) {
-                        noc_encoding = device->get_noc_multicast_encoding(constants.noc_index, cores);
-                        write_linear = false;
-                    } else {
-                        noc_encoding = device->get_noc_unicast_encoding(constants.noc_index, cores);
-                        write_linear = true;
-                    }
+            const auto [noc_encoding, write_linear] = std::visit(
+                ttsl::overloaded{
+                    [&](const CoreRange& cores) {
+                        return std::make_pair(device->get_noc_multicast_encoding(constants.noc_index, cores), false);
+                    },
+                    [&](const CoreCoord& cores) {
+                        return std::make_pair(device->get_noc_unicast_encoding(constants.noc_index, cores), true);
+                    },
                 },
                 cores);
             for (uint32_t kernel_idx = 0; kernel_idx < kg_transfer_info.dst_base_addrs.size(); kernel_idx++) {
@@ -1114,26 +1103,19 @@ public:
                     kernel_bins_unicast_cmds.emplace_back(2 * hal.get_alignment(HalMemType::HOST));
                     constexpr bool flush_prefetch = false;
                     calculator.add_dispatch_write_linear<flush_prefetch>(0);
-
-                    // Set write offset if required
-                    auto write_offset = DISPATCH_WRITE_OFFSET_ZERO;
-                    if (hal.get_core_has_kernel_config_buffer(
-                            get_programmable_core_type_from_riscv(kg_transfer_info.riscvs[kernel_idx]))) {
-                        write_offset = get_dispatch_write_offset(
-                            get_core_type_from_riscv(kg_transfer_info.riscvs[kernel_idx]), true);
-                    }
                     kernel_bins_unicast_cmds.back().add_dispatch_write_linear<flush_prefetch>(
                         num_mcast_dests,  // num_mcast_dests
                         noc_encoding,     // noc_xy_addr
                         kg_transfer_info.dst_base_addrs[kernel_idx],
-                        kg_transfer_info.lengths[kernel_idx],
-                        nullptr,
-                        write_offset);
+                        kg_transfer_info.lengths[kernel_idx]);
                     RecordDispatchData(
                         program.get_id(),
                         DISPATCH_DATA_BINARY,
                         kg_transfer_info.lengths[kernel_idx],
-                        kg_transfer_info.riscvs[kernel_idx]);
+                        HalProcessorIdentifier{
+                            kg_transfer_info.core_type,
+                            kg_transfer_info.processor_class,
+                            kg_transfer_info.processor_ids[kernel_idx]});
                     // Difference between prefetch total relayed pages and dispatch write linear
                     if (not using_prefetcher_cache) {
                         uint32_t relayed_bytes =
@@ -1208,7 +1190,13 @@ public:
                             .num_mcast_dests = (uint8_t)num_mcast_dests,
                             .flags = CQ_DISPATCH_CMD_PACKED_WRITE_LARGE_FLAG_UNLINK});
                         RecordDispatchData(
-                            program.get_id(), DISPATCH_DATA_BINARY, write_length, kg_transfer_info.riscvs[kernel_idx]);
+                            program.get_id(),
+                            DISPATCH_DATA_BINARY,
+                            write_length,
+                            HalProcessorIdentifier{
+                                kg_transfer_info.core_type,
+                                kg_transfer_info.processor_class,
+                                kg_transfer_info.processor_ids[kernel_idx]});
                         kernel_config_buffer_offset += write_length;
 
                         if (not using_prefetcher_cache) {
@@ -1647,9 +1635,7 @@ public:
         const ProgramTransferInfo& program_transfer_info,
         bool has_multicast_launch_cmds,
         bool has_unicast_launch_cmds) {
-        const auto& noc_data_start_idx =
-            device->noc_data_start_index(sub_device_id, has_multicast_launch_cmds, has_unicast_launch_cmds);
-        const auto& num_noc_mcast_txns = has_multicast_launch_cmds ? device->num_noc_mcast_txns(sub_device_id) : 0;
+        const auto& noc_data_start_idx = device->noc_data_start_index(sub_device_id, has_unicast_launch_cmds);
         const auto& num_noc_unicast_txns = has_unicast_launch_cmds ? device->num_noc_unicast_txns(sub_device_id) : 0;
         DispatcherSelect dispatcher_for_go_signal = DispatcherSelect::DISPATCH_MASTER;
         auto sub_device_index = *sub_device_id;
@@ -1682,7 +1668,7 @@ public:
             MetalContext::instance()
                 .dispatch_mem_map(constants.dispatch_core_type)
                 .get_dispatch_stream_index(sub_device_index),
-            num_noc_mcast_txns,
+            has_multicast_launch_cmds ? sub_device_index : CQ_DISPATCH_CMD_GO_NO_MULTICAST_OFFSET,
             num_noc_unicast_txns,
             noc_data_start_idx,
             dispatcher_for_go_signal);
@@ -1810,12 +1796,8 @@ void initialize_worker_config_buf_mgr(WorkerConfigBufferMgr& config_buffer_mgr, 
     // Subtract 1 from the number of entries, so the watcher can read information (e.g. fired asserts) from the
     // previous launch message.
     config_buffer_mgr.init_add_buffer(0, launch_msg_buffer_num_entries - 1);
-    if (hal.get_core_has_kernel_config_buffer(HalProgrammableCoreType::ACTIVE_ETH)) {
-        // Keeping it the same
-        config_buffer_mgr.init_add_buffer(0, 1);
-    } else {
-        config_buffer_mgr.init_add_buffer(0, 1);
-    }
+    // There's no ring buffer for active ethernet binaries, so keep track of them separately.
+    config_buffer_mgr.init_add_buffer(0, 1);
 }
 
 void reserve_space_in_kernel_config_buffer(
@@ -1857,7 +1839,7 @@ void reserve_space_in_kernel_config_buffer(
     }
 
     if (program_binary_status == ProgramBinaryStatus::InFlight) {
-        // Program binary not commited to DRAM. Sync on all workers before dispatching kernel
+        // Program binary not committed to DRAM. Sync on all workers before dispatching kernel
         // binaries for this program. This requires freeing the entire kernel config buffer.
         config_buffer_mgr.free(expected_num_workers_completed);
     } else {
@@ -2474,7 +2456,7 @@ void reset_worker_dispatch_state_on_device(
                 expected_num_workers_completed[i],
                 *reinterpret_cast<uint32_t*>(&reset_launch_message_read_ptr_go_signal),
                 MetalContext::instance().dispatch_mem_map().get_dispatch_stream_index(i),
-                device->num_noc_mcast_txns(sub_device_id),
+                device->has_noc_mcast_txns(sub_device_id) ? i : CQ_DISPATCH_CMD_GO_NO_MULTICAST_OFFSET,
                 device->num_noc_unicast_txns(sub_device_id),
                 device->noc_data_start_index(sub_device_id),
                 dispatcher_for_go_signal);
@@ -2537,8 +2519,9 @@ void set_go_signal_noc_data_on_dispatch(
     void* cmd_region = manager.issue_queue_reserve(cmd_sequence_sizeB, cq_id);
     HugepageDeviceCommand command_sequence(cmd_region, cmd_sequence_sizeB);
     DispatcherSelect dispatcher_for_go_signal =
-        MetalContext::instance().get_dispatch_query_manager().dispatch_s_enabled() ? DispatcherSelect::DISPATCH_SUBORDINATE
-                                                                                   : DispatcherSelect::DISPATCH_MASTER;
+        MetalContext::instance().get_dispatch_query_manager().dispatch_s_enabled()
+            ? DispatcherSelect::DISPATCH_SUBORDINATE
+            : DispatcherSelect::DISPATCH_MASTER;
     command_sequence.add_dispatch_set_go_signal_noc_data(go_signal_noc_data, dispatcher_for_go_signal);
     manager.issue_queue_push_back(cmd_sequence_sizeB, cq_id);
     manager.fetch_queue_reserve_back(cq_id);
@@ -2599,6 +2582,112 @@ ExpectedNumWorkerUpdates get_expected_num_workers_completed_updates(
 
     return ExpectedNumWorkerUpdates{
         .previous = previous_expected_num_workers_completed, .current = num_workers, .wrapped = wrapped};
+}
+
+static_assert(
+    DispatchSettings::DISPATCH_MESSAGE_ENTRIES + 1 == go_message_num_entries,
+    "Max number of dispatch message entries + 1 must be equal to the number of go message entries");
+
+void set_core_go_message_mapping_on_device(
+    IDevice* device,
+    const std::vector<std::pair<CoreRangeSet, uint32_t>>& core_go_message_mapping,
+    SystemMemoryManager& manager,
+    uint8_t cq_id) {
+    tt::tt_metal::DeviceCommandCalculator calculator;
+    uint32_t go_msg_size =
+        MetalContext::instance().hal().get_dev_size(HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG);
+    calculator.add_dispatch_write_linear<true, true>(go_msg_size);
+    calculator.add_dispatch_wait();
+
+    std::vector<std::pair<const void*, uint32_t>> data;
+    std::vector<CQDispatchWritePackedMulticastSubCmd> sub_cmds;
+    std::vector<std::pair<uint32_t, uint32_t>> payload;
+    auto dispatch_core_config = MetalContext::instance().get_dispatch_core_manager().get_dispatch_core_config();
+    auto dispatch_core_type = dispatch_core_config.get_core_type();
+    uint32_t noc_index = k_dispatch_downstream_noc;
+    uint32_t max_prefetch_command_size =
+        MetalContext::instance().dispatch_mem_map(dispatch_core_type).max_prefetch_command_size();
+    uint32_t packed_write_max_unicast_sub_cmds = get_packed_write_max_unicast_sub_cmds(device);
+
+    for (size_t i = 0; i < core_go_message_mapping.size(); ++i) {
+        auto& [core_range_set, go_msg_offset] = core_go_message_mapping[i];
+        for (auto& core_range : core_range_set.ranges()) {
+            CoreCoord virtual_start = device->virtual_core_from_logical_core(core_range.start_coord, CoreType::WORKER);
+            CoreCoord virtual_end = device->virtual_core_from_logical_core(core_range.end_coord, CoreType::WORKER);
+            CoreRange core_range_virtual{virtual_start, virtual_end};
+            sub_cmds.emplace_back(CQDispatchWritePackedMulticastSubCmd{
+                .noc_xy_addr = device->get_noc_multicast_encoding(noc_index, core_range_virtual),
+                .num_mcast_dests = (uint32_t)core_range.size()});
+            data.emplace_back(&go_msg_offset, sizeof(uint32_t));
+        }
+    }
+    if (sub_cmds.size() > 0) {
+        calculator.insert_write_packed_payloads<CQDispatchWritePackedMulticastSubCmd>(
+            sub_cmds.size(), sizeof(uint32_t), max_prefetch_command_size, packed_write_max_unicast_sub_cmds, payload);
+    }
+
+    calculator.add_dispatch_wait();
+
+    const uint32_t cmd_sequence_sizeB = calculator.write_offset_bytes();
+    void* cmd_region = manager.issue_queue_reserve(cmd_sequence_sizeB, cq_id);
+    HugepageDeviceCommand command_sequence(cmd_region, cmd_sequence_sizeB);
+
+    const auto& compute_grid_size = device->compute_with_storage_grid_size();
+
+    CoreRange all_core_range_logical{{0, 0}, {compute_grid_size.x - 1, compute_grid_size.y - 1}};
+    CoreCoord virtual_start =
+        device->virtual_core_from_logical_core(all_core_range_logical.start_coord, CoreType::WORKER);
+    CoreCoord virtual_end = device->virtual_core_from_logical_core(all_core_range_logical.end_coord, CoreType::WORKER);
+    CoreRange all_core_range_virtual{virtual_start, virtual_end};
+
+    // Write done to all indices on all tensix cores. All cores should already be idle at this point, but they may have
+    // garbage in the GO message entries they aren't using.
+    std::vector<uint32_t> go_data(go_message_num_entries, RUN_MSG_DONE);
+    TT_ASSERT(
+        MetalContext::instance().hal().get_dev_addr(HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG) %
+            MetalContext::instance().hal().get_alignment(HalMemType::L1) ==
+        0);
+    command_sequence.add_dispatch_write_linear<true, true>(
+        all_core_range_logical.size(),
+        device->get_noc_multicast_encoding(noc_index, all_core_range_virtual),
+        MetalContext::instance().hal().get_dev_addr(HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG),
+        go_msg_size,
+        go_data.data());
+    // Wait for previous writes before updating index.
+    command_sequence.add_dispatch_wait(CQ_DISPATCH_CMD_WAIT_FLAG_BARRIER, 0, 0, 0);
+
+    // Write go index to all cores.
+    if (sub_cmds.size() > 0) {
+        TT_ASSERT(
+            MetalContext::instance().hal().get_dev_addr(
+                HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG_INDEX) %
+                MetalContext::instance().hal().get_alignment(HalMemType::L1) ==
+            0);
+        uint32_t go_msg_index_addr = MetalContext::instance().hal().get_dev_addr(
+            HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG_INDEX);
+        uint32_t go_msg_index_size = MetalContext::instance().hal().get_dev_size(
+            HalProgrammableCoreType::TENSIX, HalL1MemAddrType::GO_MSG_INDEX);
+        uint32_t curr_sub_cmd_idx = 0;
+        for (const auto& [num_sub_cmds_in_cmd, payload_sizeB] : payload) {
+            command_sequence.add_dispatch_write_packed<CQDispatchWritePackedMulticastSubCmd>(
+                CQ_DISPATCH_CMD_PACKED_WRITE_FLAG_TYPE_GO_MSG_INDEX,
+                num_sub_cmds_in_cmd,
+                go_msg_index_addr,
+                go_msg_index_size,
+                payload_sizeB,
+                sub_cmds,
+                data,
+                packed_write_max_unicast_sub_cmds,
+                curr_sub_cmd_idx);
+            curr_sub_cmd_idx += num_sub_cmds_in_cmd;
+        }
+    }
+    // Ensure go message index is received before writing out data for the next program.
+    command_sequence.add_dispatch_wait(CQ_DISPATCH_CMD_WAIT_FLAG_BARRIER, 0, 0, 0);
+    TT_ASSERT(command_sequence.size_bytes() == command_sequence.write_offset_bytes());
+    manager.issue_queue_push_back(cmd_sequence_sizeB, cq_id);
+    manager.fetch_queue_reserve_back(cq_id);
+    manager.fetch_queue_write(cmd_sequence_sizeB, cq_id);
 }
 
 template uint32_t program_base_addr_on_core<ProgramImpl, IDevice*>(ProgramImpl&, IDevice*, HalProgrammableCoreType);

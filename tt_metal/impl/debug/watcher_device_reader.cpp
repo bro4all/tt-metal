@@ -57,7 +57,6 @@ const char* get_riscv_name(const CoreCoord& core, uint32_t type) {
         case DebugBrisc: return " brisc";
         case DebugNCrisc: return "ncrisc";
         case DebugErisc: return "erisc";
-        case DebugSubordinateErisc: return "subordinate_erisc";
         case DebugIErisc: return "ierisc";
         case DebugSubordinateIErisc: return "subordinate_ierisc";
         case DebugTrisc0: return "trisc0";
@@ -253,9 +252,6 @@ void WatcherDeviceReader::Dump(FILE* file) {
     paused_cores.clear();
     highest_stack_usage.clear();
     used_kernel_names.clear();
-
-    // Ensure any L1 writes are flushed
-    tt::tt_metal::MetalContext::instance().get_cluster().l1_barrier(device_id);
 
     // Ignore storage-only cores
     std::unordered_set<CoreCoord> storage_only_cores;
@@ -844,7 +840,16 @@ void WatcherDeviceReader::DumpLaunchMessage(CoreDescriptor& core, const mailboxe
             core.coord.str(),
             launch_msg->kernel_config.brisc_noc_id);
     }
-    DumpRunState(core, launch_msg, mbox_data->go_message.signal);
+    if (mbox_data->go_message_index < go_message_num_entries) {
+        DumpRunState(core, launch_msg, mbox_data->go_messages[mbox_data->go_message_index].signal);
+    } else {
+        LogRunningKernels(core, launch_msg);
+        TT_THROW(
+            "Watcher data corruption, unexpected go message index on core {}: {} (expected < {})",
+            core.coord.str(),
+            mbox_data->go_message_index,
+            go_message_num_entries);
+    }
 
     fprintf(f, "|");
     if (launch_msg->kernel_config.enables &
@@ -1049,10 +1054,6 @@ void WatcherDeviceReader::LogRunningKernels(CoreDescriptor& core, const launch_m
             tt::LogMetal,
             " erisc : {}",
             kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_ETH_DM0]]);
-        log_info(
-            tt::LogMetal,
-            " erisc : {}",
-            kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_ETH_DM0]]);
     } else {
         log_info(
             tt::LogMetal,
@@ -1074,7 +1075,6 @@ string WatcherDeviceReader::GetKernelName(CoreDescriptor& core, const launch_msg
         case DebugBrisc: return kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_TENSIX_DM0]];
         case DebugErisc:
         case DebugIErisc: return kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_ETH_DM0]];
-        case DebugSubordinateErisc:
         case DebugSubordinateIErisc:
             return kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_ETH_DM1]];
         case DebugNCrisc: return kernel_names[launch_msg->kernel_config.watcher_kernel_ids[DISPATCH_CLASS_TENSIX_DM1]];

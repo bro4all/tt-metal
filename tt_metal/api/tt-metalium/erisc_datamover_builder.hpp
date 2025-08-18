@@ -110,6 +110,7 @@ struct FabricEriscDatamoverConfig {
     static constexpr std::size_t MESH_LONG_AXIS_OPTIMIZATION_THRESHOLD = 8;
 
     static constexpr std::size_t dateline_sender_channel_skip_idx = 2;
+    static constexpr std::size_t dateline_sender_channel_skip_idx_2d = 4;
     static constexpr std::size_t dateline_receiver_channel_skip_idx = 0;
     static constexpr std::size_t dateline_upstream_sender_channel_skip_idx = 1;
     static constexpr std::size_t dateline_upstream_receiver_channel_skip_idx = 1;
@@ -144,6 +145,9 @@ struct FabricEriscDatamoverConfig {
     std::size_t termination_signal_address = 0;  // pad extra bytes to match old EDM so handshake logic will still work
     std::size_t edm_local_sync_address = 0;
     std::size_t edm_status_address = 0;
+
+    // Performance telemetry buffer address (16B aligned)
+    std::size_t perf_telemetry_buffer_address = 0;
 
     // Debug and Counters
     static constexpr std::size_t receiver_channel_counters_size_bytes =
@@ -341,7 +345,7 @@ public:
     static constexpr auto default_firmware_context_switch_type = FabricEriscDatamoverContextSwitchType::WAIT_FOR_IDLE;
     // payload only, no header
     static constexpr size_t default_packet_payload_size_bytes = tt::tile_size(tt::DataFormat::Bfp8_b) * 4;
-    static constexpr size_t default_mesh_packet_payload_size_bytes = tt::tile_size(tt::DataFormat::Bfp8_b) * 2;
+    static constexpr size_t default_mesh_packet_payload_size_bytes = tt::tile_size(tt::DataFormat::Bfp8_b) * 4;
 
     FabricEriscDatamoverBuilder(
         const CoreCoord& my_eth_core_logical,
@@ -392,6 +396,9 @@ public:
     [[nodiscard]] SenderWorkerAdapterSpec build_connection_to_fabric_channel(uint32_t vc);
 
     [[nodiscard]] std::vector<uint32_t> get_compile_time_args(uint32_t risc_id) const;
+
+    // Helper for `get_compile_time_args`
+    void get_telemetry_compile_time_args(std::vector<uint32_t>& ct_args) const;
 
     [[nodiscard]] std::vector<uint32_t> get_runtime_args() const;
 
