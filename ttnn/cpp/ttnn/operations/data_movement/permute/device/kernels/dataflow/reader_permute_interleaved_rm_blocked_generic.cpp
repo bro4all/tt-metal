@@ -25,6 +25,9 @@ void kernel_main() {
     constexpr uint32_t w_block_size_bytes = w_block_size * element_size;
 
     const uint32_t src_addr = get_arg_val<uint32_t>(0);
+
+    DPRINT << "Src address " << src_addr << ENDL();
+
     uint32_t start_block = get_arg_val<uint32_t>(1);
     uint32_t end_block = get_arg_val<uint32_t>(2);
 
@@ -104,6 +107,7 @@ void kernel_main() {
         cb_reserve_back(tt::CBIndex::c_0, x_block_size);
         uint32_t src_buffer_l1_addr = get_write_ptr(tt::CBIndex::c_0);
 
+        DPRINT << "NOC index " << (uint32_t)noc_index << ENDL();
         // We read in 'x_block_len' chunks along the X dimension
         uint32_t page_offset = 0;
         // Read along the X dimension
@@ -113,7 +117,8 @@ void kernel_main() {
             uint64_t src_noc_addr = get_noc_addr(addr_offset, s0, w_offset);
 
             // Perform async read of the current line (w_block_len elements) into L1
-            noc_async_read(src_noc_addr, src_buffer_l1_addr + page_offset, w_read_size_bytes);
+            noc_async_read<NOC_MAX_BURST_SIZE + 1, true, 0>(
+                src_noc_addr, src_buffer_l1_addr + page_offset, w_read_size_bytes);
 
             // Wait for all async reads to complete before proceeding
             noc_async_read_barrier();

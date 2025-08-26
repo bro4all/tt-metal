@@ -132,7 +132,7 @@ inline __attribute__((always_inline)) bool noc_cmd_buf_ready(uint32_t noc, uint3
     return (NOC_CMD_BUF_READ_REG(noc, cmd_buf, NOC_CMD_CTRL) == NOC_CTRL_STATUS_READY);
 }
 
-template <uint8_t noc_mode = DM_DEDICATED_NOC>
+template <uint8_t noc_mode = DM_DEDICATED_NOC, uint32_t breakp = 0>
 inline __attribute__((always_inline)) void ncrisc_noc_fast_read(
     uint32_t noc,
     uint32_t cmd_buf,
@@ -148,13 +148,25 @@ inline __attribute__((always_inline)) void ncrisc_noc_fast_read(
             NOC_CMD_CPY | NOC_CMD_RD | NOC_CMD_RESP_MARKED | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(read_req_vc);
         NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_CTRL, noc_rd_cmd_field);
     }
+    if constexpr (breakp == 1) {
+        asm volatile("ebreak");
+    }
     NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_RET_ADDR_LO, dest_addr);
     NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_TARG_ADDR_LO, (uint32_t)src_addr);
     NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_TARG_ADDR_COORDINATE, (uint32_t)(src_addr >> NOC_ADDR_COORD_SHIFT));
     NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_AT_LEN_BE, len_bytes);
+
+    if constexpr (breakp == 2) {
+        asm volatile("ebreak");
+    }
+
     NOC_CMD_BUF_WRITE_REG(noc, cmd_buf, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
     if constexpr (noc_mode == DM_DEDICATED_NOC) {
         noc_reads_num_issued[noc] += 1;
+    }
+
+    if constexpr (breakp == 3) {
+        asm volatile("ebreak");
     }
 }
 
@@ -474,7 +486,7 @@ inline __attribute__((always_inline)) void ncrisc_noc_full_sync() {
     }
 }
 
-template <uint8_t noc_mode = DM_DEDICATED_NOC>
+template <uint8_t noc_mode = DM_DEDICATED_NOC, uint32_t breakp = 0>
 inline __attribute__((always_inline)) void ncrisc_noc_fast_read_any_len(
     uint32_t noc,
     uint32_t cmd_buf,
@@ -490,7 +502,7 @@ inline __attribute__((always_inline)) void ncrisc_noc_fast_read_any_len(
         len_bytes -= NOC_MAX_BURST_SIZE;
     }
     while (!noc_cmd_buf_ready(noc, cmd_buf));
-    ncrisc_noc_fast_read<noc_mode>(noc, cmd_buf, src_addr, dest_addr, len_bytes, read_req_vc);
+    ncrisc_noc_fast_read<noc_mode, breakp>(noc, cmd_buf, src_addr, dest_addr, len_bytes, read_req_vc);
 }
 
 template <uint8_t noc_mode = DM_DEDICATED_NOC, bool use_trid = false, bool one_packet = false>
