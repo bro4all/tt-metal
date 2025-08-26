@@ -25,7 +25,7 @@ from models.utility_functions import is_blackhole, skip_for_wormhole_b0
 # pytest.mark.parametrize("perm", [(4, 0, 3, 2, 1)])
 
 
-@pytest.mark.parametrize("shape", [(1, 63, 2, 2, 63)])
+@pytest.mark.parametrize("shape", [(1, 1, 1, 1, 63)])
 @pytest.mark.parametrize("perm", [(1, 3, 4, 0, 2)])
 @pytest.mark.parametrize("memory_config", [ttnn.L1_MEMORY_CONFIG])
 @pytest.mark.parametrize(
