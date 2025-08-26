@@ -258,7 +258,6 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
         all_cores,
         tt::tt_metal::ReaderDataMovementConfig(reader_compile_time_args));
 
-    /*
     std::vector<uint32_t> writer_compile_time_args = {
         N,
         output_cb_page_size,
@@ -287,7 +286,6 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
         "writer_permute_interleaved_rm_blocked_generic.cpp",
         all_cores,
         tt::tt_metal::WriterDataMovementConfig(writer_compile_time_args));
-    */
 
     std::map<std::string, std::string> compute_defines;
     compute_defines["UNOPS"] = std::to_string(std::getenv("UNOPS") ? std::stoi(std::getenv("UNOPS")) : 0);
@@ -312,14 +310,12 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
     reader_runtime_args.insert(reader_runtime_args.end(), input_shape_view.begin(), input_shape_view.end());
     reader_runtime_args.insert(reader_runtime_args.end(), input_strides.begin(), input_strides.end());
 
-    /*
     std::vector<uint32_t> writer_runtime_args = {dst_buffer->address(), 0, 0};
 
     writer_runtime_args.insert(writer_runtime_args.end(), input_shape_view.begin(), input_shape_view.end());
     writer_runtime_args.insert(
         writer_runtime_args.end(), operation_attributes.dims.begin(), operation_attributes.dims.end());
     writer_runtime_args.insert(writer_runtime_args.end(), output_strides.begin(), output_strides.end());
-    */
     auto cores = corerange_to_cores(all_cores, std::nullopt);
 
     std::vector<uint32_t> compute_runtime_args = {dst_buffer->address(), 0, 0};
@@ -339,10 +335,10 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
         uint32_t end_block = start_block + num_blocks_per_core;
         reader_runtime_args[1] = start_block;
         reader_runtime_args[2] = end_block;
-        // writer_runtime_args[1] = start_block;
-        // writer_runtime_args[2] = end_block;
+        writer_runtime_args[1] = start_block;
+        writer_runtime_args[2] = end_block;
         tt::tt_metal::SetRuntimeArgs(program, unary_reader_kernel_id, core, reader_runtime_args);
-        // tt::tt_metal::SetRuntimeArgs(program, unary_writer_kernel_id, core, writer_runtime_args);
+        tt::tt_metal::SetRuntimeArgs(program, unary_writer_kernel_id, core, writer_runtime_args);
         tt::tt_metal::SetRuntimeArgs(program, compute_kernel_id, core, compute_runtime_args);
         start_block = end_block;
     }
@@ -350,7 +346,7 @@ PermuteDeviceOperation::MultiCoreBlockedGeneric::create(
     return {
         std::move(program),
         {.unary_reader_kernel_id = unary_reader_kernel_id,
-         // .unary_writer_kernel_id = unary_writer_kernel_id,
+         .unary_writer_kernel_id = unary_writer_kernel_id,
          .compute_kernel_id = compute_kernel_id,
          .core_range = all_cores}};
 }
