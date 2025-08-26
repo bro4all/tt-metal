@@ -8,6 +8,7 @@
 #include "ttnn/operations/data_movement/common/kernels/common.hpp"
 
 void kernel_main() {
+    /*
     // Compile-time constants
     constexpr uint32_t N = get_compile_time_arg_val(0);
     constexpr uint32_t output_cb_page_size = get_compile_time_arg_val(1);
@@ -165,4 +166,5 @@ void kernel_main() {
         // Pop the block from the input circular buffer, as we're done writing it
         cb_pop_front(cb_id_in, w_block_size);
     }
+    */
 }

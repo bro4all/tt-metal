@@ -29,22 +29,6 @@ inline void add_nops() {
     }
 }
 
-template <const int U, const int M, const int P, const int R>
-inline void add_trisc_nops() {
-    DPRINT << "U " << (uint32_t)U << " M " << (uint32_t)M << " P " << (uint32_t)P << ENDL();
-    if constexpr (U) {
-        UNPACK((add_nops<U, R>()));
-    }
-
-    if constexpr (M) {
-        MATH((add_nops<M, R>()));
-    }
-
-    if constexpr (P) {
-        PACK((add_nops<P, R>()));
-    }
-}
-
 void MAIN {
     constexpr uint32_t x_block_size = get_compile_time_arg_val(0);
     constexpr uint32_t w_block_size = get_compile_time_arg_val(1);
@@ -58,42 +42,53 @@ void MAIN {
     unary_op_init_common(cb_in, cb_out);
 
     for (uint32_t n = 0; n < num_blocks; n++) {
-        add_trisc_nops<UNOPS, MNOPS, PNOPS, RISCV>();
         // tilize input via unpack and then pack
-        tilize_init(cb_in, 1, cb_tilize);
+        // tilize_init(cb_in, 1, cb_tilize);
 
         cb_wait_front(cb_in, x_block_size);
-        cb_reserve_back(cb_tilize, 1);
 
-        tilize_block(cb_in, 1, cb_tilize);  // tilize and pack into cb_tilize
+        UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); DPRINT << "X block size " << x_block_size << ENDL();
+               tt::compute::common::print_full_tile(cb_in, 0, true));
 
-        cb_push_back(cb_tilize, 1);
         cb_pop_front(cb_in, x_block_size);
 
-        tilize_uninit(cb_in, cb_tilize);
+        /*
+            cb_reserve_back(cb_tilize, 1);
 
-        // transpose input
-        cb_wait_front(cb_tilize, 1);
+            tilize_block(cb_in, 1, cb_tilize);  // tilize and pack into cb_tilize
 
-        transpose_wh_init_short(cb_tilize);
-        pack_untilize_dest_init<1>(cb_out);
+            cb_push_back(cb_tilize, 1);
 
-        tile_regs_acquire();
-        transpose_wh_tile(cb_tilize, 0, 0);  // transpose call
-        tile_regs_commit();
+            UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); tt::compute::common::print_full_tile(cb_tilize, 0, true));
 
-        // pack and untilize
-        cb_reserve_back(cb_out, w_block_size);
+            cb_pop_front(cb_in, x_block_size);
 
-        tile_regs_wait();
-        pack_untilize_dest<1>(cb_out);  // pack call
-        tile_regs_release();
+            tilize_uninit(cb_in, cb_tilize);
 
-        cb_push_back(cb_out, w_block_size);
 
-        pack_untilize_uninit(cb_out);
+            // transpose input
+            cb_wait_front(cb_tilize, 1);
 
-        cb_pop_front(cb_tilize, 1);
+            transpose_wh_init_short(cb_tilize);
+            pack_untilize_dest_init<1>(cb_out);
+
+            tile_regs_acquire();
+            transpose_wh_tile(cb_tilize, 0, 0);  // transpose call
+            tile_regs_commit();
+
+            // pack and untilize
+            cb_reserve_back(cb_out, w_block_size);
+
+            tile_regs_wait();
+            pack_untilize_dest<1>(cb_out);  // pack call
+            tile_regs_release();
+
+            cb_push_back(cb_out, w_block_size);
+
+            pack_untilize_uninit(cb_out);
+
+            cb_pop_front(cb_tilize, 1);
+        */
     }
 }
 }  // namespace NAMESPACE
