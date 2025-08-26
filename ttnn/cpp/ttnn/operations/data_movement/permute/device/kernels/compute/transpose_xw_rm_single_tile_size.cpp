@@ -63,37 +63,45 @@ void MAIN {
         tilize_init(cb_in, 1, cb_tilize);
 
         cb_wait_front(cb_in, x_block_size);
+
+        UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); DPRINT << "X block size " << x_block_size << ENDL();
+               tt::compute::common::print_full_tile(cb_in, 0, true));
+
         cb_reserve_back(cb_tilize, 1);
 
         tilize_block(cb_in, 1, cb_tilize);  // tilize and pack into cb_tilize
 
         cb_push_back(cb_tilize, 1);
+
+        UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); tt::compute::common::print_full_tile(cb_tilize, 0, true));
+
         cb_pop_front(cb_in, x_block_size);
 
         tilize_uninit(cb_in, cb_tilize);
+        /*
+                // transpose input
+                cb_wait_front(cb_tilize, 1);
 
-        // transpose input
-        cb_wait_front(cb_tilize, 1);
+                transpose_wh_init_short(cb_tilize);
+                pack_untilize_dest_init<1>(cb_out);
 
-        transpose_wh_init_short(cb_tilize);
-        pack_untilize_dest_init<1>(cb_out);
+                tile_regs_acquire();
+                transpose_wh_tile(cb_tilize, 0, 0);  // transpose call
+                tile_regs_commit();
 
-        tile_regs_acquire();
-        transpose_wh_tile(cb_tilize, 0, 0);  // transpose call
-        tile_regs_commit();
+                // pack and untilize
+                cb_reserve_back(cb_out, w_block_size);
 
-        // pack and untilize
-        cb_reserve_back(cb_out, w_block_size);
+                tile_regs_wait();
+                pack_untilize_dest<1>(cb_out);  // pack call
+                tile_regs_release();
 
-        tile_regs_wait();
-        pack_untilize_dest<1>(cb_out);  // pack call
-        tile_regs_release();
+                cb_push_back(cb_out, w_block_size);
 
-        cb_push_back(cb_out, w_block_size);
+                pack_untilize_uninit(cb_out);
 
-        pack_untilize_uninit(cb_out);
-
-        cb_pop_front(cb_tilize, 1);
+                cb_pop_front(cb_tilize, 1);
+        */
     }
 }
 }  // namespace NAMESPACE
