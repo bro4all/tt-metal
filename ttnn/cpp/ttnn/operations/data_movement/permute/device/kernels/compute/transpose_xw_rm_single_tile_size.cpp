@@ -24,8 +24,8 @@ void MAIN {
     for (uint32_t n = 0; n < num_blocks; n++) {
         cb_wait_front(cb_in, x_block_size);
 
-        UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); DPRINT << "X block size " << x_block_size << ENDL();
-               tt::compute::common::print_full_tile(cb_in, 0, true));
+        // UNPACK(DPRINT << "BLOCK NUM " << n << ENDL(); DPRINT << "X block size " << x_block_size << ENDL();
+        //        tt::compute::common::print_full_tile(cb_in, 0, true));
 
         cb_pop_front(cb_in, x_block_size);
     }

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <algorithm>
 #include "dataflow_api.h"
+#include "debug/dprint_pages.h"
 
 void kernel_main() {
     constexpr uint32_t N = get_compile_time_arg_val(0);
@@ -114,11 +115,18 @@ void kernel_main() {
             // Perform async read of the current line (w_block_len elements) into L1
             noc_async_read(src_noc_addr, src_buffer_l1_addr + page_offset, w_read_size_bytes);
 
+            // Wait for all async reads to complete before proceeding
+            noc_async_read_barrier();
+
+            tt::data_movement::common::print_bf16_pages(
+                src_buffer_l1_addr + page_offset, /*div by 2 for bfp16*/ w_read_size_bytes / 2, 1);
+
             // Advance output pointer by one page size for next row
             page_offset += input_cb_page_size;
         }
-        // Wait for all async reads to complete before proceeding
-        noc_async_read_barrier();
+
+        DPRINT << ENDL();
+
         // Push the filled block into the circular buffer
         cb_push_back(tt::CBIndex::c_0, x_block_size);
     }
