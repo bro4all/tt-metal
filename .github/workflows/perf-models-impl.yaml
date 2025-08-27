@@ -116,7 +116,7 @@ jobs:
         run: sudo cpupower frequency-set -g performance
       - name: Run performance regressions
         timeout-minutes: ${{ matrix.model-group.timeout }}
-        run_args: |
+        run: |
           if [[ "${{ matrix.model-group.name }}" == "other" ]]; then
             echo "No environment variable engineering needed for other models"
           elif [[ "${{ matrix.model-group.name }}" == "tt_transformers" ]]; then
