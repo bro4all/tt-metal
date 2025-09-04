@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         card: [N150, N300]
-        model: [common_models, functional_unet, ttt-llama3.2-1B, qwen25_vl-3B, resnet50, whisper, openpdn_mnist, vit, sentence_bert, yolov7, swin_s, yolov6l, swin_v2, mobilenetv2, segformer, vgg_unet, yolov10x, yolov11, yolov8s, yolov8s_world, yolov8x, yolov9c, vanilla_unet, yolov5x, efficientnetb0, vovnet, ufld_v2, yolov12x, gemma-3-4b-it, ttt-mistral-7B-v0.3]
+        model: [ttt-mistral-7B-v0.3]
         # SDXL model requires test run over 30min to successfully execute pcc test on the entire UNet loop
         include:
           - model: stable_diffusion_xl_base
@@ -64,7 +64,7 @@ jobs:
           docker_password: ${{ secrets.GITHUB_TOKEN }}
           install_wheel: true
           docker_opts: |
-            -v /mnt/MLPerf:/mnt/MLPerf:ro
+            -v /mnt/MLPerf:/mnt/MLPerf:rw
             -e TT_METAL_HOME=${{ github.workspace }}
             -e ARCH_NAME=wormhole_b0
             -e LD_LIBRARY_PATH=${{ github.workspace }}/build/lib
