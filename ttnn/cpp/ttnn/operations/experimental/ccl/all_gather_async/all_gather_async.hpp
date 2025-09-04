@@ -16,7 +16,7 @@ struct ExecuteAllGatherAsync {
         const ttnn::Tensor& input_tensor,
         const int32_t dim,
         const std::optional<ttnn::Tensor>& persistent_output_buffer = std::nullopt,
-        const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphore = std::nullopt,
+        const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphores = std::nullopt,
         bool do_sync = false,
         const uint32_t num_links = 1,
         const std::optional<ttnn::MemoryConfig>& memory_config = std::nullopt,

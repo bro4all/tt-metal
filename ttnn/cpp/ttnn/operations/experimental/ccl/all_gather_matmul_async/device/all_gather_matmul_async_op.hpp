@@ -123,7 +123,7 @@ std::vector<Tensor> all_gather_matmul_async(
     const int32_t dim,
     CoreCoord all_gather_core_grid_offset,
     const std::optional<ttnn::Tensor>& persistent_output_buffer = std::nullopt,
-    const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphore = std::nullopt,
+    const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphores = std::nullopt,
     bool do_sync = false,
     const std::optional<const Tensor>& bias = std::nullopt,
     uint32_t num_links = 1,
