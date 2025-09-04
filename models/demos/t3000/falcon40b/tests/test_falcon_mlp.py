@@ -8,7 +8,6 @@ from loguru import logger
 
 import ttnn
 from models.demos.t3000.falcon40b.reference.hf_modeling_falcon import FalconForCausalLM
-from models.demos.t3000.falcon40b.tt.falcon_ccl import TT_CCL
 from models.demos.t3000.falcon40b.tt.falcon_mlp import TtFalconMLP
 from models.demos.t3000.falcon40b.tt.model_config import get_model_config
 from models.utility_functions import skip_for_grayskull
@@ -63,10 +62,8 @@ def run_test_FalconMLP_inference(
     pytorch_FalconMLP_model = PytorchFalconMLPModel(hugging_face_reference_model, layer_num)
     pytorch_out = pytorch_FalconMLP_model(mlp_input)
     # TT hardware execution -------------------------------------------------------------
-    tt_ccl = TT_CCL(mesh_device)
     tt_FalconMLP_model = TtFalconMLP(
         mesh_device,
-        tt_ccl,
         state_dict,
         base_url,
         layer_num,

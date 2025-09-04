@@ -116,7 +116,6 @@ class TtFalconAttention:
     def __init__(
         self,
         mesh_device,
-        tt_ccl,
         state_dict,
         base_url,
         layer_num,
@@ -134,7 +133,6 @@ class TtFalconAttention:
         self.max_position_embeddings = max_position_embeddings
         self.num_devices = mesh_device.get_num_devices()
         self.mesh_device = mesh_device
-        self.tt_ccl = tt_ccl
         self.state_dict = state_dict
         self.model_config = model_config
         self.num_heads_per_device = self.num_heads // mesh_device.get_num_devices()
@@ -367,12 +365,10 @@ class TtFalconAttention:
         )
         attn_output = ttnn.experimental.all_gather_async(
             attn_output,
-            persistent_output_buffer=None,
             dim=3,
-            multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+            do_sync=True,
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
-            barrier_semaphore=self.tt_ccl.get_and_cycle_barrier_semaphore_handle(),
             chunks_per_sync=10,
             num_workers_per_link=2,
             num_buffers_per_channel=2,
@@ -594,12 +590,10 @@ class TtFalconAttention:
         )
         attn_output = ttnn.experimental.all_gather_async(
             attn_output,
-            persistent_output_buffer=None,
             dim=3,
-            multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+            do_sync=True,
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
-            barrier_semaphore=self.tt_ccl.get_and_cycle_barrier_semaphore_handle(),
             chunks_per_sync=10,
             num_workers_per_link=2,
             num_buffers_per_channel=2,

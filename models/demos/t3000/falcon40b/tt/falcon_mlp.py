@@ -15,7 +15,6 @@ class TtFalconMLP:
     def __init__(
         self,
         mesh_device,
-        tt_ccl,
         state_dict,
         base_url,
         layer_num,
@@ -27,7 +26,6 @@ class TtFalconMLP:
 
         self.state_dict = state_dict
         self.mesh_device = mesh_device
-        self.tt_ccl = tt_ccl
         self.hidden_size = hidden_size
         self.model_config = model_config
 
@@ -121,10 +119,8 @@ class TtFalconMLP:
 
         hidden_states = ttnn.experimental.reduce_scatter_minimal_async(
             hidden_states,
-            persistent_output_buffers=None,
             dim=3,
-            multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
-            barrier_semaphore=self.tt_ccl.get_and_cycle_barrier_semaphore_handle(),
+            do_sync=True,
             num_links=1,
             memory_config=self.model_config["DEFAULT_MEMCFG"],
             chunks_per_sync=10,
@@ -194,10 +190,8 @@ class TtFalconMLP:
 
         return ttnn.experimental.reduce_scatter_minimal_async(
             self.output,
-            persistent_output_buffers=None,
             dim=3,
-            multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
-            barrier_semaphore=self.tt_ccl.get_and_cycle_barrier_semaphore_handle(),
+            do_sync=True,
             num_links=1,
             memory_config=self.model_config["DEFAULT_MEMCFG"],
             chunks_per_sync=10,
