@@ -228,10 +228,9 @@ namespace ccl {
 std::vector<ttnn::Tensor> matmul_reduce_scatter_async(
     const ttnn::Tensor& input_tensor,
     const ttnn::Tensor& weight_tensor,
-    ttnn::Tensor& persistent_intermediate_buffer,
-    ttnn::Tensor& persistent_output_buffer,
-    const uint32_t dim,
+    const int32_t dim,
     const CoreCoord reduce_scatter_core_grid_offset,
+    const std::optional<std::vector<ttnn::Tensor>>& persistent_output_buffers,
     const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphore,
     bool do_sync,
     const std::optional<const Tensor>& bias,
@@ -261,6 +260,9 @@ std::vector<ttnn::Tensor> matmul_reduce_scatter_async(
         optional_input_tensors.push_back(std::nullopt);
     }
 
+    int32_t rank = input_tensor.logical_shape().rank();
+    int32_t scatter_dim = (dim < 0) ? rank + dim : dim;
+
     /* Matmul setup */
     bool user_run_batched = ttnn::operations::matmul::detail::is_input_batched(weight_tensor.logical_shape());
     std::optional<CoreCoord> user_core_coord;
@@ -287,8 +289,10 @@ std::vector<ttnn::Tensor> matmul_reduce_scatter_async(
             /*output_tile=*/std::nullopt,
             /*global_cb=*/std::nullopt});
 
-    std::vector<std::optional<Tensor>> optional_output_tensors = {
-        persistent_intermediate_buffer, persistent_output_buffer};
+    std::vector<std::optional<Tensor>> optional_output_tensors =
+        persistent_output_buffers.has_value()
+            ? std::vector<std::optional<Tensor>>(persistent_output_buffers->begin(), persistent_output_buffers->end())
+            : std::vector<std::optional<Tensor>>{std::nullopt, std::nullopt};
 
     // Create the matmul output tensor used as input (activation) to the reduce scatter
     ttnn::Tensor matmul_out_tensor =
@@ -297,7 +301,7 @@ std::vector<ttnn::Tensor> matmul_reduce_scatter_async(
     /* ReduceScatter setup */
     ttnn::ReduceScatterMinimalAsync reduce_scatter_minimal_async_struct = ttnn::ReduceScatterMinimalAsync(
         devices,
-        dim,
+        scatter_dim,
         num_links,
         devices.size(),
         memory_config_rs.value_or(input_tensor.memory_config()),

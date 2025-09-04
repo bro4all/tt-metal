@@ -119,10 +119,9 @@ namespace ccl {
 std::vector<Tensor> matmul_reduce_scatter_async(
     const Tensor& input_tensor,
     const Tensor& weight_tensor,
-    Tensor& persistent_intermediate_buffer,
-    Tensor& persistent_output_buffer,
-    uint32_t dim,
-    CoreCoord reduce_scatter_core_grid_offset,
+    const int32_t dim,
+    const CoreCoord reduce_scatter_core_grid_offset,
+    const std::optional<std::vector<ttnn::Tensor>>& persistent_output_buffers = std::nullopt,
     const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphore = std::nullopt,
     bool do_sync = false,
     const std::optional<const Tensor>& bias = std::nullopt,
