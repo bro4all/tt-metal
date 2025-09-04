@@ -245,9 +245,9 @@ namespace ccl {
 std::vector<ttnn::Tensor> all_gather_matmul_async(
     const ttnn::Tensor& input_tensor,
     const ttnn::Tensor& weight_tensor,
-    const std::optional<ttnn::Tensor>& persistent_output_buffer,
-    const uint32_t dim,
+    const int32_t dim,
     const CoreCoord all_gather_core_grid_offset,
+    const std::optional<ttnn::Tensor>& persistent_output_buffer,
     const std::optional<std::vector<GlobalSemaphore>>& multi_device_global_semaphore,
     bool do_sync,
     const std::optional<const Tensor>& bias,
@@ -279,12 +279,15 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
         optional_input_tensors.push_back(std::nullopt);
     }
 
+    int32_t rank = input_tensor.logical_shape().rank();
+    int32_t gather_dim = (dim < 0) ? rank + dim : dim;
+
     std::vector<std::optional<Tensor>> optional_output_tensors = {persistent_output_buffer};
 
     /* AllGather setup */
     ttnn::AllGatherAsync all_gather_async_struct = ttnn::AllGatherAsync(
         devices,
-        dim,
+        gather_dim,
         num_links,
         devices.size(),
         memory_config_ag.value_or(input_tensor.memory_config()),
