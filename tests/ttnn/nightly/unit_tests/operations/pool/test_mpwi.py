@@ -121,7 +121,7 @@ def test_max_pool2d_with_indices(device):
         dilation=dilation,
         # applied_shard_scheme=shard_scheme,
         ceil_mode=ceil_mode,
-        in_place_halo=False,
+        in_place_halo=True,
         deallocate_input=False,
         reallocate_halo_output=True,
         return_indices=False,
