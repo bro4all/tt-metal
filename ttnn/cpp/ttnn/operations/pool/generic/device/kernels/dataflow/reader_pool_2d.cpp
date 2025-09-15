@@ -308,6 +308,10 @@ void kernel_main() {
     constexpr uint32_t in_scalar_cb_id =
         split_reader && reader_id == 1 && !one_scalar_per_core ? in_scalar_cb_id_1 : in_scalar_cb_id_0;
 
+    if (reader_id == 0) {
+        tt::data_movement::common::print_bf16_pages(get_write_ptr(in_shard_cb_id), 32, 9);
+    }
+
     uint32_t scalar_index = 0;
     uint32_t scalar_start = 0;
     uint32_t scalar_end = 1;
