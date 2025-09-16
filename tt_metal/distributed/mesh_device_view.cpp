@@ -74,28 +74,36 @@ MeshDeviceView::DeviceView MeshDeviceView::get_devices(const MeshShape& submesh_
     return get_devices(MeshCoordinateRange(submesh_shape));
 }
 
-std::vector<IDevice*> MeshDeviceView::get_devices_on_row(size_t row) const {
+std::vector<MeshCoordinate> MeshDeviceView::get_row_coordinates(size_t row) const {
     TT_FATAL(shape_2d_.has_value(), "MeshDeviceView is not 2D!");
     TT_FATAL(row < shape_2d_->height(), "Row index out of bounds: {}", row);
-    std::vector<IDevice*> row_devices;
-    row_devices.reserve(shape_2d_->width());
+    std::vector<MeshCoordinate> row_coords;
+    row_coords.reserve(shape_2d_->width());
     for (int col = 0; col < shape_2d_->width(); ++col) {
-        const auto& coord = MeshCoordinate(row, col);
-        devices_.at(coord).if_local([&row_devices](const auto& device) { row_devices.push_back(device); });
+        const auto coord = MeshCoordinate(row, col);
+        devices_.at(coord).if_local([&row_coords, &coord](const auto& device) { row_coords.push_back(coord); });
     }
-    return row_devices;
+    return row_coords;
+}
+
+std::vector<MeshCoordinate> MeshDeviceView::get_column_coordinates(size_t col) const {
+    TT_FATAL(shape_2d_.has_value(), "MeshDeviceView is not 2D!");
+    TT_FATAL(col < shape_2d_->width(), "Column index out of bounds: {}", col);
+    std::vector<MeshCoordinate> col_coords;
+    col_coords.reserve(shape_2d_->height());
+    for (int row = 0; row < shape_2d_->height(); ++row) {
+        const auto coord = MeshCoordinate(row, col);
+        devices_.at(coord).if_local([&col_coords, &coord](const auto& device) { col_coords.push_back(coord); });
+    }
+    return col_coords;
+}
+
+std::vector<IDevice*> MeshDeviceView::get_devices_on_row(size_t row) const {
+    return get_devices_from_coordinates(*this, get_row_coordinates(row));
 }
 
 std::vector<IDevice*> MeshDeviceView::get_devices_on_column(size_t col) const {
-    TT_FATAL(shape_2d_.has_value(), "MeshDeviceView is not 2D!");
-    TT_FATAL(col < shape_2d_->width(), "Column index out of bounds: {}", col);
-    std::vector<IDevice*> col_devices;
-    col_devices.reserve(shape_2d_->height());
-    for (int row = 0; row < shape_2d_->height(); ++row) {
-        const auto& coord = MeshCoordinate(row, col);
-        devices_.at(coord).if_local([&col_devices](const auto& device) { col_devices.push_back(device); });
-    }
-    return col_devices;
+    return get_devices_from_coordinates(*this, get_column_coordinates(col));
 }
 
 std::vector<std::vector<IDevice*>> MeshDeviceView::get_row_views() const {

@@ -85,6 +85,8 @@ public:
     [[nodiscard]] bool is_mesh_2d() const;
     [[nodiscard]] size_t num_rows() const;
     [[nodiscard]] size_t num_cols() const;
+    [[nodiscard]] std::vector<MeshCoordinate> get_row_coordinates(size_t row) const;
+    [[nodiscard]] std::vector<MeshCoordinate> get_column_coordinates(size_t col) const;
     [[nodiscard]] DeviceView get_devices_on_row(size_t row) const;
     [[nodiscard]] DeviceView get_devices_on_column(size_t col) const;
     [[nodiscard]] DeviceViews get_row_views() const;
