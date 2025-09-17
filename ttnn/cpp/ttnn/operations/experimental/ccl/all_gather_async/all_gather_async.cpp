@@ -93,7 +93,7 @@ ttnn::Tensor ExecuteAllGatherAsync::invoke(
 
 std::vector<ttnn::Tensor> ExecuteAllGatherAsync::invoke(
     const std::vector<ttnn::Tensor>& input_tensors,
-    const std::optional<ttnn::Tensor>& persistent_output_buffer,
+    const std::optional<std::vector<ttnn::Tensor>>& persistent_output_buffer,
     const int32_t dim,
     const std::vector<global_semaphore::MultiDeviceGlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -102,7 +102,7 @@ std::vector<ttnn::Tensor> ExecuteAllGatherAsync::invoke(
     std::optional<tt::tt_metal::SubDeviceId> subdevice_id,
     std::optional<uint32_t> cluster_axis,
     bool use_optimal_ccl_for_llama,
-    const std::optional<std::vector<GlobalSemaphore>>& barrier_semaphore,
+    const std::optional<global_semaphore::MultiDeviceGlobalSemaphore>& barrier_semaphore,
     std::optional<uint32_t> chunks_per_sync,
     std::optional<uint32_t> num_workers_per_link,
     std::optional<uint32_t> num_buffers_per_channel) {

@@ -43,7 +43,7 @@ struct ExecuteAllGatherAsync {
     // same as above but for vector of mesh
     static std::vector<ttnn::Tensor> invoke(
         const std::vector<ttnn::Tensor>& input_tensors,
-        const std::optional<ttnn::Tensor>& persistent_output_buffer,  // TODO should this be a vector of tensors?
+        const std::optional<std::vector<ttnn::Tensor>>& persistent_output_buffer,
         int32_t dim,
         const std::vector<global_semaphore::MultiDeviceGlobalSemaphore>& multi_device_global_semaphore,
         uint32_t num_links = 1,
@@ -52,7 +52,7 @@ struct ExecuteAllGatherAsync {
         std::optional<tt::tt_metal::SubDeviceId> subdevice_id = std::nullopt,
         std::optional<uint32_t> cluster_axis = std::nullopt,
         bool use_optimal_ccl_for_llama = false,
-        const std::optional<std::vector<GlobalSemaphore>>& barrier_semaphore = std::nullopt,
+        const std::optional<global_semaphore::MultiDeviceGlobalSemaphore>& barrier_semaphore = std::nullopt,
         std::optional<uint32_t> chunks_per_sync = std::nullopt,
         std::optional<uint32_t> num_workers_per_link = std::nullopt,
         std::optional<uint32_t> num_buffers_per_channel = std::nullopt);

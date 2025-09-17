@@ -525,7 +525,7 @@ Tensor all_gather_async(
 
 std::vector<Tensor> all_gather_async(
     const std::vector<Tensor>& input_tensors,
-    const std::optional<ttnn::Tensor>& persistent_output_buffer,
+    const std::optional<std::vector<ttnn::Tensor>>& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<global_semaphore::MultiDeviceGlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -535,7 +535,7 @@ std::vector<Tensor> all_gather_async(
     std::optional<uint32_t> cluster_axis,
     bool use_optimal_ccl_for_llama,
     bool use_all_gather_async_llama_sharded,
-    const std::optional<std::vector<GlobalSemaphore>>& barrier_semaphore,
+    const std::optional<global_semaphore::MultiDeviceGlobalSemaphore>& barrier_semaphore,
     std::optional<uint32_t> chunks_per_sync,
     std::optional<uint32_t> num_workers_per_link,
     std::optional<uint32_t> num_buffers_per_channel) {
@@ -543,8 +543,9 @@ std::vector<Tensor> all_gather_async(
     output_tensors.reserve(input_tensors.size());
     for (size_t i = 0; i < input_tensors.size(); ++i) {
         output_tensors.push_back(all_gather_async_impl(
-            input_tensors[i],
-            persistent_output_buffer,
+            input_tensors.at(i),
+            persistent_output_buffer.has_value() ? std::optional<ttnn::Tensor>(persistent_output_buffer.value().at(i))
+                                                 : std::nullopt,
             dim,
             // 0 = forward link, 1 = backward link, i = device index
             {multi_device_global_semaphore.at(0).global_semaphores.at(i),
@@ -557,7 +558,9 @@ std::vector<Tensor> all_gather_async(
             cluster_axis,
             use_all_gather_async_llama_sharded,
             use_optimal_ccl_for_llama,
-            barrier_semaphore.has_value() ? std::optional<GlobalSemaphore>(barrier_semaphore.value()[i]) : std::nullopt,
+            barrier_semaphore.has_value()
+                ? std::optional<GlobalSemaphore>(barrier_semaphore.value().global_semaphores.at(i))
+                : std::nullopt,
             chunks_per_sync,
             num_workers_per_link,
             num_buffers_per_channel));
