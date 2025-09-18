@@ -35,17 +35,7 @@ inline void PACK_INIT(uint32_t ocb) {
 
 inline void unary_op_init_common_x(uint32_t icb, uint32_t ocb) {
     UNPACK((llk_unpack_A_hw_configure_disaggregated<DST_ACCUM_MODE, StochRndType::None, true>(icb)));
-    UNPACK((llk_unpack_A_init<BroadcastType::NONE, false, EltwiseBinaryReuseDestType::NONE, UnpackToDestEn>(
-        false /*transpose of faces*/, false /*transpose within 16x16 face*/, icb)));
-
     PACK((llk_pack_hw_configure_disaggregated<DST_ACCUM_MODE, false>(ocb)));
-    PACK((llk_pack_init<false>(ocb)));
-    PACK((llk_pack_dest_init<DST_ACCUM_MODE, false>()));
-
-    MATH((llk_math_eltwise_unary_datacopy_init<A2D, DST_ACCUM_MODE, BroadcastType::NONE>(
-        false /*transpose of faces*/, false /*transpose within 16x16 face*/, icb)));
-    MATH((llk_math_pack_sync_init<DST_ACCUM_MODE>()));
-    MATH((llk_math_hw_configure_disaggregated(icb, icb)));
 }
 
 void MAIN {
@@ -226,11 +216,10 @@ void MAIN {
                     if (tilize_stick_counter == TILE_HEIGHT) {
                         PACK((pack_untilize_uninit(pre_tilize_cb_id)));
 
-                        // unary_op_init_common(pre_tilize_cb_id, out_cb_id);
                         // Workaround until #27504 is not closed
-                        // tensix_sync();
-                        // unary_op_init_common(pre_tilize_cb_id, out_cb_id);
-                        // tensix_sync();
+                        tensix_sync();
+                        unary_op_init_common_x(pre_tilize_cb_id, out_cb_id);
+                        tensix_sync();
                         // PACK(pack_reconfig_data_format(pre_tilize_cb_id, out_cb_id));
 
                         // Skip fast_tilize path for bfp4_b output until #28380 is closed
@@ -249,11 +238,12 @@ void MAIN {
                         if constexpr (is_output_block_format) {
                             unary_op_init_common(pre_tilize_cb_id, out_cb_id);
                         }
-                        // if constexpr (is_output_block_format) {
-                        //     tensix_sync();
-                        //     unary_op_init_common(in_cb_id_0, pre_tilize_cb_id);
-                        //     tensix_sync();
-                        // }
+
+                        if constexpr (is_output_block_format) {
+                            tensix_sync();
+                            unary_op_init_common_x(in_cb_id_0, pre_tilize_cb_id);
+                            tensix_sync();
+                        }
                         // PACK(pack_reconfig_data_format(out_cb_id, pre_tilize_cb_id));
 
                         // init math for reduction again since FPU gets reprogrammed by tilize
