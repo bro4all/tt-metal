@@ -118,7 +118,7 @@ struct SoftmaxBackwardDeviceOperation {
 
     // In case the operation needs a custom create_op_performance_model, this method can be implemented
     /*
-    static tt::tt_metal::tt::tt_metal::operation::OpPerformanceModel create_op_performance_model(
+    static tt::tt_metal::tt::tt_metal::operation::OpPerformanceMode±l create_op_performance_model(
         const operation_attributes_t&,
         const tensor_args_t&,
         tensor_return_value_t&);

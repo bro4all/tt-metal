@@ -8,6 +8,7 @@
 #include "ttnn/operations/eltwise/unary/common/unary_op_types.hpp"
 #include "ttnn/operations/eltwise/unary/unary.hpp"
 #include "ttnn/operations/eltwise/unary/unary_composite.hpp"
+#include "ttnn/operations/reduction/generic/generic_reductions.hpp"
 // #include "tt-train/sources/ttml/ttnn_fixed/trivial_ttnn_ops.hpp"
 
 using namespace tt::tt_metal;
@@ -55,12 +56,15 @@ Tensor softmax_backward(
     const Tensor& grad,  // upstream grad dL/dy
     uint32_t dim         // reduction dimension (same as fwd)
 ) {
+    const ttnn::Tensor mul = ttnn::multiply(y, grad);
     auto grad_scaled_dot = ttnn::multiply(
         y,
         ttnn::subtract(
             grad,
             // ttnn_fixed::sum_over_dim(ttnn::multiply(y, grad), dim)));
-            ttnn::add(ttnn::multiply(y, grad), dim)));
+            // ttnn::add(ttnn::multiply(y, grad), dim)));
+            // ttnn::reduce(ttnn::ReduceOpType::SUM, ttnn::multiply(y, grad), dim)));
+            ttnn::sum(queue_id, mul, std::optional<uint32_t>(dim), /*keepdim=*/true, std::nullopt, std::nullopt)));
     return grad_scaled_dot;
 }
 
