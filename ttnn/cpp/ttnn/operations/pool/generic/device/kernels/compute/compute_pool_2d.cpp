@@ -220,6 +220,8 @@ void MAIN {
                     tile_regs_release();
 
                     if (tilize_stick_counter == TILE_HEIGHT) {
+                        UNPACK((llk_unpack_A_hw_configure_disaggregated<DST_ACCUM_MODE, StochRndType::None, true>(
+                            pre_tilize_cb_id)));
                         pack_reconfig_data_format(out_cb_id);
 
                         fast_tilize_init(pre_tilize_cb_id, in_ntiles_c, out_cb_id);
@@ -229,6 +231,8 @@ void MAIN {
                         cb_push_back(out_cb_id, in_ntiles_c);
 
                         if constexpr (is_output_block_format) {
+                            UNPACK((llk_unpack_A_hw_configure_disaggregated<DST_ACCUM_MODE, StochRndType::None, true>(
+                                in_cb_id_0)));
                             pack_reconfig_data_format(pre_tilize_cb_id);
                         }
 
