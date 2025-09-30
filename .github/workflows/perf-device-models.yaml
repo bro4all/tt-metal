@@ -3,7 +3,7 @@ name: "(Single-card) Device perf regressions"
 on:
   workflow_dispatch:
     inputs:
-      models-to-run:
+      requested-models:
         description: "List of requested model groups as JSON array, for example: [\"falcon7b\", \"yolov7\", \"ufld_v2\"]. Default is 'all'"
         default: "all"
         type: string
@@ -29,3 +29,4 @@ jobs:
       docker-image: ${{ needs.build-artifact-profiler.outputs.dev-docker-image }}
       build-artifact-name: ${{ needs.build-artifact-profiler.outputs.build-artifact-name }}
       wheel-artifact-name: ${{ needs.build-artifact-profiler.outputs.wheel-artifact-name }}
+      requested-models: ${{ inputs.requested-models || 'all' }}
