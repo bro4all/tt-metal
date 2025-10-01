@@ -25,11 +25,10 @@ jobs:
       build-wheel: true
   galaxy-multi-user-isolation-tests:
     needs: build-artifact
-    runs-on:
-      - in-service
-      - topology-6u
-      - arch-wormhole_b0
-      - bare-metal
+    strategy:
+      matrix:
+        extra-tag: [${{ inputs.extra-tag }}]   # input is put into a 1-item matrix
+    runs-on: [in-service, ${{ matrix.extra-tag }}, topology-6u, arch-wormhole_b0, bare-metal]
     env: 
       extra-tag: ${{ inputs.extra-tag }}
     steps:
