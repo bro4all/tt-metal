@@ -356,6 +356,10 @@ Result conv2d_DRAM(
             dram_slice_config.num_slices,
             output_sliced_dim);
     }
+    TT_FATAL(
+        is_device_tensor(input_tensor),
+        "Input tensor (input0/activations) must be a device tensor. Use ttnn.to_device() to move the tensor to device "
+        "first.");
     if (dram_slice_config.num_slices == 1) {
         return conv2d_L1(
             input_tensor_on_device,
@@ -377,11 +381,12 @@ Result conv2d_DRAM(
             compute_config_,
             DRAM_MEMORY_CONFIG);
     }
+    // Reshape the input tensor to the correct dimensions
     const auto unflattened_input_shape = ttnn::Shape{batch_size, input_height, input_width, in_channels};
-    input_tensor_on_device = ttnn::reshape(input_tensor_on_device, unflattened_input_shape, unflattened_input_shape);
-    TT_FATAL(input_tensor_on_device.memory_config().is_dram(), "Conv DRAM expects the input tensor to be in DRAM.");
+    ttnn::Tensor reshaped_input_tensor = ttnn::reshape(input_tensor, unflattened_input_shape, unflattened_input_shape);
+    TT_FATAL(reshaped_input_tensor.memory_config().is_dram(), "Conv DRAM expects the input tensor to be in DRAM.");
     TT_FATAL(
-        input_tensor_on_device.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED,
+        reshaped_input_tensor.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED,
         "Input Tensor to Conv DRAM should be in Interleaved Memory Layout");
 
     Tensor dram_output_tensor = tt_metal::create_device_tensor(
@@ -421,7 +426,7 @@ Result conv2d_DRAM(
         input_tensor_on_device, dram_output_tensor, &slice_attr, dram_slice_config);
 
     if (conv_config.deallocate_activation) {
-        input_tensor_on_device.deallocate(true);
+        reshaped_input_tensor.deallocate(true);
     }
     const auto flattened_output_shape = flatten_4d_shape(dram_output_tensor.logical_shape());
     const auto flattened_padded_output_shape = flatten_4d_shape(dram_output_tensor.padded_shape());
@@ -450,6 +455,11 @@ Result conv2d_L1(
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_,
     const std::optional<const MemoryConfig>& memory_config) {
+    TT_FATAL(
+        is_device_tensor(input_tensor_),
+        "Input tensor (input0/activations) must be a device tensor. Use ttnn.to_device() to move the tensor to device "
+        "first.");
+
     Conv2dConfig conv_config = conv_config_.value_or(Conv2dConfig());
     const DataType output_dtype = dtype.value_or(input_tensor_.dtype());
     std::array<uint32_t, 4> padding_n4 = sliding_window::get_pair_n4_padding(padding);
@@ -517,8 +527,7 @@ Result conv2d_L1(
             input_tensor.layout(),
             input_tensor.dtype(),
             output_dtype,
-            tt::tt_metal::is_device_tensor(input_tensor) ? std::make_optional(input_tensor.memory_config())
-                                                         : std::nullopt,
+            std::make_optional(input_tensor.memory_config()),
             kernel_size,
             stride,
             dilation,
