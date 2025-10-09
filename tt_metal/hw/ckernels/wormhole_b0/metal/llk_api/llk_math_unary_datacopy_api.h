@@ -11,6 +11,10 @@
  * LLK ELTWISE UNARY DATACOPY
  *************************************************************************/
 
+inline void llk_special_math_copy_after_reduce_max_row(uint dst_index) {
+    _llk_special_math_copy_after_reduce_max_row_(dst_index);
+}
+
 template <
     DataCopyType type,
     bool is_fp32_dest_acc_en,

@@ -203,9 +203,6 @@ inline void llk_unpack_AB_reduce_block_max_row(
     std::uint32_t address_a = base_address_a + offset_address_a;
     std::uint32_t base_address_b = get_local_cb_interface(operandB_id).fifo_rd_ptr - 1;
 
-    // Always tile index 0 for operandB
-    // TTI_UNPACR(SrcB, 0b00000000 /* Z_ch0_inc and Z_ch1_inc */, 0, 0, 0, 1, 1 /* Set Dvalid */,
-    // p_unpacr::RAREFYB_DISABLE, 0, 0, 0, 0, 1);
     _llk_unpack_AB_reduce_block_max_row_(address_a, base_address_b);
 }
 

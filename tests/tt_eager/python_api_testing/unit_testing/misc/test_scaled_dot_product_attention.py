@@ -476,6 +476,7 @@ def run_test_chunked_sdpa(
     use_high_precision_compute,
     grid_size=None,
 ):
+    torch.manual_seed(1234)
     program_config = ttnn.SDPAProgramConfig(
         compute_with_storage_grid_size=grid_size or device.compute_with_storage_grid_size(),
         q_chunk_size=q_chunk_size,
@@ -827,6 +828,7 @@ def test_joint_sdpa(device, b, nh, seq_len, joint_seq_len, d, q_chunk_size, k_ch
     ],
 )
 def test_joint_sdpa_program_cache(device, b, nh, seq_len, joint_seq_len, d, q_chunk_size, k_chunk_size, dtype):
+    torch.manual_seed(1234)
     dummy_tensors = []
     for _ in range(3):
         dummy_tensors.append(
@@ -1070,6 +1072,7 @@ def test_sdpa_benchmark_detailed():
 
 @pytest.mark.skip()
 def test_sdpa_benchmark(device):
+    torch.manual_seed(1234)
     dtype = ttnn.bfloat16
 
     def create_device_tensors(b, nh, s, d):

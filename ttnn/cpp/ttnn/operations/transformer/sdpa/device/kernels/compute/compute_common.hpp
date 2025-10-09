@@ -18,6 +18,7 @@
 #include "compute_kernel_api/matmul.h"
 #include "compute_kernel_api/reduce.h"
 #include "tools/profiler/kernel_profiler.hpp"
+#include "debug/dprint_tensix.h"
 
 template <uint32_t num_tiles>
 void max_block_inplace(uint32_t in0, uint32_t in1) {
@@ -60,9 +61,9 @@ void reduce_c(uint32_t out_cb, uint32_t prev_cb, bool do_eltwise_max = false) {
     constexpr uint32_t reduce_dst_idx = 0;
     constexpr uint32_t prev_max_dst_idx = 1;
 
+    reduce_block_max_row_init<cols>();
     for (uint32_t i = 0; i < rows; i++) {
         // Reinitialize block-based reduce for each row (needed due to potential copy_tile reconfig)
-        reduce_block_max_row_init<cols>();
         // asm volatile ("ebreak");
         // reduce_block_max_row_init<1>();
         // reduce_init<pool_type, reduce_dim>(in0_cb, scale_cb, out_cb);
@@ -75,17 +76,19 @@ void reduce_c(uint32_t out_cb, uint32_t prev_cb, bool do_eltwise_max = false) {
         // reduce_tile_max_row(in0_cb, scale_cb, i * cols + j, reduce_dst_idx);
         // }
         // Safe to move out of the loop since the packer config is not changed by copy calls
-        reduce_max_row_uninit();
 
         if (do_eltwise_max) {
-            copy_tile_to_dst_init_short(prev_cb);
-            copy_tile(prev_cb, i, prev_max_dst_idx);
+            // copy_tile_to_dst_init_short(prev_cb);
+            // copy_tile(prev_cb, i, prev_max_dst_idx);
+            special_copy_tile_reduce_max_row(prev_cb, i, prev_max_dst_idx);
+            dprint_tensix_dest_reg(1);
             max_tile(reduce_dst_idx, prev_max_dst_idx, static_cast<int>(VectorMode::C));
         }
 
         pack_tile(reduce_dst_idx, out_cb);
         release_dst();
     }
+    reduce_max_row_uninit();
 
     cb_push_back(out_cb, rows);
 }

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "debug/dprint.h"
 #include "compute_kernel_api/reduce.h"
+#include "compute_kernel_api/tile_move_copy.h"
 #include "debug/dprint_tensix.h"
 #include "ckernel.h"
 #include "hw/inc/wormhole/dev_mem_map.h"
@@ -77,20 +78,24 @@ void MAIN {
     UNPACK((start_time = ckernel::read_wall_clock()));
 
     // Block-based reduce pattern: outer loop over channels and rows, block reduce over cols
+    reduce_block_max_row_init<Wt>();
     for (uint32_t nc = 0; nc < NC; nc++) {
         for (uint32_t ht = 0; ht < Ht; ht++) {
-            reduce_block_max_row_init<Wt>();
             // asm volatile ("ebreak");
             acquire_dst();
             // Reduce across W dimension (cols) for this row using block-based reduce
             uint32_t row_start_index = nc * Ht * Wt + ht * Wt;  // Starting tile index for this row
             reduce_block_max_row<Wt>(tt::CBIndex::c_0, tt::CBIndex::c_2, row_start_index, reduce_dst_idx);
+
+            special_copy_tile_reduce_max_row(tt::CBIndex::c_2, 0, 1);
+            dprint_tensix_dest_reg(0);
+            dprint_tensix_dest_reg(1);
             // Pack result to output CB (implicit pack_tile behavior like reduce_c)
-            reduce_max_row_uninit();
             pack_tile(reduce_dst_idx, tt::CBIndex::c_16);
             release_dst();
         }
     }
+    reduce_max_row_uninit();
 
     // Only UNPACK thread measures end timing and prints results
     uint64_t end_time = 0;

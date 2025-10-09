@@ -9,7 +9,7 @@
 
 void generate_bcast_scaler() {
     constexpr uint32_t cb_in_2 = 2;
-    uint32_t scaler = get_arg_val<uint32_t>(8);
+    uint32_t scaler = get_arg_val<uint32_t>(4);
     union {
         float f;
         uint32_t u;

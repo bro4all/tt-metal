@@ -93,4 +93,9 @@ ALWI void copy_block_matmul_partials(
         start_dst_tile_index, ntiles, in_cb_id)));
 }
 
+ALWI void special_copy_tile_reduce_max_row(uint32_t in_cb_id, uint32_t in_tile_index, uint32_t dst_tile_index) {
+    UNPACK((llk_special_unpack_A_after_reduce_max_row(in_cb_id, in_tile_index)));
+    MATH((llk_special_math_copy_after_reduce_max_row(dst_tile_index)));
+}
+
 }  // namespace ckernel

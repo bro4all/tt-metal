@@ -126,3 +126,12 @@ inline void llk_unpack_A_block(
         WAYPOINT("UPAD");
     }
 }
+
+inline void llk_special_unpack_A_after_reduce_max_row(const std::uint32_t operandA, const std::uint32_t in_tile_index) {
+    std::uint32_t operandA_id = get_operand_id(operandA);
+    std::uint32_t base_address_a = get_local_cb_interface(operandA_id).fifo_rd_ptr - 1;
+    std::uint32_t offset_address_a = get_local_cb_interface(operandA_id).fifo_page_size * in_tile_index;
+    std::uint32_t address_a = base_address_a + offset_address_a;
+
+    _llk_special_unpack_A_after_reduce_max_row_(address_a);
+}

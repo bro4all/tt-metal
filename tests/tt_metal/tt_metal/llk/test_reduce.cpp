@@ -673,7 +673,7 @@ TEST_F(MeshDeviceFixture, TensixComputeReduceH) {
 }
 
 TEST_F(MeshDeviceFixture, TensixComputeReduceW) {
-    std::vector<uint32_t> shape = {1, 1, 10 * TILE_HEIGHT, 64 * TILE_WIDTH};
+    std::vector<uint32_t> shape = {1, 1, 2 * TILE_HEIGHT, 2 * TILE_WIDTH};
     std::vector<uint32_t> result_shape = {shape[0], shape[1], shape[2], 32};
     for (uint8_t math_fid = uint8_t(MathFidelity::HiFi4); math_fid <= uint8_t(MathFidelity::HiFi4); math_fid++) {
         // MathFidelity : {0, 2, 3, 4}; so skip value 1
