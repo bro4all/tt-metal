@@ -157,7 +157,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
 
   t3000-apc-fast-tests:
-    needs: build
+    needs: [ asan-build, build ]
     if: ${{ github.event.pull_request.head.repo.fork == false }}
     secrets: inherit
     strategy:
