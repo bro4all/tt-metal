@@ -40,25 +40,6 @@ void kernel_main() {
     }
     const auto s0 = TensorAccessor(src_args, src_addr - misalignment, padded_stick_size);
 
-#ifdef DEBUG
-    DPRINT << "src_addr: " << src_addr << ", padded_stick_size: " << padded_stick_size
-           << ", unpadded_stick_size: " << unpadded_stick_size << ", stick_size_offset: " << stick_size_offset
-           << ", num_dims: " << num_dims << ", start_id: " << start_id
-           << ", num_sticks_per_core: " << num_sticks_per_core
-           << ", num_sticks_per_core_read: " << num_sticks_per_core_read
-           << ", num_read_per_barrier: " << num_read_per_barrier << ENDL();
-
-    DPRINT << "non_aligned: " << is_non_aligned << "cb = " << cb_id_non_aligned << ", read_size: " << read_size
-           << ", src_stick_id: " << src_stick_id << ", sticks_read: " << sticks_read << ENDL();
-
-    DPRINT << "num_unpadded_sticks: " << num_unpadded_sticks[0] << " " << num_unpadded_sticks[1] << " "
-           << num_unpadded_sticks[2] << " " << num_unpadded_sticks[3] << " " << ENDL();
-    DPRINT << "num_padded_sticks: " << num_padded_sticks[0] << " " << num_padded_sticks[1] << " "
-           << num_padded_sticks[2] << " " << num_padded_sticks[3] << " " << ENDL();
-    DPRINT << "Out CB Page size: " << get_local_cb_interface(cb_id_in0).fifo_page_size << ENDL();
-#endif
-    const uint32_t base_src_buffer_l1_addr = get_write_ptr(cb_id_in0);
-    const uint64_t base_noc_addr = get_noc_addr(0, s0);
     uint32_t non_aligned_temp_addr = 0;
     if constexpr (is_non_aligned) {
         cb_reserve_back(cb_id_non_aligned, 1);

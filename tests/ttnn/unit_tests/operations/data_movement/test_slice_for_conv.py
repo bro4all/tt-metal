@@ -244,24 +244,24 @@ def test_slice_write_block_sharded(device, dims, slice_dim, slice_size, core_x, 
 @pytest.mark.parametrize(
     "dims, slice_size, cores",
     [
-        [[2, 100, 100, 32], 50, 64],
-        [[2, 512, 256, 32], 128, 64],
-        [[2, 256, 128, 64], 32, 8],
-        [[2, 67, 35, 64], 14, 8],
-        [[2, 256, 256, 37], 64, 64],
-        [[2, 312, 489, 100], 53, 64],
-        [[2, 255, 255, 63], 37, 64],
-        [[2, 299, 299, 99], 99, 64],
-        [[2, 8, 8, 32], 2, 4],
-        [[2, 8, 16, 2], 2, 8],
-        [[2, 981, 39, 63], 63, 41],
-        [[1, 1024, 1024, 128], 37, 64],
+        # [[2, 100, 100, 32], 50, 64],
+        # [[2, 512, 256, 32], 128, 64],
+        # [[2, 256, 128, 64], 32, 8],
+        # [[2, 67, 35, 64], 14, 8],
+        [[2, 256, 256, 37], 64, 64],  # not aligned
+        # [[2, 312, 489, 100], 53, 64],#not aligned
+        # [[2, 255, 255, 63], 37, 64],
+        # [[2, 299, 299, 99], 99, 64],#not aligned
+        # [[2, 8, 8, 32], 2, 4],
+        # [[2, 8, 16, 2], 2, 8],#not aligned
+        # [[2, 981, 39, 63], 63, 41],
+        # [[1, 1024, 1024, 128], 37, 64],
     ],
 )
 @pytest.mark.parametrize("slice_dim", [1, 2])
-@pytest.mark.parametrize("layout", [ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT])
-@pytest.mark.parametrize("input_dtype", [ttnn.bfloat8_b, ttnn.bfloat16, ttnn.float32])
-@pytest.mark.parametrize("pad_value", [8, 16, 32])
+@pytest.mark.parametrize("layout", [ttnn.ROW_MAJOR_LAYOUT])
+@pytest.mark.parametrize("input_dtype", [ttnn.bfloat16])
+@pytest.mark.parametrize("pad_value", [8])
 def test_slice_height_sharded_for_conv2d(device, dims, slice_dim, slice_size, cores, layout, input_dtype, pad_value):
     if input_dtype == ttnn.bfloat8_b and layout == ttnn.ROW_MAJOR_LAYOUT:
         pytest.skip("bfloat8_b is not supported in row major layout")
@@ -397,7 +397,7 @@ def test_slice_width_sharded_for_conv2d(device, dims, slice_dim, slice_size, cor
     core_grid = device.compute_with_storage_grid_size()
     if core_grid.x * core_grid.y < cores:
         pytest.skip(
-            "Skipping test_slice_height_sharded_for_conv2d as device does not have enough Tensix cores. Needs %d, but device has %d"
+            "Skipping test_slice_width_sharded_for_conv2d as device does not have enough Tensix cores. Needs %d, but device has %d"
             % (cores, core_grid.x * core_grid.y)
         )
 

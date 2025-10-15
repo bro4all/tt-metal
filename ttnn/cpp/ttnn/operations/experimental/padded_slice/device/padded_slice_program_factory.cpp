@@ -311,7 +311,7 @@ static operation::ProgramWithCallbacks padded_slice_rm_multi_core(
     tt::tt_metal::KernelHandle unary_reader_kernel_id = tt::tt_metal::CreateKernel(
         program,
         "ttnn/cpp/ttnn/operations/experimental/padded_slice/device/kernels/dataflow/"
-        "padded_slice_reader_rm_interleaved_start_id.cpp",
+        "padded_slice_reader_rm_interleaved_start_id_1.cpp",
         total_cores,
         tt::tt_metal::ReaderDataMovementConfig(reader_compile_time_args_vec));
 
