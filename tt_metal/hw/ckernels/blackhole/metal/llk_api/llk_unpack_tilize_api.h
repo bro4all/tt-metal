@@ -210,6 +210,10 @@ inline void llk_unpack_tilizeA_B(
     WAYPOINT("UPTD");
 }
 
+inline void llk_unpack_tilizeA_B_uninit(const std::uint32_t operand, const std::uint32_t face_r_dim = FACE_R_DIM) {
+  _llk_unpack_tilizeA_B_uninit_((uint)unpack_dst_format[operand]);
+}
+
 template <bool neginf_srcA = false, std::uint32_t reload_srcB = false, bool zero_srcA = false, bool zero_srcA_reduce = false>
 inline void llk_unpack_tilizeA_B_block(
     std::uint32_t operandA,
