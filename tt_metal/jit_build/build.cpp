@@ -17,6 +17,7 @@
 
 #include <fmt/base.h>
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 #include <fmt/ranges.h>
 #include <taskflow/core/async.hpp>
 
@@ -25,7 +26,6 @@
 #include "env_lib.hpp"
 #include "hal_types.hpp"
 #include "impl/context/metal_context.hpp"
-#include "jit_build/kernel_args.hpp"
 #include "jit_build_settings.hpp"
 #include "jit_build_utils.hpp"
 #include <tt-logger/tt-logger.hpp>
@@ -170,6 +170,7 @@ void JitBuildEnv::init(
 
     this->cflags_ = common_flags;
     this->cflags_ +=
+        "-MMD "
         "-fno-use-cxa-atexit "
         "-Wall -Werror -Wno-unknown-pragmas "
         "-Wno-deprecated-declarations "
@@ -379,6 +380,7 @@ JitBuildState::JitBuildState(const JitBuildEnv& env, const JitBuiltStateConfig& 
     }
 }
 
+#if 0
 void JitBuildState::compile_one(
     const string& log_file,
     const string& out_dir,
@@ -500,6 +502,7 @@ void JitBuildState::link(const string& log_file, const string& out_dir, const Ji
         build_failure(this->target_name_, "link", cmd, log_file);
     }
 }
+#endif
 
 // Given this elf (A) and a later elf (B):
 // weakens symbols in A so that it can be used as a "library" for B. B imports A's weakened symbols, B's symbols of the
@@ -537,18 +540,110 @@ void JitBuildState::extract_zone_src_locations(const string& log_file) const {
     }
 }
 
+void JitBuildState::generate_makefile(std::ostream& mkfile, const JitBuildSettings* settings) const {
+    mkfile << "CXX=" << env_.gpp_ << "\n";
+
+    mkfile << "CXXFLAGS=" << cflags_;
+    mkfile << "-" << (settings ? settings->get_compiler_opt_level() : default_compile_opt_level_) << " ";
+    if (MetalContext::instance().rtoptions().get_build_map_enabled()) {
+        mkfile << "-save-temps=obj -fdump-tree-all -fdump-rtl-all ";
+    }
+    mkfile << includes_ << "\n";  // end of CXXFLAGS line
+
+    mkfile << "DEFINES=" << defines_;
+    if (settings) {
+        // Append user args
+        if (process_defines_at_compile_) {
+            settings->process_defines([&mkfile](const string& define, const string& value) {
+                fmt::print(mkfile, "-D{}='{}' ", define, value);
+            });
+        }
+
+        settings->process_compile_time_args([&mkfile](const std::vector<uint32_t>& values) {
+            if (values.empty()) {
+                return;
+            }
+            fmt::print(mkfile, "-DKERNEL_COMPILE_TIME_ARGS={} ", fmt::join(values, ","));
+        });
+
+        // This creates a command-line define for named compile time args
+        // Ex. for named_args like {"buffer_size": 1024, "num_tiles": 64}
+        // This generates:
+        // -DKERNEL_COMPILE_TIME_ARG_MAP="{{\"buffer_size\",1024}, {\"num_tiles\",64}} "
+        // The macro expansion is defined in tt_metal/hw/inc/compile_time_args.h
+        settings->process_named_compile_time_args(
+            [&mkfile](const std::unordered_map<std::string, uint32_t>& named_args) {
+                if (named_args.empty()) {
+                    return;
+                }
+                mkfile << "-DKERNEL_COMPILE_TIME_ARG_MAP=\"";
+                for (const auto& [name, value] : named_args) {
+                    mkfile << "{\\\"" << name << "\\\"," << value << "}, ";
+                }
+                mkfile << "\" ";
+            });
+    }
+    mkfile << "\n";  // end of DEFINES line
+
+    mkfile << "LDFLAGS=" << lflags_;
+    mkfile << "-" << (settings ? settings->get_linker_opt_level() : default_linker_opt_level_) << " ";
+    if (MetalContext::instance().rtoptions().get_build_map_enabled()) {
+        mkfile << "-Wl,-Map=" << target_name_ << ".map ";
+        mkfile << "-save-temps=obj -fdump-tree-all -fdump-rtl-all ";
+    }
+    if (!is_fw_) {
+        fmt::print(
+            mkfile, "-Wl,--just-symbols={}{}/{}_weakened.elf\n", env_.out_firmware_root_, target_name_, target_name_);
+    }
+    mkfile << "\n";  // end of LDFLAGS line
+    fmt::print(mkfile, "SRCS={}\n", fmt::join(srcs_, " "));
+    mkfile << "DEPS=";
+    // Cannot use "DEPS=$(SOURCES:.cpp=.d)" here, because some files are .cc not .cpp.
+    for (std::string_view src : srcs_) {
+        mkfile << src.substr(0, src.find_last_of(".")) << ".d ";
+    }
+    mkfile << "\n\n";  // end of DEPS line
+
+    mkfile << "all: " << target_name_ << ".elf\n\n";
+
+    mkfile << target_name_ << ".elf: " << link_objs_ << "\n";
+    mkfile << "\t$(CXX) $(LDFLAGS) -o $@ $^\n\n";
+
+    mkfile << "-include $(DEPS)\n\n";
+
+    for (size_t i = 0; i < this->srcs_.size(); ++i) {
+        fmt::print(mkfile, "{}: {}\n", objs_[i], srcs_[i]);
+        mkfile << "\t$(CXX) $(CXXFLAGS) -c -o $@ $^ $(DEFINES)\n\n";
+    }
+}
+
 void JitBuildState::build(const JitBuildSettings* settings) const {
     // ZoneScoped;
     string out_dir = (settings == nullptr)
                          ? this->out_path_ + this->target_name_ + "/"
                          : this->out_path_ + settings->get_full_kernel_name() + this->target_name_ + "/";
 
+    fs::create_directories(out_dir);
     string log_file = out_dir + "build.log";
     if (fs::exists(log_file)) {
-        std::remove(log_file.c_str());
+        fs::resize_file(log_file, 0);
     }
+#if 0
     compile(log_file, out_dir, settings);
     link(log_file, out_dir, settings);
+#else
+    // Experiment: Makefile-based build
+    {
+        std::ofstream mkfile(out_dir + "Makefile");
+        generate_makefile(mkfile, settings);
+        if (mkfile.fail()) {
+            TT_THROW("Failed to create Makefile under {}", out_dir);
+        }
+    }
+#endif
+    if (!tt::jit_build::utils::run_command(fmt::format("make all -C {} -j", out_dir), log_file, false)) {
+        build_failure(this->target_name_, "build", "make", log_file);
+    }
     if (this->is_fw_) {
         weaken(log_file, out_dir);
     }
