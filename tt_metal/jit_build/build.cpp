@@ -596,13 +596,9 @@ void JitBuildState::generate_makefile(std::ostream& mkfile, const JitBuildSettin
             mkfile, "-Wl,--just-symbols={}{}/{}_weakened.elf\n", env_.out_firmware_root_, target_name_, target_name_);
     }
     mkfile << "\n";  // end of LDFLAGS line
-    fmt::print(mkfile, "SRCS={}\n", fmt::join(srcs_, " "));
-    mkfile << "DEPS=";
-    // Cannot use "DEPS=$(SOURCES:.cpp=.d)" here, because some files are .cc not .cpp.
-    for (std::string_view src : srcs_) {
-        mkfile << src.substr(0, src.find_last_of(".")) << ".d ";
-    }
-    mkfile << "\n\n";  // end of DEPS line
+
+    fmt::print(mkfile, "OBJS={}\n", fmt::join(objs_, " "));
+    mkfile << "DEPS=$(OBJS:.o=.d)\n\n";
 
     mkfile << "all: " << target_name_ << ".elf\n\n";
 
@@ -613,7 +609,7 @@ void JitBuildState::generate_makefile(std::ostream& mkfile, const JitBuildSettin
 
     for (size_t i = 0; i < this->srcs_.size(); ++i) {
         fmt::print(mkfile, "{}: {}\n", objs_[i], srcs_[i]);
-        mkfile << "\t$(CXX) $(CXXFLAGS) -c -o $@ $^ $(DEFINES)\n\n";
+        mkfile << "\t$(CXX) $(CXXFLAGS) -c -o $@ $< $(DEFINES)\n\n";
     }
 }
 
