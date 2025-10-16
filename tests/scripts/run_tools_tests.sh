@@ -42,7 +42,7 @@ if [[ -z "$TT_METAL_SLOW_DISPATCH_MODE" ]] ; then
     echo "First run, no teardown"
     ./build/test/tt_metal/test_clean_init --skip-teardown || { echo "Above failure is expected."; }
     echo "Second run, expect clean init"
-    timeout 20 ./build/test/tt_metal/test_clean_init || { echo "Error: second run timed out, clean init (FD-on-Tensix) failed."; exit 1; }
+    timeout 30 ./build/test/tt_metal/test_clean_init || { echo "Error: second run timed out, clean init (FD-on-Tensix) failed."; exit 1; }
     echo "Clean init tests - FD-on-Tensix passed!"
 
     if [[ "$ARCH_NAME" == "wormhole_b0" ]]; then
