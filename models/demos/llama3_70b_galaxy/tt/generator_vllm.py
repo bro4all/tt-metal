@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ttnn
-import torch
 from tqdm import tqdm
 from models.demos.llama3_70b_galaxy.tt.generator import Generator
 from models.demos.llama3_70b_galaxy.tt.llama_model import TtTransformer
@@ -13,27 +12,22 @@ from models.tt_transformers.tt.generator import create_submeshes
 import vllm.envs as envs
 
 
-def allocate_vllm_kv_cache(kv_cache_shape, dtype, num_layers, model: TtTransformer, tt_cache_path):
+def allocate_vllm_kv_cache(kv_cache_shape, dtype, num_layers, model: TtTransformer):
     submesh_devices = [model.mesh_device]
     kv_cache = []
 
     for mesh_idx, submesh in enumerate(submesh_devices):
-        cache_kv = torch.zeros(kv_cache_shape, dtype=dtype)
         kv_tt = []
         for _ in tqdm(range(num_layers), desc=f"Allocating TT kv caches for each layer (submesh {mesh_idx+1})"):
             kv_tt_i = [
-                ttnn.as_tensor(
-                    lp,
+                ttnn.zeros(
+                    kv_cache_shape,
                     device=submesh,
-                    # TODO: this could be ShardTensorToMesh, removing the need for vLLM to know about TP for num_kv_heads.
-                    # Could affect other calculations which use TTCacheEngine.num_kv_heads, though.
-                    mesh_mapper=ttnn.ReplicateTensorToMesh(submesh),
                     layout=ttnn.TILE_LAYOUT,
                     memory_config=ttnn.DRAM_MEMORY_CONFIG,
                     dtype=ttnn.bfloat8_b,
-                    cache_file_name=tt_cache_path / f"empty_cache_paged_attention{kv_cache_shape}",
                 )
-                for lp in (cache_kv, cache_kv)
+                for _ in range(2)  # K and V
             ]
 
             kv_tt.append(kv_tt_i)
@@ -119,10 +113,6 @@ class LlamaForCausalLM(Generator):
         )
         return cls(tt_model, model_args, mesh_device)
 
-    @property
-    def cache_path(self):
-        return self.model_args.model_cache_path
-
     def prefill_forward(self, *args, **kwargs):
         return super().prefill_forward_text(*args, **kwargs)
 
@@ -130,4 +120,4 @@ class LlamaForCausalLM(Generator):
         return super().decode_forward_text(*args, **kwargs)
 
     def allocate_kv_cache(self, *args, **kwargs):
-        return allocate_vllm_kv_cache(*args, **kwargs, model=self.model, tt_cache_path=self.cache_path)
+        return allocate_vllm_kv_cache(*args, **kwargs, model=self.model)

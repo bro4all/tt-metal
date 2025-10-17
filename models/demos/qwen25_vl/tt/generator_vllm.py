@@ -24,22 +24,17 @@ from models.tt_transformers.tt.generator_vllm import DummyInputsBuilder, MultiMo
 from models.tt_transformers.tt.model_config import DecodersPrecision, ModelArgs
 
 
-def allocate_vllm_kv_cache(kv_cache_shape, dtype, num_layers, model: Transformer, model_args: ModelArgs, tt_cache_path):
+def allocate_vllm_kv_cache(kv_cache_shape, dtype, num_layers, model: Transformer, model_args: ModelArgs):
     for layer_idx in range(num_layers):
-        cache_k = torch.zeros(kv_cache_shape, dtype=dtype)
-        cache_v = torch.zeros(kv_cache_shape, dtype=dtype)
-
         model.layers[layer_idx].attention.layer_past = [
-            ttnn.as_tensor(
-                k_or_v,
+            ttnn.zeros(
+                kv_cache_shape,
                 device=model.mesh_device,
                 dtype=ttnn.bfloat8_b,
                 layout=model_args.model_config["ATTN_W_LAYOUT_TILE"],
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                mesh_mapper=ttnn.ReplicateTensorToMesh(model.mesh_device),
-                cache_file_name=f"{tt_cache_path}/kvcache_{k_or_v.shape}",
             )
-            for k_or_v in [cache_k, cache_v]
+            for _ in range(2)  # K and V
         ]
 
     return [l.attention.layer_past for l in model.layers]
@@ -152,14 +147,8 @@ class Qwen2_5_VLForConditionalGeneration(QwenVLGenerator, SupportsMultiModal):
             visual_model=visual_model,
         )
 
-    @property
-    def cache_path(self):
-        return self.model_args.model_cache_path
-
     def allocate_kv_cache(self, *args, **kwargs):
-        return allocate_vllm_kv_cache(
-            *args, **kwargs, model=self.model, model_args=self.model_args, tt_cache_path=self.cache_path
-        )
+        return allocate_vllm_kv_cache(*args, **kwargs, model=self.model, model_args=self.model_args)
 
     def prefill_forward(
         self,
