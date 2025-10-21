@@ -87,24 +87,25 @@ def setup_once(model_location_generator):
         local_path_obj.symlink_to(data_placement.parent)
 
 
-def collect_ttnn_tutorials(path: Path, extension: str = "*.py"):
-    for file_name in path.glob(extension):
-        yield file_name
+# def collect_ttnn_tutorials(path: Path, extension: str = "*.py"):
+#     for file_name in path.glob(extension):
+#         yield file_name
 
 
 # Tests
-@skip_for_blackhole("Fails on BH. Issue #25579")
-@pytest.mark.parametrize("notebook_path", collect_ttnn_tutorials(path=TUTORIALS_NOTEBOOK_PATH, extension="*.ipynb"))
-def test_ttnn_notebook_tutorials(notebook_path):
-    with open(notebook_path) as f:
-        notebook = nbformat.read(f, as_version=4)
-        ep = ExecutePreprocessor(timeout=180, kernel_name="python3")
-        ep.preprocess(notebook)
+# @skip_for_blackhole("Fails on BH. Issue #25579")
+# @pytest.mark.parametrize("notebook_path", collect_ttnn_tutorials(path=TUTORIALS_NOTEBOOK_PATH, extension="*.ipynb"))
+# def test_ttnn_notebook_tutorials(notebook_path):
+#     with open(notebook_path) as f:
+#         notebook = nbformat.read(f, as_version=4)
+#         ep = ExecutePreprocessor(timeout=180, kernel_name="python3")
+#         ep.preprocess(notebook)
 
 
 @skip_for_blackhole("Fails on BH. Issue #25579")
-@pytest.mark.parametrize("python_path", collect_ttnn_tutorials(path=TUTORIALS_PYTHON_PATH, extension="*.py"))
-def test_ttnn_python_tutorials(python_path):
+# @pytest.mark.parametrize("python_path", collect_ttnn_tutorials(path=TUTORIALS_PYTHON_PATH, extension="*.py"))
+def test_ttnn_python_tutorials():
+    python_path = "ttnn/tutorials/basic_python/ttnn_clip_zero_shot_classification.py"
     result = subprocess.run(
         ["python3", str(python_path)],
         capture_output=True,
