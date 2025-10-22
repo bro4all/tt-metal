@@ -1,6 +1,7 @@
 name: "WH (Galaxy) model perf tests"
 
 on:
+  push:
   workflow_dispatch:
   schedule:
     - cron: "0 */12 * * *" # This cron schedule runs the workflow every 12 hours
