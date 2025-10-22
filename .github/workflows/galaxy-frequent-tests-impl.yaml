@@ -65,7 +65,6 @@ jobs:
           wheel-artifact-name: ${{ inputs.wheel-artifact-name }}
       - name: Run frequent regression tests
         timeout-minutes: ${{ matrix.test-group.timeout }}
-        runs-on: ${{ matrix.test-group.runs_on }}
         run: |
           ./tests/scripts/run_tests.sh --tt-arch wormhole_b0 --pipeline-type frequent_tg_device --dispatch-mode "" --model ${{ matrix.test-group.model }}
       - uses: tenstorrent/tt-metal/.github/actions/slack-report@main
