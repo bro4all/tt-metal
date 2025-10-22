@@ -46,7 +46,6 @@ jobs:
         LOGURU_LEVEL: INFO
         ARCH_NAME: ${{ inputs.arch }}
         GITHUB_ACTIONS: true
-      runs-on: ${{ matrix.test-group.runs-on }}
       volumes:
         - ${{ github.workspace }}/docker-job:/work # Subdir to workaround https://github.com/actions/runner/issues/691
         - /dev/hugepages-1G:/dev/hugepages-1G
@@ -65,6 +64,7 @@ jobs:
           wheel-artifact-name: ${{ inputs.wheel-artifact-name }}
       - name: Run frequent regression tests
         timeout-minutes: ${{ matrix.test-group.timeout }}
+        runs-on: ${{ matrix.test-group.runs-on }}
         run: |
           ./tests/scripts/run_tests.sh --tt-arch wormhole_b0 --pipeline-type frequent_tg_device --dispatch-mode "" --model ${{ matrix.test-group.model }}
       - uses: tenstorrent/tt-metal/.github/actions/slack-report@main

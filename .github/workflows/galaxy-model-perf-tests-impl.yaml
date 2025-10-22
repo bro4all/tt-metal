@@ -92,7 +92,6 @@ jobs:
       LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
       TT_METAL_HOME: ${{ github.workspace }}
       PYTHONPATH: ${{ github.workspace }}
-    runs-on: ${{ matrix.test-group.runs-on }}
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v4
@@ -116,6 +115,7 @@ jobs:
           name: ${{ inputs.wheel-artifact-name || 'wheel artifact not specified' }}
       - name: Run model perf regression tests
         timeout-minutes: ${{ matrix.test-group.timeout }}
+        runs-on: ${{ matrix.test-group.runs-on }}
         uses: ./.github/actions/docker-run
         env:
           LOGURU_LEVEL: INFO
