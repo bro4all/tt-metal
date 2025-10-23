@@ -620,7 +620,6 @@ def test_demo_text(
     stop_at_eos,
     mesh_device,
     is_ci_env,
-    is_ci_v2_env,
     ci_only,
     data_parallel,
     reset_seeds,
