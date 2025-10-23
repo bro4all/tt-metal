@@ -56,6 +56,7 @@ run_qwen25_vl_func() {
 run_ds_r1_qwen_func() {
   ds_r1_qwen=deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
   HF_MODEL=$ds_r1_qwen MESH_DEVICE=N300 pytest models/tt_transformers/demo/simple_text_demo.py -k performance-ci-1
+  echo "LOG_METAL: DS r1 qwen perf test completed (text only)"
 }
 
 run_gemma3_func() {
@@ -72,6 +73,7 @@ run_gemma3_perf() {
 
 run_phi4_func() {
   HF_MODEL=microsoft/phi-4 pytest models/tt_transformers/demo/simple_text_demo.py -k "accuracy and ci-token-matching"
+  echo "LOG_METAL: Phi4 accuracy test completed (text only)"
 }
 
 run_segformer_func() {
