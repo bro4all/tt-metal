@@ -125,8 +125,8 @@ def test():
     all_results_max = []
     all_results_min = []
 
-    # Run tracy 7 times and make target out of it
-    for i in range(7):
+    # Run tracy 10 times and make target out of it
+    for i in range(10):
         post_processed_results = run_device_perf(command, subdir, num_iterations, cols, batch_size, has_signposts=False)
         profiler.end("PROFILLING OP TO OP")
         profiler.end("run")
