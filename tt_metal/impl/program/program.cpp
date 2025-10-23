@@ -77,6 +77,7 @@
 #include "host_api.hpp"
 #include "kernels/kernel_impl.hpp"
 #include "tt_stl/reflection.hpp"
+#include "impl/allocator/allocator.hpp"
 
 namespace tt {
 class tt_hlk_desc;
