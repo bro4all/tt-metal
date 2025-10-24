@@ -97,6 +97,17 @@ run_t3000_sentence_bert_tests() {
 
 run_t3000_stable_diffusion_35_large_tests() {
   # Record the start time
+  start_time=$(date +%s)
+  HF_MODEL=/mnt/MLPerf/tt_dnn-models/google/gemma-3-27b-it pytest models/demos/gemma3/target_maker.py
+  echo "LOG_METAL: Gemma3 27B target maker completed (vision)"
+  # Record the end time
+  end_time=$(date +%s)
+  duration=$((end_time - start_time))
+  echo "LOG_METAL: run_t3000_gemma3_target_maker $duration seconds to complete"
+}
+
+run_t3000_stable_diffusion_35_large_tests() {
+  # Record the start time
   fail=0
   start_time=$(date +%s)
 
