@@ -95,7 +95,7 @@ run_t3000_sentence_bert_tests() {
   fi
 }
 
-run_t3000_stable_diffusion_35_large_tests() {
+run_t3000_gemma3_op_to_op_perf_vision() {
   # Record the start time
   start_time=$(date +%s)
   HF_MODEL=/mnt/MLPerf/tt_dnn-models/google/gemma-3-27b-it pytest models/demos/gemma3/target_maker.py
