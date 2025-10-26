@@ -160,7 +160,7 @@ def load_targets(filename, device_type):
     return dict_targets
 
 
-def compare_with_target(kernel_duration_per_instance_averaged_dict, perf_targets, profiler):
+def compare_with_target(kernel_duration_per_instance_averaged_dict, perf_targets, profiler, margins):
     # benchmark_data = BenchmarkData()
     step_name = "gemma_vision_cross_attention_transformer_op_to_op_perf"
     passing = True
@@ -174,8 +174,8 @@ def compare_with_target(kernel_duration_per_instance_averaged_dict, perf_targets
             # benchmark_data.add_measurement(profiler, 0, step_name, op_name + "-model-kernel-avg", avg_kernel_duration)
 
             # Verify kernel duration is within tolerance
-            upper_limit = perf_targets[op_code_with_id] + 0.05 * perf_targets[op_code_with_id]
-            lower_limit = perf_targets[op_code_with_id] - 0.05 * perf_targets[op_code_with_id]
+            upper_limit = perf_targets[op_code_with_id] + margins[op_code_with_id] * perf_targets[op_code_with_id]
+            lower_limit = perf_targets[op_code_with_id] - margins[op_code_with_id] * perf_targets[op_code_with_id]
 
             if avg_kernel_duration > upper_limit:
                 passing = False
@@ -183,7 +183,7 @@ def compare_with_target(kernel_duration_per_instance_averaged_dict, perf_targets
                     f"{op_code_with_id} kernel: {avg_kernel_duration} ns is larger than target "
                     f"({perf_targets[op_code_with_id]}) ns, difference: "
                     f"{abs(avg_kernel_duration - upper_limit)} ns, margin: "
-                    f"{0.05}, "
+                    f"{margins[op_code_with_id]}, "
                     f"relative margin to pass would be: "
                     f"{abs(perf_targets[op_code_with_id] - avg_kernel_duration) / perf_targets[op_code_with_id]}"
                 )
@@ -193,7 +193,7 @@ def compare_with_target(kernel_duration_per_instance_averaged_dict, perf_targets
                     f"{op_code_with_id} kernel: {avg_kernel_duration} ns is smaller than target "
                     f"({perf_targets[op_code_with_id]}) ns, difference: "
                     f"{abs(lower_limit - avg_kernel_duration)} ns, margin: "
-                    f"{0.05}, "
+                    f"{margins[op_code_with_id]}, "
                     f"relative margin to pass would be: "
                     f"{abs(perf_targets[op_code_with_id] - avg_kernel_duration) / perf_targets[op_code_with_id]}"
                 )
@@ -231,8 +231,13 @@ def test_op_to_op_perf_gemma_vision():
     kernel_duration_per_instance_averaged_dict = average_per_instance_dict(kernel_duration_per_instance_dict)
 
     expected_perf_cols = {}
+    margins = {}
     with open(
         f"models/demos/gemma3/tests/perf_targets/targets_test_perf_vision_cross_attention_op_to_op.json", "r"
     ) as f:
         expected_perf_cols = json.load(f)
-    compare_with_target(kernel_duration_per_instance_averaged_dict, expected_perf_cols, profiler)
+    with open(
+        f"models/demos/gemma3/tests/perf_targets/targets_margins_test_perf_vision_cross_attention_op_to_op.json", "r"
+    ) as f:
+        margins = json.load(f)
+    compare_with_target(kernel_duration_per_instance_averaged_dict, expected_perf_cols, profiler, margins)
