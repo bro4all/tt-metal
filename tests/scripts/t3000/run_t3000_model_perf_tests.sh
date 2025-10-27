@@ -103,7 +103,7 @@ run_t3000_gemma3_op_to_op_perf_vision() {
   # Record the end time
   end_time=$(date +%s)
   duration=$((end_time - start_time))
-  echo "LOG_METAL: run_t3000_gemma3_target_maker $duration seconds to complete"
+  echo "LOG_METAL: run_t3000_gemma3_op_to_op_perf_vision $duration seconds to complete"
 }
 
 run_t3000_stable_diffusion_35_large_tests() {
