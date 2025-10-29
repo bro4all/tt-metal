@@ -1045,10 +1045,10 @@ uint32_t pack_scalar_runtime_arg(float scalar, DataType dtype) {
 }
 
 std::array<uint32_t, 2> compute_auto_shard_shape(
-    const ttnn::Shape& logical_shape,
-    const tt::tt_metal::CoreRangeSet& core_grid,
-    const tt::tt_metal::TensorMemoryLayout& memory_layout,
-    const tt::tt_metal::Layout& layout) {
+    const Shape& logical_shape,
+    const CoreRangeSet& core_grid,
+    const TensorMemoryLayout& memory_layout,
+    const Layout& layout) {
     auto rank = logical_shape.rank();
     TT_FATAL(rank >= 2, "rank of tensor to shard must be at least 2.");
 
@@ -1063,18 +1063,18 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
     std::array<uint32_t, 2> squeezed_tensor_hw{tensor_height, tensor_width};
 
     uint32_t total_num_cores = core_grid.num_cores();
-    tt::tt_metal::CoreCoord grid_size = core_grid.bounding_box().grid_size();
+    CoreCoord grid_size = core_grid.bounding_box().grid_size();
 
     std::array<uint32_t, 2> shard_shape{};
 
     switch (memory_layout) {
-        case tt::tt_metal::TensorMemoryLayout::WIDTH_SHARDED: {
+        case TensorMemoryLayout::WIDTH_SHARDED: {
             // WIDTH_SHARDED: Distribute width across cores, height stays on each core
             uint32_t shard_width = tt::div_up(squeezed_tensor_hw[1], total_num_cores);
             uint32_t shard_height = squeezed_tensor_hw[0];
 
             // For TILE layout, round up to tile boundaries
-            if (layout == tt::tt_metal::Layout::TILE) {
+            if (layout == Layout::TILE) {
                 shard_width = tt::round_up(shard_width, tt::constants::TILE_WIDTH);
                 shard_height = tt::round_up(shard_height, tt::constants::TILE_HEIGHT);
             }
@@ -1082,13 +1082,13 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
             shard_shape = {shard_height, shard_width};
             break;
         }
-        case tt::tt_metal::TensorMemoryLayout::HEIGHT_SHARDED: {
+        case TensorMemoryLayout::HEIGHT_SHARDED: {
             // HEIGHT_SHARDED: Distribute height across cores, width stays on each core
             uint32_t shard_height = tt::div_up(tensor_height, total_num_cores);
             uint32_t shard_width = tensor_width;
 
             // For TILE layout, round up to tile boundaries
-            if (layout == tt::tt_metal::Layout::TILE) {
+            if (layout == Layout::TILE) {
                 shard_height = tt::round_up(shard_height, tt::constants::TILE_HEIGHT);
                 shard_width = tt::round_up(shard_width, tt::constants::TILE_WIDTH);
             }
@@ -1096,7 +1096,7 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
             shard_shape = {shard_height, shard_width};
             break;
         }
-        case tt::tt_metal::TensorMemoryLayout::BLOCK_SHARDED: {
+        case TensorMemoryLayout::BLOCK_SHARDED: {
             // BLOCK_SHARDED: Distribute both height and width across a 2D grid
             // Assume ROW_MAJOR orientation by default for automatic sharding
             TT_FATAL(
@@ -1107,7 +1107,7 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
             uint32_t shard_width = tt::div_up(tensor_width, grid_size.x);
 
             // For TILE layout, round up to tile boundaries
-            if (layout == tt::tt_metal::Layout::TILE) {
+            if (layout == Layout::TILE) {
                 shard_height = tt::round_up(shard_height, tt::constants::TILE_HEIGHT);
                 shard_width = tt::round_up(shard_width, tt::constants::TILE_WIDTH);
             }
@@ -1119,7 +1119,7 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
     }
 
     // Validate shard shape for TILE layout
-    if (layout == tt::tt_metal::Layout::TILE) {
+    if (layout == Layout::TILE) {
         auto [shard_height, shard_width] = shard_shape;
         auto tile_divides_shard_height = shard_height % tt::constants::TILE_HEIGHT == 0;
         auto tile_divides_shard_width = shard_width % tt::constants::TILE_WIDTH == 0;
