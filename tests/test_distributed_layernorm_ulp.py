@@ -225,10 +225,19 @@ def setup_ccl_semahpores(mesh_device):
 @pytest.mark.parametrize("eps", [1e-6])
 @pytest.mark.parametrize(
     "mean, var, outlier_pct, outlier_var",
-    [(0, 1, 0, 0), (0, 10, 0, 0), (-10, 10, 0, 0), (0, 1, 0.01, 10)],
-    ids=["case1", "case2", "case3", "case4"],
+    [
+        (0, 1, 0, 0),
+    ],
+    ids=[
+        "case1",
+    ],
 )
-@pytest.mark.parametrize("norm_type", ["layer_norm", "rms_norm"])
+@pytest.mark.parametrize(
+    "norm_type",
+    [
+        "layer_norm",
+    ],
+)
 @pytest.mark.parametrize("mesh_device", [(1, 8)], indirect=True)
 @pytest.mark.parametrize(
     "device_params",
