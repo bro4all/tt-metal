@@ -177,6 +177,57 @@ private:
     void Write32(const Shdr& shdr, address_t addr, uint32_t value) {
         *ByteOffset<uint32_t>(GetContents(shdr).data(), addr - shdr.sh_addr) = value;
     }
+
+private:
+    static unsigned char GetSymBind(const Sym& sym) {
+        if constexpr (Is64) {
+            return ELF64_ST_BIND(sym.st_info);
+        } else {
+            return ELF32_ST_BIND(sym.st_info);
+        }
+    }
+    static unsigned char GetSymType(const Sym& sym) {
+        if constexpr (Is64) {
+            return ELF64_ST_TYPE(sym.st_info);
+        } else {
+            return ELF32_ST_TYPE(sym.st_info);
+        }
+    }
+    static void SetSymInfo(Sym& sym, unsigned bind, unsigned type) {
+        if constexpr (Is64) {
+            sym.st_info = ELF64_ST_INFO(bind, type);
+        } else {
+            sym.st_info = ELF32_ST_INFO(bind, type);
+        }
+    }
+    static unsigned GetRelocSymIx(const Rela& rel) {
+        if constexpr (Is64) {
+            return ELF64_R_SYM(rel.r_info);
+        } else {
+            return ELF32_R_SYM(rel.r_info);
+        }
+    }
+    static unsigned GetRelocType(const Rela& rel) {
+        if constexpr (Is64) {
+            return ELF64_R_TYPE(rel.r_info);
+        } else {
+            return ELF32_R_TYPE(rel.r_info);
+        }
+    }
+    static void SetRelocInfo(Rela& rel, unsigned sym, unsigned type) {
+        if constexpr (Is64) {
+            rel.r_info = ELF64_R_INFO(sym, type);
+        } else {
+            rel.r_info = ELF32_R_INFO(sym, type);
+        }
+    }
+    static void XorRelocInfo(Rela& rel, unsigned sym, unsigned type) {
+        if constexpr (Is64) {
+            rel.r_info ^= ELF64_R_INFO(sym, type);
+        } else {
+            rel.r_info ^= ELF32_R_INFO(sym, type);
+        }
+    }
 };
 
 ElfFile::~ElfFile() {
@@ -441,10 +492,10 @@ public:
         // Weaken or hide globals
         for (auto& sym : syms_in_) {
             auto kind = GLOBAL;
-            if ((ELF32_ST_BIND(sym.st_info) == STB_GLOBAL || ELF32_ST_BIND(sym.st_info) == STB_WEAK) &&
-                !name_matches(impl.GetName(sym, shdr_.sh_link), strong)) {
-                unsigned bind = impl.IsDataSymbol(sym) ? STB_WEAK : STB_LOCAL;
-                sym.st_info = ELF32_ST_INFO(bind, ELF32_ST_TYPE(sym.st_info));
+            auto bind = impl.GetSymBind(sym);
+            if ((bind == STB_GLOBAL || bind == STB_WEAK) && !name_matches(impl.GetName(sym, shdr_.sh_link), strong)) {
+                bind = impl.IsDataSymbol(sym) ? STB_WEAK : STB_LOCAL;
+                impl.SetSymInfo(sym, bind, impl.GetSymType(sym));
                 if (bind == STB_LOCAL) {
                     kind = LOCAL;
                 }
@@ -458,7 +509,7 @@ public:
         // Adjust relocs using remap array.
         const unsigned num_locals = shdr_.sh_info;
         for (auto& reloc : relocs) {
-            unsigned sym_ix = ELF32_R_SYM(reloc.r_info);
+            unsigned sym_ix = GetRelocSymIx(reloc);
             if (sym_ix < num_locals) {
                 continue;
             }
@@ -467,7 +518,7 @@ public:
             if (bool(sym_ix & (~0U ^ (~0U >> 1)))) {
                 sym_ix = ~sym_ix + syms_out_[LOCAL].size();
             }
-            reloc.r_info = ELF32_R_INFO(ELF32_R_TYPE(reloc.r_info), sym_ix + num_locals);
+            SetRelocInfo(reloc, sym_ix + num_locals, GetRelocType(reloc));
         }
     }
 
@@ -556,7 +607,7 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
         // If RELOC is the final reloc, this will
         // be out of bounds (and probably fail),
         // but we kind of want that anyway
-        if (ELF32_R_TYPE((&reloc)[1].r_info) != R_RISCV_RELAX) {
+        if (GetRelocType((&reloc)[1]) != R_RISCV_RELAX) {
             log_debug(tt::LogLLRuntime, "{}: Relocation at {} is not relaxed", path_, reloc.r_offset);
         }
     };
@@ -594,7 +645,7 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
             auto& reloc = relocs[ix];
             // We can get a RISCV_NONE right at the end (!)
             if (reloc.r_offset & 3 ||
-                reloc.r_offset - section.sh_addr >= section.sh_size + int(ELF32_R_TYPE(reloc.r_info) == R_RISCV_NONE)) {
+                reloc.r_offset - section.sh_addr >= section.sh_size + int(GetRelocType(reloc) == R_RISCV_NONE)) {
                 TT_THROW(
                     "{}: relocation @ {} is {} section {}",
                     path_,
@@ -603,8 +654,8 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                     GetName(section));
             }
 
-            auto type = ELF32_R_TYPE(reloc.r_info);
-            auto sym_ix = ELF32_R_SYM(reloc.r_info);
+            auto type = GetRelocType(reloc);
+            auto sym_ix = GetRelocSymIx(reloc);
             auto const* symbol = &symbols[sym_ix];
             bool is_to_text = IsTextSymbol(*symbol);
 
@@ -621,7 +672,7 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                 throw_unpaired();
             }
             if (type == R_RISCV_ADD32) {
-                auto const* sub_symbol = &symbols[ELF32_R_SYM(sub_reloc->r_info)];
+                const auto* sub_symbol = &symbols[GetRelocSymIx(*sub_reloc)];
                 bool sub_is_to_text = IsTextSymbol(*sub_symbol);
                 if (is_to_text != sub_is_to_text) {
                     TT_THROW(
@@ -717,14 +768,14 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                 // Find the matching hi-reloc by searching backwards. This
                 // presumes block reordering hasn't done something to
                 // break that.
-                unsigned sym_ix = ELF32_R_SYM(lo_reloc->r_info);
+                unsigned sym_ix = GetRelocSymIx(*lo_reloc);
                 auto hi_reloc = composed[kind].begin();
 
                 if (kind == ABS) {
                     hi_reloc = composed[kind].lower_bound(lo_reloc->r_offset);
                     while (hi_reloc != composed[kind].begin()) {
                         --hi_reloc;
-                        if (ELF32_R_SYM(hi_reloc->second.hi_reloc->r_info) == sym_ix) {
+                        if (GetRelocSymIx(*hi_reloc->second.hi_reloc) == sym_ix) {
                             goto found;
                         }
                     }
@@ -759,7 +810,7 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                 }
 
                 auto hi_reloc = slot.second.hi_reloc;
-                unsigned sym_ix = ELF32_R_SYM(hi_reloc->r_info);
+                unsigned sym_ix = GetRelocSymIx(*hi_reloc);
                 auto const& symbol = symbols[sym_ix];
                 bool is_to_text = IsTextSymbol(symbol);
                 if (kind == PCREL && is_to_text == is_from_text) {
@@ -795,11 +846,11 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                 // Insert new immediate
                 insn |= ((value + (1 << 11)) >> 12) << mask_hi20_shift;
                 Write32(section, hi_reloc->r_offset, insn);
-                hi_reloc->r_info ^= ELF32_R_INFO(0, R_RISCV_HI20 ^ R_RISCV_PCREL_HI20);
+                XorRelocInfo(*hi_reloc, 0, R_RISCV_HI20 ^ R_RISCV_PCREL_HI20);
 
                 // translate lo
                 for (auto* lo_reloc : slot.second.lo_relocs) {
-                    unsigned type = ELF32_R_TYPE(lo_reloc->r_info);
+                    unsigned type = GetRelocType(*lo_reloc);
                     bool is_form_i = type == (kind == PCREL ? R_RISCV_PCREL_LO12_I : R_RISCV_LO12_I);
                     check_relaxed(*lo_reloc);
                     uint32_t insn = Read32(section, lo_reloc->r_offset);
@@ -824,7 +875,8 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
                     // We can't convert to PCREL with fidelity, as
                     // that involves adding a symbol. Instead, let's
                     // use a null symbol and an addend.
-                    lo_reloc->r_info = ELF32_R_INFO(
+                    SetRelocInfo(
+                        *lo_reloc,
                         sym_ix,
                         type ^ (is_form_i ? (R_RISCV_LO12_I ^ R_RISCV_PCREL_LO12_I)
                                           : (R_RISCV_LO12_S ^ R_RISCV_PCREL_LO12_S)));
