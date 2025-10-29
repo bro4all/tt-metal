@@ -171,11 +171,16 @@ private:
         return reinterpret_cast<T const*>(base + offset);
     }
 
+    // We might access misaligned int32's because of compressed instructions.
     uint32_t Read32(const Shdr& shdr, address_t addr) {
-        return *ByteOffset<uint32_t>(GetContents(shdr).data(), addr - shdr.sh_addr);
+        auto data = GetContents(shdr).data();
+        return *ByteOffset<uint16_t>(data, addr - shdr.sh_addr) + *ByteOffset<uint16_t>(data, addr - shdr.sh_addr + 2)
+               << 16;
     }
     void Write32(const Shdr& shdr, address_t addr, uint32_t value) {
-        *ByteOffset<uint32_t>(GetContents(shdr).data(), addr - shdr.sh_addr) = value;
+        auto data = GetContents(shdr).data();
+        *ByteOffset<uint16_t>(data, addr - shdr.sh_addr) = value;
+        *ByteOffset<uint16_t>(data, addr - shdr.sh_addr + 2) = value >> 16;
     }
 
 private:
@@ -644,13 +649,13 @@ void ElfFile::Impl::Elf<Is64>::XIPify() {
         for (auto ix = relocs.size(); ix--;) {
             auto& reloc = relocs[ix];
             // We can get a RISCV_NONE right at the end (!)
-            if (reloc.r_offset & 3 ||
+            if (reloc.r_offset & 1 ||
                 reloc.r_offset - section.sh_addr >= section.sh_size + int(GetRelocType(reloc) == R_RISCV_NONE)) {
                 TT_THROW(
                     "{}: relocation @ {} is {} section {}",
                     path_,
                     reloc.r_offset,
-                    reloc.r_offset & 3 ? "misaligned in" : "outside of",
+                    reloc.r_offset & 1 ? "misaligned in" : "outside of",
                     GetName(section));
             }
 
