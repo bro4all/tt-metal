@@ -161,7 +161,9 @@ spec_return_value_t UnaryDeviceOperation::compute_output_specs(
         // Get the device and compute grid
         auto device = tensor_args.input.device();
         auto compute_with_storage_grid_size = device->compute_with_storage_grid_size();
-        CoreRangeSet core_grid({CoreRange(CoreCoord(0, 0), CoreCoord(compute_with_storage_grid_size.x - 1, compute_with_storage_grid_size.y - 1))});
+        CoreCoord start_coord(0, 0);
+        CoreCoord end_coord(compute_with_storage_grid_size.x - 1, compute_with_storage_grid_size.y - 1);
+        CoreRangeSet core_grid({CoreRange(start_coord, end_coord)});
 
         // Compute automatic shard shape
         auto auto_shard_shape = ttnn::operations::unary::utils::compute_auto_shard_shape(

@@ -1054,7 +1054,7 @@ std::array<uint32_t, 2> compute_auto_shard_shape(
 
     // Compute "squeezed" 2D shape: all dimensions except width collapsed into height
     uint32_t batch_size = 1;
-    for (int i = 0; i < rank - 2; i++) {
+    for (size_t i = 0; i < rank - 2; i++) {
         batch_size *= logical_shape[i];
     }
 
