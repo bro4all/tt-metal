@@ -486,7 +486,7 @@ void JitBuildState::link(const string& log_file, const string& out_dir, const Ji
     if (!this->is_fw_) {
         string weakened_elf_name =
             env_.out_firmware_root_ + this->target_name_ + "/" + this->target_name_ + "_weakened.elf";
-        cmd += "-Wl,--just-symbols=" + weakened_elf_name + " ";
+        cmd += weakened_elf_name + " ";
     }
 
     // Append common args provided by the build state

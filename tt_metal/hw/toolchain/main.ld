@@ -128,6 +128,7 @@ PHDRS {
 
 SECTIONS
 {
+  /DISCARD/ : { *weakened.elf(.text) }
 #if defined(TYPE_FIRMWARE) || (defined(COMPILE_FOR_NCRISC) && defined(ARCH_WORMHOLE))
   .text TEXT_START :
 #else
@@ -172,6 +173,7 @@ SECTIONS
   __kernel_data_lma = .;
 #endif
 
+  /DISCARD/ : { *weakened.elf(.data .bss) }
 /* Begin the data area.  */
 #if defined(TYPE_FIRMWARE)
   PROVIDE(__global_pointer$ = DATA_START + 0x7f0);
@@ -241,6 +243,7 @@ SECTIONS
   __stack_base = .;
 #endif
 #endif
+  /DISCARD/ : { *weakened.elf(*) }
 
   /* The loader uses this data to check for size overflows.
      We don't do it here, as the failure mode would be bad (no executable to examine).  */
