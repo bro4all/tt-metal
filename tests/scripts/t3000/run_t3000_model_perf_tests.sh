@@ -95,10 +95,10 @@ run_t3000_sentence_bert_tests() {
   fi
 }
 
-run_t3000_gemma3_op_to_op_perf_vision() {
+run_t3000_gemma3_op_to_op_perf_vision_target_maker() {
   # Record the start time
   start_time=$(date +%s)
-  HF_MODEL=/mnt/MLPerf/tt_dnn-models/google/gemma-3-27b-it pytest models/demos/gemma3/tests/test_vision_cross_attention_transformer_perf_ops.py::test_op_to_op_perf_gemma_vision
+  HF_MODEL=/mnt/MLPerf/tt_dnn-models/google/gemma-3-27b-it pytest models/demos/gemma3/target_maker.py
   echo "LOG_METAL: Gemma3 27B perf op-to-op test completed (vision)"
   # Record the end time
   end_time=$(date +%s)
