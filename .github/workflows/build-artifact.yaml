@@ -481,6 +481,6 @@ jobs:
           file: dockerfile/Dockerfile.evaluation
           push: true
           tags: ghcr.io/${{ github.repository }}/tt-metalium/${{ steps.image_names.outputs.evaluation-image-name }}:${{ github.sha }}
-          build-args: UBUNTU_VERSION=${{ inputs.version }},BASE_IMAGE=${{ needs.build-artifact.outputs.build_artifact_name }},BUILD_ARTIFACT_NAME=${{ needs.build-artifact.outputs.build_artifact_name }},WHEEL_ARTIFACT_NAME=${{ needs.build-wheel.outputs.wheel_artifact_name }}
+          build-args: UBUNTU_VERSION=${{ inputs.version }},BASE_IMAGE=${{ needs.image_names.outputs.ci-build-tag }},BUILD_ARTIFACT_NAME=${{ needs.build-artifact.outputs.build_artifact_name }},WHEEL_ARTIFACT_NAME=${{ needs.build-wheel.outputs.wheel_artifact_name }}
           cache-to: type=inline
           pull: true
