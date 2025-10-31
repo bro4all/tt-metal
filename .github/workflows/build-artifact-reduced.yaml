@@ -2,6 +2,7 @@ name: "Build tt-metal artifacts"
 
 permissions:
   packages: write
+  workflows: write
 
 on:
   workflow_call:
@@ -182,6 +183,7 @@ jobs:
         with:
           name: eager-dist-cp310-ubuntu-22.04-any-profiler-ca391200619c21121b25ff6cb105f09fda3c375f-18975278514
           run-id: 18975278514
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: .
 
       - name: 🧪 Download Python Wheel
@@ -189,6 +191,7 @@ jobs:
         with:
           name: TTMetal_build_any_22.04_amd64_x86_64-linux-clang-17-libstdcpp_profiler_ca391200619c21121b25ff6cb105f09fda3c375f_18975278514
           run-id: 18975278514
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: .
 
       - name: Set evaluation image name
