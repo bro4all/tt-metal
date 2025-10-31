@@ -96,7 +96,7 @@ on:
         value: ${{ jobs.build-docker-image.outputs.basic-ttnn-runtime-tag }}
       evaluation-docker-image:
         description: "Docker tag for the evaluation Docker image"
-        value: ${{ jobs.build-docker-image.outputs.evaluation-tag }}
+        value: ${{ jobs.build-evaluation-image.outputs.evaluation-tag }}
       packages-artifact-name:
         description: "Name to give download-artifact to get the packages"
         value: ${{ jobs.build-artifact.outputs.packages-artifact-name }}
@@ -458,13 +458,13 @@ jobs:
       - name: 📦 Download Build Artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0
         with:
-          name: ${{ jobs.build-artifact.outputs.build_artifact_name }}
+          name: ${{ needs.build-artifact.outputs.build_artifact_name }}
           path: .
 
       - name: 🧪 Download Python Wheel
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0
         with:
-          name: ${{ jobs.build-wheel.outputs.wheel_artifact_name }}
+          name: ${{ needs.build-wheel.outputs.wheel_artifact_name }}
           path: .
 
       - name: Set evaluation image name
