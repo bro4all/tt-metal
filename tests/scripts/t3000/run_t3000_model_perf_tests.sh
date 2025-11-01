@@ -95,7 +95,7 @@ run_t3000_sentence_bert_tests() {
   fi
 }
 
-run_t3000_dit_tests() {
+run_t3000_stable_diffusion_35_large_tests() {
   # Record the start time
   fail=0
   start_time=$(date +%s)
@@ -127,6 +127,15 @@ run_t3000_gemma3_tests() {
   duration=$((end_time - start_time))
   echo "LOG_METAL: Gemma3 27B ViT test completed"
   echo "LOG_METAL: run_t3000_gemma3_tests $duration seconds to complete"
+
+  # Record the start time
+  start_time=$(date +%s)
+  pytest models/demos/gemma3/tests/test_vision_cross_attention_transformer_perf_ops.py::test_op_to_op_perf_gemma_vision ; fail+=$?
+  echo "LOG_METAL: Gemma3 27B perf op-to-op test completed (vision)"
+  # Record the end time
+  end_time=$(date +%s)
+  duration=$((end_time - start_time))
+  echo "LOG_METAL: run_t3000_gemma3_op_to_op_perf_vision $duration seconds to complete"
 
   if [[ $fail -ne 0 ]]; then
     exit 1
