@@ -13,6 +13,10 @@ from tests.tt_eager.python_api_testing.sweep_tests.generation_funcs import gen_f
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 # Ref: https://github.com/tenstorrent/pytorch2.0_ttnn/blob/main/docs/operations/aten.pow.Scalar.md
 
 
@@ -20,6 +24,14 @@ from models.common.utility_functions import torch_random
 # They are defined as dict-type suites that contain the arguments to the run function as keys, and lists of possible inputs as values.
 # Each suite has a key name (in this case "suite_1" and "suite_2") which will associate the test vectors to this specific suite of inputs.
 # Developers can create their own generator functions and pass them to the parameters as inputs.
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("pow_scalar_pytorch2")
+# To run all combinations: loader.get_suite_parameters("pow_scalar_pytorch2", all_cases=True)
+
 parameters = {
     "nightly": {
         "input_shape": [
@@ -33,6 +45,9 @@ parameters = {
         "input_b_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
         "output_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -49,6 +64,7 @@ def run(
     input_a_memory_config,
     input_b_memory_config,
     output_memory_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

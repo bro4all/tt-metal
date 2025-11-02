@@ -15,9 +15,21 @@ from tests.ttnn.utils_for_testing import start_measuring_time, stop_measuring_ti
 from tests.sweep_framework.sweep_utils.utils import gen_pytest_parametrize_args
 from tests.sweep_framework.sweep_utils.roofline_utils import get_run_return
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 TIMEOUT = 50
 
 # Parameters provided to the test vector generator are defined here.
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("batched_sparse_matmul")
+# To run all combinations: loader.get_suite_parameters("batched_sparse_matmul", all_cases=True)
+
 parameters = {
     "gpt_traces": {
         "m": list(1 << x for x in range(5, 16)),
@@ -28,6 +40,9 @@ parameters = {
         "in1_dtype": [ttnn.bfloat4_b],
         "core_grid": [(5, 6)],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -133,6 +148,7 @@ def run(
     tile_w,
     in1_dtype,
     core_grid,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

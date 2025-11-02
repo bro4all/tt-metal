@@ -14,12 +14,24 @@ from tests.tt_eager.python_api_testing.sweep_tests.generation_funcs import gen_f
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 random.seed(0)
 
 # Parameters provided to the test vector generator are defined here.
 # They are defined as dict-type suites that contain the arguments to the run function as keys, and lists of possible inputs as values.
 # Each suite has a key name (in this case "suite_1") which will associate the test vectors to this specific suite of inputs.
 # Developers can create their own generator functions and pass them to the parameters as inputs.
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("selu")
+# To run all combinations: loader.get_suite_parameters("selu", all_cases=True)
+
 parameters = {
     "nightly": {
         "input_shape": gen_shapes([1, 1, 32, 32], [6, 12, 256, 256], [1, 1, 1, 1], 16)
@@ -30,6 +42,9 @@ parameters = {
         "input_a_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
         "output_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -43,6 +58,7 @@ def run(
     input_a_layout,
     input_a_memory_config,
     output_memory_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

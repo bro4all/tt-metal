@@ -4,12 +4,28 @@
 import ttnn
 import torch
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("cross_entropy_loss")
+# To run all combinations: loader.get_suite_parameters("cross_entropy_loss", all_cases=True)
+
 parameters = {
     "suite_1": {
         "predictions_shape": [
             (3, 5),
         ],
     }
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -24,7 +40,11 @@ def cross_entropy_loss_ttnn(predictions, labels, reduction_constant):
     return final_loss
 
 
-def run(predictions_shape, device):
+def run(predictions_shape, device,
+    traced_config_name=None,
+    *,
+    device,
+) -> list:
     torch.manual_seed(0)
     predictions = torch.randn(predictions_shape)
     target_indices = torch.empty(3, dtype=torch.long).random_(5)

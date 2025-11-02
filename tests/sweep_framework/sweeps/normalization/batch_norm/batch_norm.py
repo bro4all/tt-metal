@@ -19,9 +19,21 @@ from models.common.utility_functions import torch_random
 
 from tests.ttnn.unit_tests.operations.eltwise.backward.utility_funcs import data_gen_with_range_batch_norm
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 TIMEOUT = 30
 
 random.seed(0)
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("batch_norm")
+# To run all combinations: loader.get_suite_parameters("batch_norm", all_cases=True)
 
 parameters = {
     "BN_Testing": {
@@ -37,6 +49,9 @@ parameters = {
         "eps": [1.0, 0.0, 2.34, 1e-05],
         "momentum": [0.0, 0.1, 0.5],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -158,6 +173,7 @@ def run(
     bias,
     eps,
     momentum,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

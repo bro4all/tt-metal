@@ -13,10 +13,26 @@ from tests.tt_eager.python_api_testing.sweep_tests.generation_funcs import gen_f
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import (
+    MasterConfigLoader,
+    unpack_traced_config,
+    unpack_binary_traced_config,
+)
+
+
 # Ref: https://github.com/tenstorrent/pytorch2.0_ttnn/blob/main/docs/operations/aten.mul.Tensor.md
 
 # Test to check for cases with inputs that give inf in pytorch and not in TTNN because 'inf' threshold is different for Torch and TTNN. Hence, this is tested separately.
 # pytorch gives 'inf' for values beyond ±3.4e38 but in TTNN, we get inf when the value exceeds ±3.41e38
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("multiply")
+# To run all combinations: loader.get_suite_parameters("multiply", all_cases=True)
+
 parameters = {
     "check_inf_cases": {
         "input_shape": [
@@ -41,6 +57,9 @@ parameters = {
         "input_a_layout": [ttnn.TILE_LAYOUT],
         "input_a_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -49,6 +68,7 @@ def run(
     input_a_dtype,
     input_a_layout,
     input_a_memory_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

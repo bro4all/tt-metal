@@ -16,12 +16,24 @@ from tests.tt_eager.python_api_testing.sweep_tests.generation_funcs import gen_f
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 # Override the default timeout in seconds for hang detection.
 TIMEOUT = 360
 random.seed(0)
 
 
 # Does not have memory_config parameter
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("attention_softmax")
+# To run all combinations: loader.get_suite_parameters("attention_softmax", all_cases=True)
+
 parameters = {
     "nightly": {
         "input_shape": gen_shapes([1, 1, 1, 8], [6, 1, 256, 256], [1, 1, 1, 8], 4)
@@ -36,6 +48,9 @@ parameters = {
         "mask_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
         "output_memory_config": [ttnn.DRAM_MEMORY_CONFIG, ttnn.L1_MEMORY_CONFIG],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -61,6 +76,7 @@ def run(
     mask_layout,
     mask_memory_config,
     output_memory_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

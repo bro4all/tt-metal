@@ -13,6 +13,10 @@ from tests.sweep_framework.sweep_utils.utils import gen_pytest_parametrize_args
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from tests.sweep_framework.sweep_utils.roofline_utils import get_run_return
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 # Override the default timeout in seconds for hang detection.
 TIMEOUT = 30
 
@@ -20,6 +24,14 @@ random.seed(0)
 
 DIM_SIZES = [0, 32]
 """Possible tensor dimensions are picked from this list"""
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("argmax")
+# To run all combinations: loader.get_suite_parameters("argmax", all_cases=True)
 
 parameters = {
     f"rank_{rank}": {
@@ -29,6 +41,10 @@ parameters = {
         "use_multicore": [True, False],
     }
     for rank in range(5)
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -123,6 +139,7 @@ def run(
     dim,
     keepdim,
     use_multicore,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

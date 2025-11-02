@@ -12,7 +12,19 @@ from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, s
 from models.common.utility_functions import torch_random
 from tests.sweep_framework.sweep_utils.roofline_utils import get_run_return
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 TIMEOUT = 15
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("layer_norm_traces")
+# To run all combinations: loader.get_suite_parameters("layer_norm_traces", all_cases=True)
 
 parameters = {
     "default": {
@@ -106,6 +118,10 @@ parameters = {
             ((920, 1, 256), [256], 1e-05),
         ],
     }
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -138,6 +154,7 @@ def test_layer_norm(device, params):
 
 def run(
     params,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

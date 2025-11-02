@@ -14,6 +14,16 @@ from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, s
 from models.common.utility_functions import torch_random
 from tests.sweep_framework.sweep_utils.max_pool2d_common import run_max_pool2d, mesh_device_fixture
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("max_pool2d_short_sweep")
+# To run all combinations: loader.get_suite_parameters("max_pool2d_short_sweep", all_cases=True)
 
 parameters = {
     "max_pool2d_short_sweep_suite": {
@@ -57,6 +67,9 @@ parameters = {
             [1, 96, 112, 112, 3, 3, 2, 2, 1, 1, 1, 1, False],
         ],
     },
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -67,6 +80,7 @@ def invalidate_vector(test_vector) -> Tuple[bool, Optional[str]]:
 def run(
     input_specs,
     dtype,
+    traced_config_name=None,
     *,
     device,
 ):

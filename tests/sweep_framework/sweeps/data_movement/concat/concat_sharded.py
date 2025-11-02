@@ -9,6 +9,10 @@ import random
 import ttnn
 
 from tests.ttnn.utils_for_testing import (
+
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
     check_with_pcc,
     start_measuring_time,
     stop_measuring_time,
@@ -220,6 +224,14 @@ parameters_width_sharded = {
     }
 }
 
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("concat_sharded")
+# To run all combinations: loader.get_suite_parameters("concat_sharded", all_cases=True)
+
 parameters = {**parameter_block_sharded, **parameters_height_sharded, **parameters_width_sharded}
 print(f"parameter keys: {parameters.keys()}")
 
@@ -263,6 +275,7 @@ def run(
     layout,
     input_mem_config,
     output_mem_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

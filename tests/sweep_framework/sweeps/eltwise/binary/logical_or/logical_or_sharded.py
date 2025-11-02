@@ -11,6 +11,10 @@ import random
 import ttnn
 from tests.sweep_framework.sweep_utils.utils import gen_shapes, tensor_to_dtype, sanitize_shape_rm
 from tests.sweep_framework.sweep_utils.sharding_utils import (
+
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
     gen_sharded_spec_unary,
     parse_sharding_spec,
     invalidate_vector_sharding,
@@ -29,6 +33,14 @@ random.seed(0)
 # They are defined as dict-type suites that contain the arguments to the run function as keys, and lists of possible inputs as values.
 # Each suite has a key name (in this case "suite_1") which will associate the test vectors to this specific suite of inputs.
 # Developers can create their own generator functions and pass them to the parameters as inputs.
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("logical_or")
+# To run all combinations: loader.get_suite_parameters("logical_or", all_cases=True)
+
 parameters = {
     "nightly": {
         "input_spec": gen_sharded_spec_unary(8, layouts=["TILE_LAYOUT"]),
@@ -36,6 +48,10 @@ parameters = {
         "input_b_dtype": [ttnn.bfloat16, ttnn.bfloat8_b],
         "output_dtype": [ttnn.bfloat16, ttnn.bfloat8_b],
     },
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -62,6 +78,7 @@ def run(
     input_a_dtype,
     input_b_dtype,
     output_dtype,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

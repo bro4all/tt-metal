@@ -15,10 +15,22 @@ from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, s
 from models.common.utility_functions import torch_random
 from tests.sweep_framework.sweep_utils.roofline_utils import get_run_return
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 TIMEOUT = 5
 
 # TODO: Consolidate tests for duplicate use cases into sweep with shapes
 # TODO: Missing coverage for Stable Diffusion matmul in: tests/ttnn/unit_tests/operations/test_matmul.py
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("matmul_create_program_config")
+# To run all combinations: loader.get_suite_parameters("matmul_create_program_config", all_cases=True)
+
 parameters = {
     "default": {
         "matmul_specs": [
@@ -78,6 +90,10 @@ parameters = {
         "output_dtype": [ttnn.bfloat16, ttnn.bfloat8_b],
         "input_layout": [ttnn.TILE_LAYOUT],
     }
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -186,6 +202,7 @@ def run(
     input_b_dtype,
     output_dtype,
     input_layout,
+    traced_config_name=None,
     *,
     device,
 ):

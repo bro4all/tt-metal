@@ -13,11 +13,23 @@ import ttnn
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 from tests.sweep_framework.sweep_utils.conv2d_common import (
+
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
     run_conv2d_short_sweep,
     mesh_device_fixture,
 )
 
 # fmt: off
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("conv2d_ttforge_sweep")
+# To run all combinations: loader.get_suite_parameters("conv2d_ttforge_sweep", all_cases=True)
+
 parameters = {
     "ttforge_sweep_conv2d": {
         "input_specs": [
@@ -522,6 +534,10 @@ parameters = {
             [1, 1280, 3, 518, 518, 14, 14, 14, 14, 0, 0, 1, 1, 1, False, [int(ttnn.ROW_MAJOR_LAYOUT), "dram", int(ttnn.bfloat16)], [int(ttnn.ROW_MAJOR_LAYOUT), "system_memory", int(ttnn.bfloat16)], [int(ttnn.TILE_LAYOUT), "dram", int(ttnn.bfloat16)]], #Added from Issue 29981
        ],
         "is_conv1d": [False], },
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
     }
 # fmt: on
 
@@ -533,6 +549,7 @@ def invalidate_vector(test_vector) -> Tuple[bool, Optional[str]]:
 def run(
     input_specs,
     is_conv1d=False,
+    traced_config_name=None,
     *,
     device,
 ) -> list:

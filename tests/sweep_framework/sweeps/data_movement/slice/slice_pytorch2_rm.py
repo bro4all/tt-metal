@@ -11,8 +11,20 @@ import ttnn
 from tests.ttnn.utils_for_testing import check_with_pcc, start_measuring_time, stop_measuring_time
 from models.common.utility_functions import torch_random
 
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
+
 TIMEOUT = 10
 random.seed(0)
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("slice_pytorch2_rm")
+# To run all combinations: loader.get_suite_parameters("slice_pytorch2_rm", all_cases=True)
 
 parameters = {
     "nightly": {
@@ -175,6 +187,10 @@ parameters = {
         "dtype": [ttnn.bfloat16],
         "layout": [ttnn.ROW_MAJOR_LAYOUT],
     }
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -196,6 +212,7 @@ def run(
     slice_specs,
     dtype,
     layout,
+    traced_config_name=None,
     *,
     device,
 ):

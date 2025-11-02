@@ -15,6 +15,10 @@ import ttnn
 
 from tests.sweep_framework.sweep_utils.utils import gen_pytest_parametrize_args
 from tests.ttnn.utils_for_testing import (
+
+# Import master config loader for traced model configurations
+from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
+
     get_per_core_size_and_num_cores,
     start_measuring_time,
     stop_measuring_time,
@@ -35,6 +39,14 @@ def get_height_sharded_specs(
         ):
             yield (batch_sizes, m_size, per_core_height, num_cores_height)
 
+
+
+# Load traced configurations from real model tests
+# Simply initialize the loader and get parameters for your operation
+loader = MasterConfigLoader()
+# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
+model_traced_params = loader.get_suite_parameters("matmul_default_height_sharded")
+# To run all combinations: loader.get_suite_parameters("matmul_default_height_sharded", all_cases=True)
 
 parameters = {
     "default": {
@@ -63,6 +75,10 @@ parameters = {
         "input_layout": [ttnn.TILE_LAYOUT],
         "compute_kernel_config": [None],
     }
+
+    # Traced configurations from real model tests (e.g., EfficientNet)
+    # Automatically loaded - just add the suite!
+    "model_traced": model_traced_params,
 }
 
 
@@ -188,6 +204,7 @@ def run(
     output_dtype,
     input_layout,
     compute_kernel_config,
+    traced_config_name=None,
     *,
     device,
 ) -> list:
