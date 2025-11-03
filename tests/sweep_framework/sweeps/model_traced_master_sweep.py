@@ -31,35 +31,28 @@ operations_with_configs = loader.get_operations_with_configs()
 # Create parameters for all operations in a single suite
 parameters = {"model_traced_all": {}}
 
-# Collect all operation + config combinations directly from master data
+# Collect all operation + config combinations using the same logic as distributed approach
 all_configs = []
-loader.load_master_data()  # Ensure master data is loaded
+processed_counts = {}
 
-for op_name, op_data in loader.master_data.get("operations", {}).items():
-    # Use base name (remove ttnn:: prefix)
-    base_name = op_name[6:] if op_name.startswith("ttnn::") else op_name
+for operation_name in operations_with_configs.keys():
+    # Use get_suite_parameters to get properly processed configs (with deduplication)
+    op_params = loader.get_suite_parameters(operation_name)
 
-    configs = op_data.get("configurations", [])
-    if configs:
-        # Create traced config names and populate the loader's cache
-        # This allows the unpacking functions to work with string-based lookup
-        for i, config in enumerate(configs):
-            config_name = f"{base_name}_traced_{i}"
-
-            # Populate the loader's cache so get_traced_config can find it
-            loader.traced_configs_cache[config_name] = config
-
-            all_configs.append(
-                {"operation_name": base_name, "traced_config_name": config_name}  # String name for lookup
-            )
+    if op_params and "traced_config_name" in op_params:
+        traced_config_names = op_params["traced_config_name"]
+        processed_counts[operation_name] = len(traced_config_names)
+        for config_name in traced_config_names:
+            all_configs.append({"operation_name": operation_name, "traced_config_name": config_name})
 
 # Add all combinations to the parameters
 parameters["model_traced_all"] = {"operation_config": all_configs}
 
 print(f"✅ Created centralized sweep with {len(all_configs)} total operation-config combinations:")
-for op_name in sorted(operations_with_configs.keys()):
-    config_count = operations_with_configs[op_name]
-    print(f"  {op_name}: {config_count} configs")
+for op_name in sorted(processed_counts.keys()):
+    processed_count = processed_counts[op_name]
+    raw_count = operations_with_configs.get(op_name, 0)
+    print(f"  {op_name}: {processed_count} processed configs (from {raw_count} raw)")
 print(f"Total combinations: {len(all_configs)}")
 
 
