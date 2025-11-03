@@ -29,6 +29,7 @@ runs:
   using: "composite"
   steps:
     - name: 🧬 Checkout Repository
+      if: ${{ inputs.use-evaluation-image == false }}
       uses: actions/checkout@v4
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
