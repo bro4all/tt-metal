@@ -21,7 +21,7 @@ TIMEOUT = 15
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("traces")
+model_traced_params = loader.get_suite_parameters("argmax")
 
 parameters = {
     "pytorch": {
