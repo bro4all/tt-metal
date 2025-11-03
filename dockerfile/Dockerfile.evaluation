@@ -8,7 +8,7 @@ ARG BASE_IMAGE
 ARG BUILD_ARTIFACT_NAME
 ARG WHEEL_ARTIFACT_NAME
 
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} as download-and-build-artifacts
 
 ADD /artifacts ./artifacts
 
@@ -16,6 +16,4 @@ WORKDIR ./artifacts
 RUN tar --zstd -xf ttm_any.tar.zst
 RUN pip3 install "$(ls -1 *.whl)"
 
-
-WORKDIR /tt-metalium/
-ADD . /tt-metalium
+WORKDIR /tt-metalium
