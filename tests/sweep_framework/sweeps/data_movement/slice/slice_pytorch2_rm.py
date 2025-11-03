@@ -20,7 +20,7 @@ random.seed(0)
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("slice_pytorch2_rm")
+model_traced_params = loader.get_suite_parameters("slice")
 
 parameters = {
     "nightly": {

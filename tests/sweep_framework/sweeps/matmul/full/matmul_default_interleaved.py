@@ -23,7 +23,7 @@ TIMEOUT = 5
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default_interleaved")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "default": {

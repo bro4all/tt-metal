@@ -35,7 +35,7 @@ random.seed(0)
 # and lists of possible inputs as values.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("softmax_sharded")
+model_traced_params = loader.get_suite_parameters("softmax")
 
 parameters = {
     "xfail": {

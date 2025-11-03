@@ -23,7 +23,7 @@ random.seed(0)
 # !TODO amorrison changed ttnn.split API to match torch.split. in #17461. Use chunk size when these params are updated
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("split_pytorch2")
+model_traced_params = loader.get_suite_parameters("split")
 
 parameters = {
     "nightly": {

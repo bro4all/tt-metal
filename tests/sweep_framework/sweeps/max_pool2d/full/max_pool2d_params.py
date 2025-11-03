@@ -27,7 +27,7 @@ input_shapes = [
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("max_pool2d_params")
+model_traced_params = loader.get_suite_parameters("max_pool2d")
 
 parameters = {
     f"max_pool2d_full_sweep_suite_params_{idx}": {

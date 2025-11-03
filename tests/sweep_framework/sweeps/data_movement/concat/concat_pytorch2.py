@@ -31,7 +31,7 @@ random.seed(0)
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("concat_pytorch2")
+model_traced_params = loader.get_suite_parameters("concat")
 
 parameters = {
     "nightly": {

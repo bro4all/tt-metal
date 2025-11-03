@@ -27,7 +27,7 @@ DIM_SIZES = [0, 32]
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("argmax")
+model_traced_params = loader.get_suite_parameters("generality")
 
 parameters = {
     **{

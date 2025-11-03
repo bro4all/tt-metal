@@ -19,7 +19,7 @@ TIMEOUT = 15  # longer timeout since permute calls transpose recursively
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("permute_pytorch2_rm")
+model_traced_params = loader.get_suite_parameters("permute")
 
 parameters = {
     "traces": {

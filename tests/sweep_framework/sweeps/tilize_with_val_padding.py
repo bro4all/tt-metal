@@ -47,7 +47,7 @@ def _nearest_32(x):
 # Developers can create their own generator functions and pass them to the parameters as inputs.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("tilize_with_val_padding")
+model_traced_params = loader.get_suite_parameters("tilize")
 
 parameters = {
     "xfail": {

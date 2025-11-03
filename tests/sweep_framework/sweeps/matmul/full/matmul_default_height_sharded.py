@@ -41,7 +41,7 @@ def get_height_sharded_specs(
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default_height_sharded")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "default": {

@@ -33,7 +33,7 @@ IN0_INNER_DIM_PER_CORE = 96
 # Set up suites and specify input_shapes, program_config, and input_a_custom_memory_config parameters.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_user_program_config_mcast_2d")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     ########################################

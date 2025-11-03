@@ -20,7 +20,7 @@ random.seed(0)
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("index_select_pytorch2")
+model_traced_params = loader.get_suite_parameters("index_select")
 
 parameters = {
     "nightly": {

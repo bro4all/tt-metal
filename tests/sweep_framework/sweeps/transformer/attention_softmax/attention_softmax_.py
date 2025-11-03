@@ -28,7 +28,7 @@ random.seed(0)
 # Does not have memory_config parameter
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("attention_softmax_")
+model_traced_params = loader.get_suite_parameters("attention_softmax")
 
 parameters = {
     "nightly": {

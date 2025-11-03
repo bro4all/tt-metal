@@ -103,7 +103,7 @@ parameters_row_major_interleaved = {
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("concat_interleaved_n_tensors")
+model_traced_params = loader.get_suite_parameters("concat")
 
 parameters = {**parameter_tiled_interleaved, **parameters_row_major_interleaved}
 print(f"parameter keys: {parameters.keys()}")

@@ -26,7 +26,7 @@ from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpac
 # Developers can create their own generator functions and pass them to the parameters as inputs.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("pow_pytorch2")
+model_traced_params = loader.get_suite_parameters("pow")
 
 parameters = {
     "nightly": {

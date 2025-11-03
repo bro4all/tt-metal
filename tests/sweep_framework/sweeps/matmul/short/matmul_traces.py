@@ -27,7 +27,7 @@ TIMEOUT = 70
 # combinations may be valid.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_traces")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "pytorch": {

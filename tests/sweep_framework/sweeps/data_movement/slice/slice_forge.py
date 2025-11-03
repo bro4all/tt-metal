@@ -28,7 +28,7 @@ with open(json_path, "r") as f:
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("slice_forge")
+model_traced_params = loader.get_suite_parameters("slice")
 
 parameters = {
     "nightly": {

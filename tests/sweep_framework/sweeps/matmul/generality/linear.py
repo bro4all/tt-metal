@@ -106,7 +106,7 @@ general = {
 # Create parameter combinations for different test scenarios
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("linear")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     # Matrix-matrix multiplication: (m, k) x (k, n) -> (m, n)

@@ -24,7 +24,7 @@ TIMEOUT = 50
 # Parameters provided to the test vector generator are defined here.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("sparse_matmul")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "moe_traces1": {

@@ -22,7 +22,7 @@ random.seed(0)
 # Tensor<[1, 10]> self = ?
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("transpose_pytorch2")
+model_traced_params = loader.get_suite_parameters("transpose")
 
 parameters = {
     "nightly": {

@@ -26,7 +26,7 @@ def generate_transpose_shape(num_samples):
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("transpose_interleaved")
+model_traced_params = loader.get_suite_parameters("transpose")
 
 parameters = {
     "interleaved_4d": {

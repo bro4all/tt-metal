@@ -17,7 +17,7 @@ from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpac
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("max_pool2d_large_dims")
+model_traced_params = loader.get_suite_parameters("max_pool2d")
 
 parameters = {
     "max_pool2d_full_sweep_suite_large_dims": {

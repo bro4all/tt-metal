@@ -29,7 +29,7 @@ TIMEOUT = 5
 # Use the first two categories for suites: 18 suites with 8 tests each.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_user_program_config")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "matmul_1d_in0_batched": {

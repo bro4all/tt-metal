@@ -47,7 +47,7 @@ def get_block_sharded_specs(
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default_block_sharded")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     f"n_size_{n if n > 0 else 32}": {

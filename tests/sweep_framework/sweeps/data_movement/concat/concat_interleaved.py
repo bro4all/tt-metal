@@ -71,7 +71,7 @@ parameter_tiled = {
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("concat_interleaved")
+model_traced_params = loader.get_suite_parameters("concat")
 
 parameters = {**parameter_tiled}
 print(f"parameter keys: {parameters.keys()}")

@@ -25,7 +25,7 @@ TIMEOUT = 15
 # TODO: Missing coverage for mixed precision; passed in dtype does nothing in current matmul path
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "default": {

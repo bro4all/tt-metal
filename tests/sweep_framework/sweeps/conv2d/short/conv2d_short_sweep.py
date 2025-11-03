@@ -27,7 +27,7 @@ TIMEOUT = 60
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("conv2d_short_sweep")
+model_traced_params = loader.get_suite_parameters("conv2d")
 
 parameters = {
     "short_sweep_suite_conv2d": {

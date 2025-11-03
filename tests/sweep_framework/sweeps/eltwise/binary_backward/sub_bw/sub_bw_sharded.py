@@ -44,7 +44,7 @@ def str_to_float(x):
 # Developers can create their own generator functions and pass them to the parameters as inputs.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("sub_bw_sharded")
+model_traced_params = loader.get_suite_parameters("sub_bw")
 
 parameters = {
     "nightly": {

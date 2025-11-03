@@ -25,7 +25,7 @@ TIMEOUT = 5
 # TODO: Missing coverage for Stable Diffusion matmul in: tests/ttnn/unit_tests/operations/test_matmul.py
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_create_program_config")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "default": {

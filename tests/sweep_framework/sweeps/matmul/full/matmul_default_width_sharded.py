@@ -38,7 +38,7 @@ def get_width_sharded_specs(k_size_choices: List[int], num_cores_choices: List[i
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default_width_sharded")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "default": {

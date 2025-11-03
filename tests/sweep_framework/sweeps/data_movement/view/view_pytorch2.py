@@ -71,7 +71,7 @@ def parse_md_file_simple_no_regex(file_path):
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("view_pytorch2")
+model_traced_params = loader.get_suite_parameters("view")
 
 parameters = {
     "nightly": {

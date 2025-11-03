@@ -19,7 +19,7 @@ from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpac
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("conv_transpose2d_short_sweep")
+model_traced_params = loader.get_suite_parameters("conv_transpose2d")
 
 parameters = {
     "short_sweep_suite": {

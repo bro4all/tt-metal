@@ -32,7 +32,7 @@ class TensorMemoryConfigs(enum.Enum):
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("matmul_default_sharded")
+model_traced_params = loader.get_suite_parameters("matmul")
 
 parameters = {
     "mcast_2d": {

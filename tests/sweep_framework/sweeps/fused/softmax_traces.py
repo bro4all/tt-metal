@@ -20,7 +20,7 @@ TIMEOUT = 15
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("softmax_traces")
+model_traced_params = loader.get_suite_parameters("softmax")
 
 parameters = {
     "default": {

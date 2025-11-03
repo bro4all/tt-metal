@@ -225,7 +225,7 @@ parameters_width_sharded = {
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("concat_sharded")
+model_traced_params = loader.get_suite_parameters("concat")
 
 parameters = {**parameter_block_sharded, **parameters_height_sharded, **parameters_width_sharded}
 print(f"parameter keys: {parameters.keys()}")

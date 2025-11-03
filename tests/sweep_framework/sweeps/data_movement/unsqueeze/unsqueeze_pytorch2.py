@@ -54,7 +54,7 @@ def generate_unsqueeze_config(num_samples=10):
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("unsqueeze_pytorch2")
+model_traced_params = loader.get_suite_parameters("unsqueeze")
 
 parameters = {
     "nightly": {

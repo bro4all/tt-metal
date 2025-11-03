@@ -24,7 +24,7 @@ from tests.sweep_framework.sweep_utils.conv2d_common import (
 # fmt: off
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("conv2d_ttforge_sweep")
+model_traced_params = loader.get_suite_parameters("conv2d")
 
 parameters = {
     "ttforge_sweep_conv2d": {

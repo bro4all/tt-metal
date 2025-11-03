@@ -24,7 +24,7 @@ random.seed(0)
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("interleaved_to_sharded_e2e")
+model_traced_params = loader.get_suite_parameters("interleaved_to_sharded")
 
 parameters = {
     "nightly": {

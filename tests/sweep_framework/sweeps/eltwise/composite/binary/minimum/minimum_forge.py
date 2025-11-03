@@ -23,7 +23,7 @@ from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpac
 
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("minimum_forge")
+model_traced_params = loader.get_suite_parameters("minimum")
 
 parameters = {
     "nightly": {
