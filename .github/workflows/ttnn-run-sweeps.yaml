@@ -12,6 +12,7 @@ on:
           - ALL SWEEPS (Nightly)
           - ALL SWEEPS (Comprehensive)
           - ALL SWEEPS (model_traced)
+          - model_traced_master_sweep
           - add
           - ccl.generality.all_broadcast
           - ccl.generality.all_gather

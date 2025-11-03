@@ -19,30 +19,14 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 
-# Get the base directory dynamically - import from model_tracer
-try:
-    # Try direct import (if model_tracer is in PYTHONPATH or same parent)
-    sys.path.insert(0, str(Path(__file__).parent.parent / "model_tracer"))
-    from generic_ops_tracer import get_base_dir
-except ImportError:
-    # Fallback: define inline if generic_ops_tracer not found
-    def get_base_dir():
-        """Get the tt-metal base directory from PYTHONPATH or current working directory"""
-        pythonpath = os.environ.get("PYTHONPATH", "")
-        if pythonpath:
-            paths = pythonpath.split(":")
-            for path in paths:
-                if "tt-metal" in path:
-                    if path.endswith("tt-metal"):
-                        return path
-                    parts = path.split("tt-metal")
-                    if parts:
-                        return parts[0] + "tt-metal"
-        current_dir = os.getcwd()
-        if "tt-metal" in current_dir:
-            parts = current_dir.split("tt-metal")
-            return parts[0] + "tt-metal"
-        return current_dir
+
+# Get the base directory - use tt-metal directory
+def get_base_dir():
+    """Get the tt-metal base directory"""
+    # Get the directory where this file is located
+    current_file_dir = Path(__file__).parent  # tests/sweep_framework
+    ttmetal_dir = current_file_dir.parent.parent  # Go up to tt-metal
+    return str(ttmetal_dir)
 
 
 BASE_DIR = get_base_dir()
@@ -103,6 +87,33 @@ class MasterConfigLoader:
 
         print(f"⚠️ No configurations found for operation: {operation_name}")
         return []
+
+    def get_all_operations(self) -> List[str]:
+        """Get all available operation names from the master config"""
+        self.load_master_data()
+        operations = list(self.master_data.get("operations", {}).keys())
+
+        # Return both ttnn:: prefixed and base names for compatibility
+        base_names = []
+        for op in operations:
+            if op.startswith("ttnn::"):
+                base_names.append(op[6:])  # Remove "ttnn::" prefix
+            else:
+                base_names.append(op)
+
+        return sorted(list(set(base_names + operations)))
+
+    def get_operations_with_configs(self) -> Dict[str, int]:
+        """Get all operations that have configurations, with config counts"""
+        self.load_master_data()
+        operations = {}
+        for op_name, op_data in self.master_data.get("operations", {}).items():
+            configs = op_data.get("configurations", [])
+            if configs:
+                # Use base name for consistency
+                display_name = op_name[6:] if op_name.startswith("ttnn::") else op_name
+                operations[display_name] = len(configs)
+        return operations
 
     def parse_dtype(self, dtype_str: str) -> Any:
         """Convert dtype string to ttnn dtype"""
