@@ -180,7 +180,7 @@ jobs:
           name: eager-dist-cp310-ubuntu-22.04-any-profiler-ca391200619c21121b25ff6cb105f09fda3c375f-18975278514
           run-id: 18975278514
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path: /artifacts
+          path: ./artifacts
 
       - name: 🧪 Download Python Wheel
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0
@@ -188,7 +188,7 @@ jobs:
           name: TTMetal_build_any_22.04_amd64_x86_64-linux-clang-17-libstdcpp_profiler_ca391200619c21121b25ff6cb105f09fda3c375f_18975278514
           run-id: 18975278514
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path: /artifacts
+          path: ./artifacts
 
       - name: Set evaluation image name
         id: image_names
