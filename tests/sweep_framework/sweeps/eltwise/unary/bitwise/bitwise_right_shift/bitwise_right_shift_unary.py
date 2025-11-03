@@ -29,7 +29,7 @@ random.seed(0)
 # Developers can create their own generator functions and pass them to the parameters as inputs.
 
 loader = MasterConfigLoader()
-model_traced_params = loader.get_suite_parameters("bitwise")
+model_traced_params = loader.get_suite_parameters("bitwise_right_shift")
 
 parameters = {
     "nightly": {
