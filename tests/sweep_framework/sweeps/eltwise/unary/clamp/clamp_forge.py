@@ -29,12 +29,8 @@ random.seed(0)
 # Developers can create their own generator functions and pass them to the parameters as inputs.
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("clamp")
-# To run all combinations: loader.get_suite_parameters("clamp", all_cases=True)
 
 parameters = {
     "nightly": {

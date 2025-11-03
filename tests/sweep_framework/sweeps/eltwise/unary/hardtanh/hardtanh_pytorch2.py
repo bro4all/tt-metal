@@ -20,12 +20,8 @@ from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpac
 # Ref: https://github.com/tenstorrent/pytorch2.0_ttnn/blob/main/docs/operations/aten.hardtanh.default.md
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("hardtanh")
-# To run all combinations: loader.get_suite_parameters("hardtanh", all_cases=True)
 
 parameters = {
     "nightly": {

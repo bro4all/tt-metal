@@ -102,12 +102,8 @@ parameters_row_major_interleaved = {
 }
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("concat_interleaved_n_tensors")
-# To run all combinations: loader.get_suite_parameters("concat_interleaved_n_tensors", all_cases=True)
 
 parameters = {**parameter_tiled_interleaved, **parameters_row_major_interleaved}
 print(f"parameter keys: {parameters.keys()}")

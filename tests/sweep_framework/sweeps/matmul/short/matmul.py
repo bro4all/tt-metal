@@ -27,12 +27,8 @@ from tests.sweep_framework.master_config_loader import (
 TIMEOUT = 5
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("matmul")
-# To run all combinations: loader.get_suite_parameters("matmul", all_cases=True)
 
 parameters = {
     "default": {

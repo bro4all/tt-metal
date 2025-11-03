@@ -26,12 +26,8 @@ from tests.sweep_framework.master_config_loader import (
 # Test to check for cases with inputs that give inf in pytorch and not in TTNN because 'inf' threshold is different for Torch and TTNN. Hence, this is tested separately.
 # pytorch gives 'inf' for values beyond ±3.4e38 but in TTNN, we get inf when the value exceeds ±3.41e38
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("multiply")
-# To run all combinations: loader.get_suite_parameters("multiply", all_cases=True)
 
 parameters = {
     "check_inf_cases": {

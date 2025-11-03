@@ -27,12 +27,8 @@ random.seed(0)
 
 # Does not have memory_config parameter
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("repeat_interleave")
-# To run all combinations: loader.get_suite_parameters("repeat_interleave", all_cases=True)
 
 parameters = {
     "nightly": {

@@ -26,12 +26,8 @@ input_shapes = [
 # There can be invalid test cases in here based on conditions in invalidate_vector.
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("max_pool2d_params")
-# To run all combinations: loader.get_suite_parameters("max_pool2d_params", all_cases=True)
 
 parameters = {
     f"max_pool2d_full_sweep_suite_params_{idx}": {

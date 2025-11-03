@@ -33,12 +33,8 @@ core_grid = ttnn.CoreCoord(8, 7)
 
 # Set up suites and specify input_shapes, program_config, and input_a_custom_memory_config parameters.
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("matmul_user_program_config_mcast_1d")
-# To run all combinations: loader.get_suite_parameters("matmul_user_program_config_mcast_1d", all_cases=True)
 
 parameters = {
     ########################################

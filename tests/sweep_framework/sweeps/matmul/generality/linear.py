@@ -105,12 +105,8 @@ general = {
 
 # Create parameter combinations for different test scenarios
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("linear")
-# To run all combinations: loader.get_suite_parameters("linear", all_cases=True)
 
 parameters = {
     # Matrix-matrix multiplication: (m, k) x (k, n) -> (m, n)

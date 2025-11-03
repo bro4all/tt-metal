@@ -46,12 +46,8 @@ def get_block_sharded_specs(
                 yield (batch_sizes, m_size, k_size, per_core_height, per_core_width, num_cores_height, num_cores_width)
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("matmul_default_block_sharded")
-# To run all combinations: loader.get_suite_parameters("matmul_default_block_sharded", all_cases=True)
 
 parameters = {
     f"n_size_{n if n > 0 else 32}": {

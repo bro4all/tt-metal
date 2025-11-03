@@ -18,12 +18,8 @@ from tests.sweep_framework.sweep_utils.conv_transpose2d_common import run_short,
 from tests.sweep_framework.master_config_loader import MasterConfigLoader, unpack_traced_config
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("conv_transpose2d_short_sweep")
-# To run all combinations: loader.get_suite_parameters("conv_transpose2d_short_sweep", all_cases=True)
 
 parameters = {
     "short_sweep_suite": {

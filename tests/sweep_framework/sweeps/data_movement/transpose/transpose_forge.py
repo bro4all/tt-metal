@@ -27,12 +27,8 @@ with open(json_path, "r") as f:
     processed_transpose_specs = json.load(f)
 
 
-# Load traced configurations from real model tests
-# Simply initialize the loader and get parameters for your operation
 loader = MasterConfigLoader()
-# Default: Run exact traced configs from real models (30 for unary, 6 for binary)
 model_traced_params = loader.get_suite_parameters("transpose_forge")
-# To run all combinations: loader.get_suite_parameters("transpose_forge", all_cases=True)
 
 parameters = {
     "traces": {
