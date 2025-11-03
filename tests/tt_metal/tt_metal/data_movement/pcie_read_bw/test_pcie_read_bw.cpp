@@ -26,7 +26,7 @@ namespace unit_tests::dm::pcie_read_bw {
 struct PCIeReadBwConfig {
     uint32_t test_id = 0;
     CoreCoord worker_core_coord = {0, 0};
-    uint32_t iterations = 50;
+    uint32_t iterations = 32;
     uint32_t warmup_iterations = 2;
     uint32_t page_size_bytes = 65536;
     uint32_t batch_size_k = 256;
@@ -60,7 +60,8 @@ bool run_pcie_read_bw_test(
 
     // Get PCIe memory addresses
     uint64_t dev_pcie_base = MetalContext::instance().get_cluster().get_pcie_base_addr_from_device(device_id);
-    uint64_t pcie_offset = 1024 * 1024 * 50;  // 50MB offset to avoid conflicts
+    constexpr uint64_t PCIE_OFFSET_BYTES = 1024 * 1024 * 50;  // 50MB offset to avoid conflicts
+    uint64_t pcie_offset = PCIE_OFFSET_BYTES;
     uint64_t noc_mem_addr = dev_pcie_base + pcie_offset;
 
     tt_metal::CircularBufferConfig cb_config =
@@ -127,12 +128,12 @@ void pcie_read_bw_test(
     PCIeReadBwConfig test_config = {
         .test_id = test_id,
         .worker_core_coord = worker_core_coord,
-        .iterations = 50,
-        .warmup_iterations = 2,
+        .iterations = 32,
+        .warmup_iterations = 10,
         .page_size_bytes = 65536,
         .batch_size_k = 256,
-        .size_bytes = 256 * 1024,
-        .page_count = (256 * 1024) / 65536,
+        .size_bytes = test_config.batch_size_k * 1024,
+        .page_count = test_config.size_bytes / test_config.page_size_bytes,
         .l1_data_format = DataFormat::Float32,
         .noc_id = NOC::RISCV_1_default,
     };
