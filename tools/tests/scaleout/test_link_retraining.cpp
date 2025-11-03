@@ -48,9 +48,6 @@ struct TestFixture {
             asic_id_to_chip_id[asic_id] = chip_id;
         }
     }
-
-
-
 };
 
 uint32_t get_link_training_status(const tt::Cluster& cluster, ChipId chip_id, const tt_xy_pair& coord) {
@@ -162,7 +159,7 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
 
     auto cluster_desc = fixture.driver->get_cluster_description();
     constexpr size_t MAX_LINKS_TO_TEST = 1;  // System can only handle 1 link safely
-    
+
     struct LinkInfo {
         tt::tt_metal::AsicID src_asic_id;
         tt::tt_metal::AsicID dst_asic_id;
@@ -172,7 +169,7 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
         tt_xy_pair src_coord;
         bool is_local;
     };
-    
+
     std::vector<LinkInfo> links;
     links.reserve(MAX_LINKS_TO_TEST);
 
@@ -182,11 +179,11 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
     for (const auto& [asic_id, asic_connections] : asic_topology) {
         if (found_enough) break;
         auto src_chip_id = fixture.asic_id_to_chip_id.at(*asic_id);
-        
+
         for (const auto& [dst_id, eth_connections] : asic_connections) {
             if (found_enough) break;
             auto dst_chip_id = fixture.asic_id_to_chip_id.at(*dst_id);
-            
+
             // Only test local MMIO-to-MMIO links
             if (cluster_desc->is_chip_mmio_capable(src_chip_id) && cluster_desc->is_chip_mmio_capable(dst_chip_id)) {
                 for (const auto& eth_conn : eth_connections) {
@@ -195,7 +192,7 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
                     const auto& src_asic_desc = fixture.physical_system_descriptor.get_asic_descriptors().at(asic_id);
                     const auto& dst_asic_desc = fixture.physical_system_descriptor.get_asic_descriptors().at(conn_dst_asic_id);
                     bool is_local = (src_asic_desc.host_name == dst_asic_desc.host_name);
-                    
+
                     // Only select LOCAL links to avoid breaking remote communication
                     if (is_local) {
                         links.push_back({
@@ -207,7 +204,7 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
                             get_eth_core_coord(fixture.cluster, src_chip_id, eth_conn.src_chan),
                             is_local
                         });
-                        
+
                         if (links.size() >= MAX_LINKS_TO_TEST) {
                             found_enough = true;
                             break;
@@ -218,30 +215,33 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
         }
     }
     ASSERT_GE(links.size(), 1u) << "No accessible local MMIO-to-MMIO ethernet connections found for testing";
+
     log_info(tt::LogTest, "Testing {} link reset{}", links.size(), links.size() > 1 ? "s" : "");
 
-    // Test each link sequentially to avoid breaking communication paths
+    // Take down all links
     for (const auto& link : links) {
-        log_info(tt::LogTest, "Testing link reset for ASIC {} channel {}", *link.src_asic_id, link.src_channel);
-        
-        // Take down the link
+        log_info(tt::LogTest, "Taking down link for ASIC {} channel {}", *link.src_asic_id, link.src_channel);
         set_link_training_status(fixture.cluster, link.src_chip_id, link.src_coord, 0);
-        EXPECT_EQ(get_link_training_status(fixture.cluster, link.src_chip_id, link.src_coord), 0) 
+        EXPECT_EQ(get_link_training_status(fixture.cluster, link.src_chip_id, link.src_coord), 0)
             << "Link should be down before reset";
+    }
 
-        // Build reset topology for this link
-        tt::tt_metal::AsicTopology reset_topology;
+    // Build reset topology with all links
+    tt::tt_metal::AsicTopology reset_topology;
+    for (const auto& link : links) {
         tt::tt_metal::EthConnection src_to_dst_conn{link.src_channel, link.dst_channel, link.is_local};
         tt::tt_metal::EthConnection dst_to_src_conn{link.dst_channel, link.src_channel, link.is_local};
-        
+
         reset_topology[link.src_asic_id].push_back({link.dst_asic_id, {src_to_dst_conn}});
         reset_topology[link.dst_asic_id].push_back({link.src_asic_id, {dst_to_src_conn}});
+    }
 
-        // Reset the link
-        reset_ethernet_links(fixture.physical_system_descriptor, reset_topology);
+    // Reset all links at once
+    reset_ethernet_links(fixture.physical_system_descriptor, reset_topology);
 
-        // Verify link is back up
-        EXPECT_EQ(get_link_training_status(fixture.cluster, link.src_chip_id, link.src_coord), 1) 
+    // Verify all links are back up
+    for (const auto& link : links) {
+        EXPECT_EQ(get_link_training_status(fixture.cluster, link.src_chip_id, link.src_coord), 1)
             << "Link should be up after reset";
     }
 }

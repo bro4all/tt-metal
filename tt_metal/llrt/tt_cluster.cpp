@@ -426,13 +426,8 @@ void Cluster::start_driver(umd::DeviceParams& device_params) const {
 Cluster::~Cluster() {
     log_info(tt::LogDevice, "Closing user mode device drivers");
     // TODO: ???
-    try {
-        this->driver_->close_device();
-    } catch (const std::exception& e) {
-        log_warning(tt::LogDevice, "Exception during device driver close: {}. Continuing with cleanup.", e.what());
-    } catch (...) {
-        log_warning(tt::LogDevice, "Unknown exception during device driver close. Continuing with cleanup.");
-    }
+
+    this->driver_->close_device();
 
     this->sdesc_per_chip_.clear();
     this->device_to_host_mem_channel_.clear();
