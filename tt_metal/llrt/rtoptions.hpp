@@ -97,7 +97,6 @@ struct InspectorSettings {
 class RunTimeOptions {
     std::string root_dir;
 
-    bool is_cache_dir_env_var_set = false;
     std::string cache_dir_;
 
     bool is_kernel_dir_env_var_set = false;
@@ -233,7 +232,6 @@ public:
     static void set_root_dir(const std::string& root_dir);
     const std::string& get_root_dir() const;
 
-    bool is_cache_dir_specified() const { return this->is_cache_dir_env_var_set; }
     const std::string& get_cache_dir() const;
 
     bool is_kernel_dir_specified() const { return this->is_kernel_dir_env_var_set; }

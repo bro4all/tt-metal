@@ -81,16 +81,6 @@ void check_built_dir(const std::filesystem::path& dir_path, const std::filesyste
 
 }  // namespace
 
-std::string get_default_root_path() {
-    const std::string emptyString;
-    const std::string home_path = parse_env<std::string>("HOME", emptyString);
-    if (!home_path.empty() && std::filesystem::exists(home_path)) {
-        return home_path + "/.cache/tt-metal-cache/";
-    } else {
-        return "/tmp/tt-metal-cache/";
-    }
-}
-
 JitBuildEnv::JitBuildEnv() = default;
 
 void JitBuildEnv::init(
@@ -101,7 +91,7 @@ void JitBuildEnv::init(
     // Paths
     const auto& rtoptions = tt_metal::MetalContext::instance().rtoptions();
     this->root_ = rtoptions.get_root_dir();
-    this->out_root_ = rtoptions.is_cache_dir_specified() ? rtoptions.get_cache_dir() : get_default_root_path();
+    this->out_root_ = rtoptions.get_cache_dir();
 
     this->arch_ = arch;
 

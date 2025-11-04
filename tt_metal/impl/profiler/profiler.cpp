@@ -122,14 +122,17 @@ std::unordered_map<uint16_t, tracy::MarkerDetails> generateZoneSourceLocationsHa
     std::unordered_map<uint16_t, tracy::MarkerDetails> hash_to_zone_src_locations;
     std::unordered_set<std::string> zone_src_locations;
 
+    const auto& cache_dir = MetalContext::instance().rtoptions().get_cache_dir();
+    auto profiler_zone_src_locations_log = cache_dir + "zone_src_locations.log";
+
     // Load existing zones from previous runs
     populateZoneSrcLocations(
-        tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG, "", false, hash_to_zone_src_locations, zone_src_locations);
+        profiler_zone_src_locations_log, "", false, hash_to_zone_src_locations, zone_src_locations);
 
     // Load new zones from the current run
     populateZoneSrcLocations(
         tt::tt_metal::NEW_PROFILER_ZONE_SRC_LOCATIONS_LOG,
-        tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG,
+        profiler_zone_src_locations_log,
         true,
         hash_to_zone_src_locations,
         zone_src_locations);
