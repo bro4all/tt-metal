@@ -8,7 +8,6 @@
 #include <optional>
 #include <chrono>
 #include <sstream>
-#include <set>
 #include <unordered_map>
 
 #include <factory_system_descriptor/utils.hpp>
