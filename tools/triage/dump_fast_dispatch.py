@@ -44,8 +44,8 @@ class DumpWaitGlobalsData:
     is_h_variant: int | None = triage_field("is_h_variant")
 
 
-def _read_symbol_value(elf_obj: ParsedElfFile, symbol: str, mem_reader) -> int | None:
-    """Resolve and read an integer symbol value from the kernel ELF using the provided mem_reader.
+def _read_symbol_value(elf_obj: ParsedElfFile, symbol: str, mem_access: MemoryAccess) -> int | None:
+    """Resolve and read an integer symbol value from the kernel ELF using the provided mem_access.
 
     Returns None if the symbol cannot be read.
     """
