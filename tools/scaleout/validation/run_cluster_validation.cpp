@@ -7,6 +7,7 @@
 #include <optional>
 #include <chrono>
 #include <sstream>
+#include <set>
 
 #include <factory_system_descriptor/utils.hpp>
 #include "tt_metal/fabric/physical_system_descriptor.hpp"
@@ -21,8 +22,14 @@ namespace tt::scaleout_tools {
 
 using tt::tt_metal::PhysicalSystemDescriptor;
 
+enum class CommandMode {
+    VALIDATE,
+    RESTART_CABLE,
+};
+
 // Captures current list of supported input args
 struct InputArgs {
+    CommandMode mode = CommandMode::VALIDATE;
     std::optional<std::string> cabling_descriptor_path = std::nullopt;
     std::optional<std::string> deployment_descriptor_path = std::nullopt;
     std::optional<std::string> fsd_path = std::nullopt;
@@ -38,6 +45,8 @@ struct InputArgs {
     uint32_t num_iterations = 50;
     bool sweep_traffic_configs = false;
     bool validate_connectivity = true;
+
+    // restart_cable subcommand args
     std::optional<std::string> reset_host = std::nullopt;
     std::optional<uint32_t> reset_tray_id = std::nullopt;
     std::optional<uint32_t> reset_asic_location = std::nullopt;
@@ -57,13 +66,39 @@ std::filesystem::path generate_output_dir() {
     return output_dir_path;
 }
 
-InputArgs parse_input_args(const std::vector<std::string>& args_vec) {
-    InputArgs input_args;
+void parse_restart_cable_args(const std::vector<std::string>& args_vec, InputArgs& input_args) {
+    input_args.mode = CommandMode::RESTART_CABLE;
 
-    if (test_args::has_command_option(args_vec, "--help")) {
-        input_args.help = true;
-        return input_args;
+    // Validate that only restart_cable arguments are provided
+    const std::set<std::string> allowed_args = {"--host", "--tray-id", "--asic-location", "--channel", "--help"};
+
+    for (size_t i = 2; i < args_vec.size(); ++i) {
+        const auto& arg = args_vec[i];
+        if (arg.rfind("--", 0) == 0) {  // Assuming all args start with "--"
+            TT_FATAL(
+                allowed_args.count(arg) > 0,
+                "Invalid argument '{}' for restart_cable subcommand. Allowed arguments: --host, --tray-id, "
+                "--asic-location, --channel, --help",
+                arg);
+        }
     }
+
+    // Parse and validate all required parameters
+    if (test_args::has_command_option(args_vec, "--host") && test_args::has_command_option(args_vec, "--tray-id") &&
+        test_args::has_command_option(args_vec, "--asic-location") &&
+        test_args::has_command_option(args_vec, "--channel")) {
+        input_args.reset_host = test_args::get_command_option(args_vec, "--host");
+        input_args.reset_tray_id = std::stoi(test_args::get_command_option(args_vec, "--tray-id"));
+        input_args.reset_asic_location = std::stoi(test_args::get_command_option(args_vec, "--asic-location"));
+        input_args.reset_channel = std::stoi(test_args::get_command_option(args_vec, "--channel"));
+    } else {
+        TT_FATAL(
+            false, "All restart_cable parameters must be specified: --host, --tray-id, --asic-location, --channel");
+    }
+}
+
+void parse_validation_args(const std::vector<std::string>& args_vec, InputArgs& input_args) {
+    input_args.mode = CommandMode::VALIDATE;
 
     if (test_args::has_command_option(args_vec, "--cabling-descriptor-path")) {
         TT_FATAL(
@@ -119,18 +154,21 @@ InputArgs parse_input_args(const std::vector<std::string>& args_vec) {
     input_args.sweep_traffic_configs = test_args::has_command_option(args_vec, "--sweep-traffic-configs");
     input_args.validate_connectivity =
         input_args.cabling_descriptor_path.has_value() || input_args.fsd_path.has_value();
+}
 
-    if (test_args::has_command_option(args_vec, "--reset_host")) {
-        input_args.reset_host = test_args::get_command_option(args_vec, "--reset_host");
+InputArgs parse_input_args(const std::vector<std::string>& args_vec) {
+    InputArgs input_args;
+
+    if (test_args::has_command_option(args_vec, "--help")) {
+        input_args.help = true;
+        return input_args;
     }
-    if (test_args::has_command_option(args_vec, "--reset_tray_id")) {
-        input_args.reset_tray_id = std::stoi(test_args::get_command_option(args_vec, "--reset_tray_id"));
-    }
-    if (test_args::has_command_option(args_vec, "--reset_asic_location")) {
-        input_args.reset_asic_location = std::stoi(test_args::get_command_option(args_vec, "--reset_asic_location"));
-    }
-    if (test_args::has_command_option(args_vec, "--reset_channel")) {
-        input_args.reset_channel = std::stoi(test_args::get_command_option(args_vec, "--reset_channel"));
+
+    // Check for subcommand and dispatch to appropriate parser
+    if (args_vec.size() > 1 && args_vec[1] == "restart_cable") {
+        parse_restart_cable_args(args_vec, input_args);
+    } else {
+        parse_validation_args(args_vec, input_args);
     }
 
     return input_args;
@@ -247,13 +285,12 @@ tt::tt_metal::AsicTopology build_reset_topology(
     log_output_rank0("  Discovered Destination ASIC ID: " + std::to_string(*dst_asic_id));
     log_output_rank0("  Discovered Destination Channel: " + std::to_string(dst_channel));
 
-    std::string src_host = reset_host;
     const auto& asic_descriptors = physical_system_descriptor.get_asic_descriptors();
     TT_FATAL(
         asic_descriptors.find(dst_asic_id) != asic_descriptors.end(),
         "Could not find ASIC descriptor for destination ASIC ID: {}", dst_asic_id);
     std::string dst_host = asic_descriptors.at(dst_asic_id).host_name;
-    bool is_local = (src_host == dst_host);
+    bool is_local = (reset_host == dst_host);
 
     log_output_rank0("  Destination Host: " + dst_host);
     log_output_rank0("  Connection Type: " + std::string(is_local ? "Local" : "Remote"));
@@ -287,8 +324,13 @@ void print_usage_info() {
     std::cout << "Utility to validate Ethernet Links and Connections for a Multi-Node TT Cluster" << std::endl;
     std::cout << "Compares live system state against the requested Cabling and Deployment Specifications" << std::endl
               << std::endl;
-    std::cout << "Arguments:" << std::endl;
-    // validation mode
+
+    std::cout << "Usage:" << std::endl;
+    std::cout << "  run_cluster_validation [OPTIONS]                   # Run validation (default)" << std::endl;
+    std::cout << "  run_cluster_validation restart_cable [OPTIONS]     # Restart a specific cable/link" << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Validation Mode Options:" << std::endl;
     std::cout << "  --cabling-descriptor-path: Path to cabling descriptor" << std::endl;
     std::cout << "  --deployment-descriptor-path: Path to deployment descriptor" << std::endl;
     std::cout << "  --factory-descriptor-path: Path to factory descriptor" << std::endl;
@@ -304,12 +346,19 @@ void print_usage_info() {
     std::cout << "  --sweep-traffic-configs: Sweep pre-generated traffic configurations across detected links (stress "
                  "testing)"
               << std::endl;
-    std::cout << "  --help: Print usage information" << std::endl << std::endl;
-    // add separate command for that, liek commit in git commit
-    std::cout << "  --reset_host: Host name of the source ASIC" << std::endl;
-    std::cout << "  --reset_tray_id: Tray ID of the source ASIC" << std::endl;
-    std::cout << "  --reset_asic_location: ASIC location of the source ASIC" << std::endl;
-    std::cout << "  --reset_channel: Channel ID to reset" << std::endl << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "restart_cable Subcommand Options:" << std::endl;
+    std::cout << "  --host: Host name of the source ASIC" << std::endl;
+    std::cout << "  --tray-id: Tray ID of the source ASIC" << std::endl;
+    std::cout << "  --asic-location: ASIC location of the source ASIC" << std::endl;
+    std::cout << "  --channel: Channel ID to reset" << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "General Options:" << std::endl;
+    std::cout << "  --help: Print usage information" << std::endl;
+    std::cout << std::endl;
+
     std::cout << "To run on a multi-node cluster, use mpirun with a --hostfile option" << std::endl;
 }
 
@@ -319,7 +368,6 @@ void perform_link_reset(
     uint32_t reset_asic_location,
     uint32_t reset_channel,
     PhysicalSystemDescriptor& physical_system_descriptor) {
-    
     log_output_rank0("Operating in reset mode for specific link");
 
     // loop over input args and make sure they arent specified
@@ -372,19 +420,8 @@ int main(int argc, char* argv[]) {
     // Create physical system descriptor and discover the system
     auto physical_system_descriptor = generate_physical_system_descriptor(input_args);
 
-    bool is_reset_mode = input_args.reset_host.has_value() ||
-                         input_args.reset_tray_id.has_value() ||
-                         input_args.reset_asic_location.has_value() ||
-                         input_args.reset_channel.has_value();
-
-    if (is_reset_mode) {
-        TT_FATAL(
-            input_args.reset_host.has_value() && 
-            input_args.reset_tray_id.has_value() &&
-            input_args.reset_asic_location.has_value() &&
-            input_args.reset_channel.has_value(),
-            "All reset parameters must be specified: --reset_host, --reset_tray_id, --reset_asic_location, --reset_channel");
-        
+    // Handle restart_cable subcommand
+    if (input_args.mode == CommandMode::RESTART_CABLE) {
         perform_link_reset(
             input_args.reset_host.value(),
             input_args.reset_tray_id.value(),
@@ -393,7 +430,6 @@ int main(int argc, char* argv[]) {
             physical_system_descriptor);
         return 0;
     }
-
 
     AsicTopology missing_asic_topology = validate_connectivity(input_args, physical_system_descriptor);
     bool links_reset = false;
