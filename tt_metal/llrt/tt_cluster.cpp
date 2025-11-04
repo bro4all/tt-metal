@@ -425,8 +425,6 @@ void Cluster::start_driver(umd::DeviceParams& device_params) const {
 
 Cluster::~Cluster() {
     log_info(tt::LogDevice, "Closing user mode device drivers");
-    // TODO: ???
-
     this->driver_->close_device();
 
     this->sdesc_per_chip_.clear();

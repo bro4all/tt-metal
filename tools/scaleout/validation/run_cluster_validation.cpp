@@ -370,7 +370,7 @@ void print_usage_info() {
 
     std::cout << "restart_cable Subcommand Options:" << std::endl;
     for (const auto& [arg, description] : RESTART_CABLE_ARGS) {
-        if (arg != "--help") {  // Skip --help as it's in General Options
+        if (arg != "--help") {  // help is a not subcommand specific argument currently
             std::cout << "  " << arg << ": " << description << std::endl;
         }
     }
