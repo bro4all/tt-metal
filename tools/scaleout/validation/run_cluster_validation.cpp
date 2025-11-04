@@ -4,10 +4,12 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <optional>
 #include <chrono>
 #include <sstream>
 #include <set>
+#include <unordered_map>
 
 #include <factory_system_descriptor/utils.hpp>
 #include "tt_metal/fabric/physical_system_descriptor.hpp"
@@ -19,6 +21,30 @@
 #include "tools/scaleout/validation/utils/cluster_validation_utils.hpp"
 
 namespace tt::scaleout_tools {
+
+// Validation (default) mode arguments and their descriptions
+const std::unordered_map<std::string_view, std::string_view> VALIDATION_ARGS = {
+    {"--cabling-descriptor-path", "Path to cabling descriptor"},
+    {"--deployment-descriptor-path", "Path to deployment descriptor"},
+    {"--factory-descriptor-path", "Path to factory descriptor"},
+    {"--global-descriptor-path", "Path to global descriptor"},
+    {"--output-path", "Path to output directory"},
+    {"--hard-fail", "Fail on warning"},
+    {"--log-ethernet-metrics", "Log live ethernet statistics"},
+    {"--print-connectivity", "Print Ethernet Connectivity between ASICs"},
+    {"--send-traffic", "Send traffic across detected links"},
+    {"--num-iterations", "Number of iterations to send traffic"},
+    {"--data-size", "Data size (bytes) sent across each link per iteration"},
+    {"--packet-size-bytes", "Packet size (bytes) sent across each link"},
+    {"--sweep-traffic-configs", "Sweep pre-generated traffic configurations across detected links (stress testing)"}};
+
+// restart_cable subcommand arguments and their descriptions
+const std::unordered_map<std::string_view, std::string_view> RESTART_CABLE_ARGS = {
+    {"--host", "Host name of the source ASIC"},
+    {"--tray-id", "Tray ID of the source ASIC"},
+    {"--asic-location", "ASIC location of the source ASIC"},
+    {"--channel", "Channel ID to reset"},
+    {"--help", "Print usage information"}};
 
 using tt::tt_metal::PhysicalSystemDescriptor;
 
@@ -70,16 +96,23 @@ void parse_restart_cable_args(const std::vector<std::string>& args_vec, InputArg
     input_args.mode = CommandMode::RESTART_CABLE;
 
     // Validate that only restart_cable arguments are provided
-    const std::set<std::string> allowed_args = {"--host", "--tray-id", "--asic-location", "--channel", "--help"};
-
     for (size_t i = 2; i < args_vec.size(); ++i) {
         const auto& arg = args_vec[i];
         if (arg.rfind("--", 0) == 0) {  // Assuming all args start with "--"
             TT_FATAL(
-                allowed_args.count(arg) > 0,
-                "Invalid argument '{}' for restart_cable subcommand. Allowed arguments: --host, --tray-id, "
-                "--asic-location, --channel, --help",
-                arg);
+                RESTART_CABLE_ARGS.count(arg) > 0,
+                "Invalid argument '{}' for restart_cable subcommand. Allowed arguments: {}",
+                arg,
+                [&]() {
+                    std::string args_list;
+                    for (const auto& [name, _] : RESTART_CABLE_ARGS) {
+                        if (!args_list.empty()) {
+                            args_list += ", ";
+                        }
+                        args_list += name;
+                    }
+                    return args_list;
+                }());
         }
     }
 
@@ -331,28 +364,17 @@ void print_usage_info() {
     std::cout << std::endl;
 
     std::cout << "Validation Mode Options:" << std::endl;
-    std::cout << "  --cabling-descriptor-path: Path to cabling descriptor" << std::endl;
-    std::cout << "  --deployment-descriptor-path: Path to deployment descriptor" << std::endl;
-    std::cout << "  --factory-descriptor-path: Path to factory descriptor" << std::endl;
-    std::cout << "  --global-descriptor-path: Path to global descriptor" << std::endl;
-    std::cout << "  --output-path: Path to output directory" << std::endl;
-    std::cout << "  --hard-fail: Fail on warning" << std::endl;
-    std::cout << "  --log-ethernet-metrics: Log live ethernet statistics" << std::endl;
-    std::cout << "  --print-connectivity: Print Ethernet Connectivity between ASICs" << std::endl;
-    std::cout << "  --send-traffic: Send traffic across detected links" << std::endl;
-    std::cout << "  --num-iterations: Number of iterations to send traffic" << std::endl;
-    std::cout << "  --data-size: Data size (bytes) sent across each link per iteration" << std::endl;
-    std::cout << "  --packet-size-bytes: Packet size (bytes) sent across each link" << std::endl;
-    std::cout << "  --sweep-traffic-configs: Sweep pre-generated traffic configurations across detected links (stress "
-                 "testing)"
-              << std::endl;
+    for (const auto& [arg, description] : VALIDATION_ARGS) {
+        std::cout << "  " << arg << ": " << description << std::endl;
+    }
     std::cout << std::endl;
 
     std::cout << "restart_cable Subcommand Options:" << std::endl;
-    std::cout << "  --host: Host name of the source ASIC" << std::endl;
-    std::cout << "  --tray-id: Tray ID of the source ASIC" << std::endl;
-    std::cout << "  --asic-location: ASIC location of the source ASIC" << std::endl;
-    std::cout << "  --channel: Channel ID to reset" << std::endl;
+    for (const auto& [arg, description] : RESTART_CABLE_ARGS) {
+        if (arg != "--help") {  // Skip --help as it's in General Options
+            std::cout << "  " << arg << ": " << description << std::endl;
+        }
+    }
     std::cout << std::endl;
 
     std::cout << "General Options:" << std::endl;
