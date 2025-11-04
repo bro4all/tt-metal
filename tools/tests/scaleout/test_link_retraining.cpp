@@ -150,28 +150,23 @@ TEST(DirectedRetraining, TestExitNodeRetraining) {
     fixture.physical_system_descriptor.run_discovery(true);
 }
 
-struct LinkInfo {
-    tt::tt_metal::AsicID src_asic_id;
-    tt::tt_metal::AsicID dst_asic_id;
-    uint8_t src_chan;
-    uint8_t dst_chan;
+struct LinkParams {
+    std::string host;
+    uint32_t tray_id;
+    uint32_t asic_location;
+    uint32_t channel;
     ChipId chip_id;
     tt_xy_pair coord;
 };
 
-struct LinkResetResult {
-    tt::tt_metal::AsicTopology topology;
-    std::vector<std::pair<ChipId, tt_xy_pair>> links_to_verify;
-};
-
-LinkResetResult take_down_mmio_links(const TestFixture& fixture, const tt::tt_metal::AsicTopology& asic_topology) {
+std::vector<LinkParams> collect_mmio_link_params(
+    const TestFixture& fixture, const tt::tt_metal::AsicTopology& asic_topology) {
     constexpr size_t MAX_LINKS_TO_RESET = 4;
 
     const auto cluster_desc = fixture.driver->get_cluster_description();
     const auto& asic_descriptors = fixture.physical_system_descriptor.get_asic_descriptors();
 
-    // Collect all MMIO-to-MMIO links
-    std::vector<LinkInfo> local_links, remote_links;
+    std::vector<LinkParams> local_links, remote_links;
 
     for (const auto& [asic_id, asic_connections] : asic_topology) {
         const auto src_chip_id = fixture.asic_id_to_chip_id.at(*asic_id);
@@ -189,41 +184,35 @@ LinkResetResult take_down_mmio_links(const TestFixture& fixture, const tt::tt_me
                 continue;
             }
 
-            const auto& eth_conn = eth_connections.front();
-            const auto [dst_asic_id, dst_chan] =
-                fixture.physical_system_descriptor.get_connected_asic_and_channel(asic_id, eth_conn.src_chan);
-            const bool is_local =
-                (asic_descriptors.at(asic_id).host_name == asic_descriptors.at(dst_asic_id).host_name);
+            const auto& src_asic_desc = asic_descriptors.at(asic_id);
+            const auto [dst_asic_id, _] = fixture.physical_system_descriptor.get_connected_asic_and_channel(
+                asic_id, eth_connections.front().src_chan);
+            const bool is_local = (src_asic_desc.host_name == asic_descriptors.at(dst_asic_id).host_name);
 
-            const auto src_coord = get_eth_core_coord(fixture.cluster, src_chip_id, eth_conn.src_chan);
+            const auto src_coord = get_eth_core_coord(fixture.cluster, src_chip_id, eth_connections.front().src_chan);
 
-            LinkInfo link{asic_id, dst_asic_id, eth_conn.src_chan, dst_chan, src_chip_id, src_coord};
+            LinkParams link{
+                src_asic_desc.host_name,
+                *src_asic_desc.tray_id,
+                *src_asic_desc.asic_location,
+                eth_connections.front().src_chan,
+                src_chip_id,
+                src_coord};
+
             (is_local ? local_links : remote_links).push_back(link);
         }
     }
 
     // Select up to MAX_LINKS_TO_RESET links, prioritizing local
-    std::vector<LinkInfo> selected_links;
+    std::vector<LinkParams> selected;
     const size_t num_local = std::min(local_links.size(), MAX_LINKS_TO_RESET);
     const size_t num_remote = std::min(remote_links.size(), MAX_LINKS_TO_RESET - num_local);
 
-    selected_links.insert(selected_links.end(), local_links.begin(), local_links.begin() + num_local);
-    selected_links.insert(selected_links.end(), remote_links.begin(), remote_links.begin() + num_remote);
+    selected.insert(selected.end(), local_links.begin(), local_links.begin() + num_local);
+    selected.insert(selected.end(), remote_links.begin(), remote_links.begin() + num_remote);
 
-    log_info(tt::LogTest, "Taking down {} links ({} local, {} remote)", selected_links.size(), num_local, num_remote);
-
-    // Take down selected links and build reset topology
-    LinkResetResult result;
-    for (const auto& link : selected_links) {
-        set_link_training_status(fixture.cluster, link.chip_id, link.coord, 0);
-        EXPECT_EQ(get_link_training_status(fixture.cluster, link.chip_id, link.coord), 0);
-
-        result.topology[link.src_asic_id].push_back({link.dst_asic_id, {{link.src_chan, link.dst_chan}}});
-        result.topology[link.dst_asic_id].push_back({link.src_asic_id, {{link.dst_chan, link.src_chan}}});
-        result.links_to_verify.emplace_back(link.chip_id, link.coord);
-    }
-
-    return result;
+    log_info(tt::LogTest, "Found {} links to test ({} local, {} remote)", selected.size(), num_local, num_remote);
+    return selected;
 }
 
 TEST(DirectedRetraining, TestOnDemandCableRestart) {
@@ -233,13 +222,28 @@ TEST(DirectedRetraining, TestOnDemandCableRestart) {
         fixture.physical_system_descriptor.get_asic_topology(fixture.physical_system_descriptor.my_host_name());
     ASSERT_FALSE(asic_topology.empty()) << "No links available for testing";
 
-    const auto result = take_down_mmio_links(fixture, asic_topology);
-    ASSERT_FALSE(result.links_to_verify.empty()) << "No MMIO-to-MMIO links found";
+    const auto links = collect_mmio_link_params(fixture, asic_topology);
+    ASSERT_FALSE(links.empty()) << "No MMIO-to-MMIO links found";
 
-    reset_ethernet_links(fixture.physical_system_descriptor, result.topology);
+    for (const auto& link : links) {
+        log_info(
+            tt::LogTest,
+            "Testing link: host={}, tray={}, asic={}, channel={}",
+            link.host,
+            link.tray_id,
+            link.asic_location,
+            link.channel);
 
-    for (const auto& [chip_id, coord] : result.links_to_verify) {
-        EXPECT_EQ(get_link_training_status(fixture.cluster, chip_id, coord), 1);
+        // Take down the link
+        set_link_training_status(fixture.cluster, link.chip_id, link.coord, 0);
+        EXPECT_EQ(get_link_training_status(fixture.cluster, link.chip_id, link.coord), 0);
+
+        // Reset the single link we are currently processing
+        perform_link_reset(
+            link.host, link.tray_id, link.asic_location, link.channel, fixture.physical_system_descriptor);
+
+        // Verify the link is back up
+        EXPECT_EQ(get_link_training_status(fixture.cluster, link.chip_id, link.coord), 1);
     }
 }
 
