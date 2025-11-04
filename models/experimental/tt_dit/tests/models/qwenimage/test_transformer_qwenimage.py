@@ -94,7 +94,7 @@ def test_transformer(
         num_attention_heads=num_heads,
         joint_attention_dim=joint_attention_dim,
         out_channels=torch_model.out_channels,
-        mesh_device=submesh_device,
+        device=submesh_device,
         ccl_manager=ccl_manager,
         parallel_config=parallel_config,
         padding_config=padding_config,

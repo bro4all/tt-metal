@@ -50,7 +50,7 @@ class QwenImageTransformer(Module):
         num_attention_heads: int,
         joint_attention_dim: int,
         out_channels: int,
-        mesh_device: ttnn.MeshDevice,
+        device: ttnn.MeshDevice,
         ccl_manager: CCLManager | None,
         parallel_config: DiTParallelConfig,
         padding_config: PaddingConfig | None,
@@ -59,23 +59,18 @@ class QwenImageTransformer(Module):
 
         inner_dim = num_attention_heads * attention_head_dim
 
-        self.patch_size = patch_size
-        self.mesh_device = mesh_device
-        self.parallel_config = parallel_config
-        self.ccl_manager = ccl_manager
-
         # self.pos_embed = QwenEmbedRope(theta=10000, axes_dim=list(axes_dims_rope), scale_rope=True)
 
         self.time_text_embed = SD35CombinedTimestepTextProjEmbeddings(
-            embedding_dim=inner_dim, pooled_projection_dim=0, mesh_device=mesh_device
+            embedding_dim=inner_dim, pooled_projection_dim=0, mesh_device=device
         )
 
-        self.txt_norm = RMSNorm(joint_attention_dim, bias=False, norm_eps=1e-6, mesh_device=mesh_device)
+        self.txt_norm = RMSNorm(joint_attention_dim, bias=False, norm_eps=1e-6, mesh_device=device)
 
         self.txt_in = ColParallelLinear(  # context_embedder in Flux.1
             joint_attention_dim,
             inner_dim,
-            mesh_device=mesh_device,
+            mesh_device=device,
             mesh_axis=parallel_config.tensor_parallel.mesh_axis,
         )
 
@@ -83,7 +78,7 @@ class QwenImageTransformer(Module):
         self.img_in = ColParallelLinear(  # x_embedder in Flux.1
             in_channels,
             inner_dim,
-            mesh_device=mesh_device,
+            mesh_device=device,
             mesh_axis=parallel_config.tensor_parallel.mesh_axis,
         )
 
@@ -97,18 +92,18 @@ class QwenImageTransformer(Module):
                 ccl_manager=ccl_manager,
                 parallel_config=parallel_config,
                 padding_config=padding_config,
-                mesh_device=mesh_device,
+                mesh_device=device,
             )
             for i in range(num_layers)
         )
 
-        self.time_embed_out = Linear(inner_dim, 2 * inner_dim, mesh_device=mesh_device)
+        self.time_embed_out = Linear(inner_dim, 2 * inner_dim, mesh_device=device)
 
         self.norm_out = DistributedLayerNorm(
             inner_dim,
             norm_eps=1e-6,
             norm_elementwise_affine=False,
-            mesh_device=mesh_device,
+            mesh_device=device,
             mesh_axis=parallel_config.tensor_parallel.mesh_axis,
             ccl_manager=ccl_manager,
         )
@@ -116,10 +111,13 @@ class QwenImageTransformer(Module):
         self.proj_out = Linear(
             inner_dim,
             patch_size * patch_size * out_channels,
-            mesh_device=mesh_device,
+            mesh_device=device,
         )
 
-        self._tracer = Tracer(device=mesh_device, function=self._tracer_forward)
+        self._tracer = Tracer(device=device, function=self._tracer_forward)
+
+        self._tp_axis = parallel_config.tensor_parallel.mesh_axis
+        self._ccl_manager = ccl_manager
 
     def _prepare_torch_state(self, state: dict[str, torch.Tensor]) -> None:
         rename_substate(state, "norm_out.linear", "time_embed_out")
@@ -130,6 +128,7 @@ class QwenImageTransformer(Module):
     # supported by `reduce_scatter_minimal_async`.
     def forward(
         self,
+        *,
         spatial: ttnn.Tensor,
         prompt: ttnn.Tensor,
         timestep: ttnn.Tensor,
@@ -148,8 +147,6 @@ class QwenImageTransformer(Module):
             spatial_rope: Tuple of two tensors with shape [spatial_sequence_length / sp_factor, head_dim].
             prompt_rope: Tuple of two tensors with shape [prompt_sequence_length, head_dim] (sequence is not sharded!).
         """
-        tp_axis = self.parallel_config.tensor_parallel.mesh_axis
-
         time_embed = self.time_text_embed(timestep=timestep)
         ttnn.silu(time_embed, output_tensor=time_embed)
         time_embed = time_embed.reshape([time_embed.shape[-2], 1, time_embed.shape[-1]])
@@ -181,7 +178,9 @@ class QwenImageTransformer(Module):
         spatial_time = self.time_embed_out(time_embed)
         [scale, shift] = _chunk_time3d(spatial_time, 2)
 
-        spatial = self.ccl_manager.all_gather_persistent_buffer(spatial, dim=2, mesh_axis=tp_axis, use_hyperparams=True)
+        spatial = self._ccl_manager.all_gather_persistent_buffer(
+            spatial, dim=2, mesh_axis=self._tp_axis, use_hyperparams=True
+        )
 
         spatial = spatial * (1 + scale) + shift
 
