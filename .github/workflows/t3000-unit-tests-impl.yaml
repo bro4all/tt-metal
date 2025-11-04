@@ -15,7 +15,7 @@ on:
       extra-tag:
         required: false
         type: string
-        default: "tt-metal-ci-vm-t3k-03"
+        default: "tt-metal-ci-vm-t3k-08"
 
 jobs:
   t3000-unit-tests:
@@ -45,8 +45,6 @@ jobs:
     name: ${{ matrix.test-group.name }}
     runs-on:
       - arch-wormhole_b0
-      - config-t3000
-      - pipeline-functional
       - ${{ inputs.extra-tag }}
     container:
       image: ${{ inputs.docker-image }}
