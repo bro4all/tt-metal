@@ -279,7 +279,6 @@ Result conv2d_DRAM(
         if (conv_config.activation.has_value()) {
             linear_activation = unary::utils::unary_with_param_to_string(conv_config.activation.value());
         }
-
         // Matmul expects inputs to be in Tile Layout
         tilize_with_optional_deallocation(input_tensor_on_device, should_deallocate_act);
         Tensor matmul_output = ttnn::linear(
