@@ -15,7 +15,7 @@ on:
       extra-tag:
         required: false
         type: string
-        default: "tt-metal-ci-vm-t3k-02"
+        default: "tt-metal-ci-vm-t3k-10"
 
 jobs:
   t3000-unit-tests:
