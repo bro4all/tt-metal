@@ -100,7 +100,7 @@ def _load_model(
         device,
         instruct=True,
         max_batch_size=max_batch_size,
-        optimizations=lambda model_args: DecodersPrecision.performance(model_args.n_layers, model_args.model_name),
+        optimizations=lambda model_args: DecodersPrecision.accuracy(model_args.n_layers, model_args.model_name),
         max_seq_len=max_sequence_length,
         cache_hf=True,
     )
