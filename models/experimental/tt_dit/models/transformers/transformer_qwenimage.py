@@ -14,7 +14,6 @@ from ...layers.linear import ColParallelLinear, Linear
 from ...layers.module import Module, ModuleList
 from ...layers.normalization import DistributedLayerNorm, RMSNorm
 from ...utils.substate import rename_substate
-from ...utils.tracer import autotrace
 
 if TYPE_CHECKING:
     import torch
@@ -124,7 +123,6 @@ class QwenImageTransformer(Module):
     # We do not shard the last dimension of spatial, because its dimension is less than the tile
     # size for a device count of four or more. This requires padding, which is not currently
     # supported by `reduce_scatter_minimal_async`.
-    @autotrace
     def forward(
         self,
         *,

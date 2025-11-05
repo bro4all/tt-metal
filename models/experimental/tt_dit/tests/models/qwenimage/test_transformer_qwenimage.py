@@ -14,6 +14,7 @@ from ....parallel.manager import CCLManager
 from ....utils import cache, tensor
 from ....utils.check import assert_quality
 from ....utils.padding import PaddingConfig
+from ....utils.tracing import Tracer
 
 
 @pytest.mark.parametrize(
@@ -43,6 +44,7 @@ from ....utils.padding import PaddingConfig
     indirect=True,
 )
 def test_transformer(
+    *,
     mesh_device: ttnn.MeshDevice,
     submesh_shape: tuple[int, int],
     sp_axis: int,
@@ -54,6 +56,8 @@ def test_transformer(
     prompt_seq_len: int,
     traced: bool,
 ) -> None:
+    torch.manual_seed(0)
+
     submesh_device = mesh_device.create_submesh(ttnn.MeshShape(*submesh_shape))
 
     sp_factor = tuple(submesh_device.shape)[sp_axis]
@@ -110,29 +114,43 @@ def test_transformer(
 
     spatial_seq_len = (latents_height // patch_size) * (latents_width // patch_size)
 
-    torch.manual_seed(0)
-    spatial = torch.randn([batch_size, spatial_seq_len, in_channels])
-    prompt = torch.randn([batch_size, prompt_seq_len, joint_attention_dim])
-    timestep = torch.full([batch_size], fill_value=500)
+    tt_model_forward = Tracer(tt_model.forward, device=submesh_device) if traced else tt_model.forward
 
-    # prepare ROPE
-    img_shapes = [[(1, latents_height // patch_size, latents_width // patch_size)]] * batch_size
-    txt_seq_lens = [prompt_seq_len] * batch_size
-    spatial_rope, prompt_rope = torch_model.pos_embed.forward(img_shapes, txt_seq_lens, "cpu")
+    # run once for compilation or trace capture, and once for compiled run or trace execution
+    for _ in range(2):
+        spatial = torch.randn([batch_size, spatial_seq_len, in_channels])
+        prompt = torch.randn([batch_size, prompt_seq_len, joint_attention_dim])
+        timestep = torch.full([batch_size], fill_value=500)
 
-    spatial_rope_cos = spatial_rope.real.repeat_interleave(2, dim=-1)
-    spatial_rope_sin = spatial_rope.imag.repeat_interleave(2, dim=-1)
-    prompt_rope_cos = prompt_rope.real.repeat_interleave(2, dim=-1)
-    prompt_rope_sin = prompt_rope.imag.repeat_interleave(2, dim=-1)
+        # prepare ROPE
+        img_shapes = [[(1, latents_height // patch_size, latents_width // patch_size)]] * batch_size
+        txt_seq_lens = [prompt_seq_len] * batch_size
+        spatial_rope, prompt_rope = torch_model.pos_embed.forward(img_shapes, txt_seq_lens, "cpu")
 
-    tt_spatial = tensor.from_torch(spatial, device=submesh_device, mesh_axes=[None, sp_axis, None])
-    tt_prompt = tensor.from_torch(prompt, device=submesh_device)
-    tt_timestep = tensor.from_torch(timestep.unsqueeze(-1), dtype=ttnn.float32, device=submesh_device)
+        spatial_rope_cos = spatial_rope.real.repeat_interleave(2, dim=-1)
+        spatial_rope_sin = spatial_rope.imag.repeat_interleave(2, dim=-1)
+        prompt_rope_cos = prompt_rope.real.repeat_interleave(2, dim=-1)
+        prompt_rope_sin = prompt_rope.imag.repeat_interleave(2, dim=-1)
 
-    tt_spatial_rope_cos = tensor.from_torch(spatial_rope_cos, device=submesh_device, mesh_axes=[sp_axis, None])
-    tt_spatial_rope_sin = tensor.from_torch(spatial_rope_sin, device=submesh_device, mesh_axes=[sp_axis, None])
-    tt_prompt_rope_cos = tensor.from_torch(prompt_rope_cos, device=submesh_device)
-    tt_prompt_rope_sin = tensor.from_torch(prompt_rope_sin, device=submesh_device)
+        tt_spatial = tensor.from_torch(spatial, device=submesh_device, mesh_axes=[None, sp_axis, None])
+        tt_prompt = tensor.from_torch(prompt, device=submesh_device)
+        tt_timestep = tensor.from_torch(timestep.unsqueeze(-1), dtype=ttnn.float32, device=submesh_device)
+
+        tt_spatial_rope_cos = tensor.from_torch(spatial_rope_cos, device=submesh_device, mesh_axes=[sp_axis, None])
+        tt_spatial_rope_sin = tensor.from_torch(spatial_rope_sin, device=submesh_device, mesh_axes=[sp_axis, None])
+        tt_prompt_rope_cos = tensor.from_torch(prompt_rope_cos, device=submesh_device)
+        tt_prompt_rope_sin = tensor.from_torch(prompt_rope_sin, device=submesh_device)
+
+        logger.info("running TT model...")
+        tt_output = tt_model_forward(
+            spatial=tt_spatial,
+            prompt=tt_prompt,
+            timestep=tt_timestep,
+            spatial_rope=(tt_spatial_rope_cos, tt_spatial_rope_sin),
+            prompt_rope=(tt_prompt_rope_cos, tt_prompt_rope_sin),
+            spatial_sequence_length=spatial_seq_len,
+            prompt_sequence_length=prompt_seq_len,
+        )
 
     logger.info("running torch model...")
     with torch.no_grad():
@@ -144,21 +162,6 @@ def test_transformer(
             img_shapes=img_shapes,
             txt_seq_lens=txt_seq_lens,
         ).sample
-
-    logger.info("running TT model...")
-    for _ in range(2):
-        # once for compilation or trace capture, once for compiled or traced execution
-        tt_output = tt_model.forward(
-            spatial=tt_spatial,
-            prompt=tt_prompt,
-            timestep=tt_timestep,
-            spatial_rope=(tt_spatial_rope_cos, tt_spatial_rope_sin),
-            prompt_rope=(tt_prompt_rope_cos, tt_prompt_rope_sin),
-            spatial_sequence_length=spatial_seq_len,
-            prompt_sequence_length=prompt_seq_len,
-            traced=traced,
-            trace_device=submesh_device,
-        )
 
     tt_output_torch = tensor.to_torch(tt_output, mesh_axes=[None, sp_axis, None])
     assert_quality(torch_output, tt_output_torch, pcc=0.99914, relative_rmse=0.078)
