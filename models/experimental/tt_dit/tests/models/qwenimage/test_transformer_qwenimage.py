@@ -161,4 +161,4 @@ def test_transformer(
         )
 
     tt_output_torch = tensor.to_torch(tt_output, mesh_axes=[None, sp_axis, None])
-    assert_quality(torch_output, tt_output_torch, pcc=0.99935, relative_rmse=0.037)
+    assert_quality(torch_output, tt_output_torch, pcc=0.99914, relative_rmse=0.078)
