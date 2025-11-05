@@ -621,6 +621,12 @@ public:
 
     void report_code_profiling_results();
 
+    void initialize_code_profiling_results_csv_file();
+
+    std::string convert_coord_to_string(const ::tt::tt_metal::distributed::MeshCoordinate& coord);
+
+    void dump_code_profiling_results_to_csv(const TestConfig& config);
+
 private:
     void reset_local_variables() {
         benchmark_mode_ = false;
@@ -1676,6 +1682,9 @@ private:
 
     // Golden CSV comparison statistics
     std::filesystem::path comparison_statistics_csv_file_path_;
+
+    // Code profiling results CSV file path
+    std::filesystem::path code_profiling_csv_file_path_;
 
     // Ethernet core buffer readback helper
     std::unique_ptr<EthCoreBufferReadback> eth_readback_;
