@@ -101,6 +101,7 @@ def test_rmsnorm_singledevice(device, is_sharded, reset_seeds):
     "is_sharded",
     (True, False),
 )
+@pytest.mark.parametrize("mesh_device", [(1, 8)], indirect=True)
 def test_rmsnorm_multidevice(mesh_device, is_sharded, reset_seeds):
     dim = 4096
     dtype = ttnn.bfloat8_b
