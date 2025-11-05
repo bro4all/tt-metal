@@ -272,8 +272,9 @@ def run_broadcast_impl(
 )
 @pytest.mark.parametrize("num_iters", [3])
 @pytest.mark.parametrize("device_params", [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}], indirect=True)
+@pytest.mark.parametrize("mesh_device", [(1, 8)], indirect=True)
 def test_broadcast(
-    t3k_mesh_device,
+    mesh_device,
     output_shape,
     num_devices,
     sender_idx,
@@ -287,13 +288,12 @@ def test_broadcast(
     if layout == ttnn.ROW_MAJOR_LAYOUT and input_dtype == ttnn.bfloat8_b:
         pytest.skip("bfloat8_b not supported for row-major")
 
-    mesh_device = t3k_mesh_device
     mesh_shape = tuple(mesh_device.shape)
     sender_coord_tuple = (0, sender_idx)
     sender_coord = ttnn.MeshCoordinate(sender_coord_tuple)
 
     run_broadcast_impl(
-        t3k_mesh_device,
+        mesh_device,
         sender_coord,
         sender_coord_tuple,
         num_devices,
@@ -328,8 +328,9 @@ def test_broadcast(
 @pytest.mark.parametrize(
     "device_params", [{"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 10000}], indirect=True
 )
+@pytest.mark.parametrize("mesh_device", [(1, 8)], indirect=True)
 def test_broadcast_trace(
-    t3k_mesh_device,
+    mesh_device,
     sender_idx,
     num_devices,
     output_shape,
@@ -343,13 +344,12 @@ def test_broadcast_trace(
     if layout == ttnn.ROW_MAJOR_LAYOUT and input_dtype == ttnn.bfloat8_b:
         pytest.skip("bfloat8_b not supported for row-major")
 
-    mesh_device = t3k_mesh_device
     mesh_shape = tuple(mesh_device.shape)
     sender_coord_tuple = (0, sender_idx)
     sender_coord = ttnn.MeshCoordinate(sender_coord_tuple)
 
     run_broadcast_impl(
-        t3k_mesh_device,
+        mesh_device,
         sender_coord,
         sender_coord_tuple,
         num_devices,
@@ -453,8 +453,9 @@ def test_broadcast_trace(
 )
 @pytest.mark.parametrize("num_iters", [1])
 @pytest.mark.parametrize("device_params", [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}], indirect=True)
+@pytest.mark.parametrize("mesh_device", [(1, 8)], indirect=True)
 def test_broadcast_sharded(
-    t3k_mesh_device,
+    mesh_device,
     num_devices,
     sender_idx,
     output_shape,
@@ -471,13 +472,12 @@ def test_broadcast_sharded(
 ):
     if layout == ttnn.ROW_MAJOR_LAYOUT and input_dtype == ttnn.bfloat8_b:
         pytest.skip("bfloat8_b not supported for row-major")
-    mesh_device = t3k_mesh_device
     mesh_shape = tuple(mesh_device.shape)
     sender_coord_tuple = (0, sender_idx)
     sender_coord = ttnn.MeshCoordinate(sender_coord_tuple)
 
     run_broadcast_impl(
-        t3k_mesh_device,
+        mesh_device,
         sender_coord,
         sender_coord_tuple,
         num_devices,

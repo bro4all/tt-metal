@@ -65,7 +65,7 @@ def test_FalconCausalLM_prefill_end_to_end_t3000_ci_loops_10(
     memcfg,
     num_loops,
     get_tt_cache_path,
-    t3k_mesh_device,
+    mesh_device,
 ):
     num_devices = 8
     llm_mode = "prefill"
@@ -79,7 +79,7 @@ def test_FalconCausalLM_prefill_end_to_end_t3000_ci_loops_10(
     input_shape = [batch, seq_len]
     model_config_str = f"{data_type}-{memcfg}"
     model_config = get_model_config(model_config_str, llm_mode, input_shape, num_devices)
-    compute_grid_size = t3k_mesh_device.compute_with_storage_grid_size()
+    compute_grid_size = mesh_device.compute_with_storage_grid_size()
     if compute_grid_size.x < model_config["MAX_GRID_SIZE"][0] or compute_grid_size.y < model_config["MAX_GRID_SIZE"][1]:
         pytest.skip(f"Requires grid size of at least {model_config['MAX_GRID_SIZE']} to run")
 
@@ -123,7 +123,7 @@ def test_FalconCausalLM_prefill_end_to_end_t3000_ci_loops_10(
     disable_persistent_kernel_cache()
 
     run_test_FalconCausalLM_end_to_end(
-        t3k_mesh_device,
+        mesh_device,
         model_version,
         llm_mode,
         batch,
