@@ -234,7 +234,7 @@ Result conv2d_DRAM(
         input_tensor_on_device =
             ttnn::operations::core::to_device(input_tensor_on_device, device, ttnn::DRAM_MEMORY_CONFIG);
     }
-
+    const bool should_deallocate_act = conv_config.deallocate_activation && !input_tensor.memory_config().is_dram();
     ttnn::Tensor weight_tensor_on_device;
     std::optional<ttnn::Tensor> bias_tensor_on_device;
     if (mm_conv) {
@@ -279,8 +279,9 @@ Result conv2d_DRAM(
         if (conv_config.activation.has_value()) {
             linear_activation = unary::utils::unary_with_param_to_string(conv_config.activation.value());
         }
+
         // Matmul expects inputs to be in Tile Layout
-        tilize_with_optional_deallocation(input_tensor_on_device, conv_config.deallocate_activation);
+        tilize_with_optional_deallocation(input_tensor_on_device, should_deallocate_act);
         Tensor matmul_output = ttnn::linear(
             input_tensor_on_device,
             weight_tensor_on_device,
@@ -292,7 +293,7 @@ Result conv2d_DRAM(
             program_config,
             linear_activation,
             compute_config);
-        if (conv_config.deallocate_activation) {
+        if (should_deallocate_act) {
             input_tensor_on_device.deallocate(true);
         }
         return {matmul_output, input_height, input_width, weight_tensor_on_device, bias_tensor_on_device};
@@ -419,7 +420,7 @@ Result conv2d_DRAM(
     ttnn::operations::op_slicing::run_sliced_op(
         input_tensor_on_device, dram_output_tensor, &slice_attr, dram_slice_config);
 
-    if (conv_config.deallocate_activation) {
+    if (should_deallocate_act) {
         input_tensor_on_device.deallocate(true);
     }
     const auto flattened_output_shape = flatten_4d_shape(dram_output_tensor.logical_shape());
@@ -526,7 +527,7 @@ Result conv2d_L1(
             compute_config);
         auto_shard = true;
     }
-
+    const bool should_deallocate_act = conv_config.deallocate_activation && !input_tensor.memory_config().is_dram();
     auto [input_tensor_post_tm, parallel_config, output_parallel_config] = shard_or_reshard_tensor_if_required(
         device,
         input_tensor,
@@ -670,7 +671,7 @@ Result conv2d_L1(
                 conv_config.in_place,
                 conv_config.config_tensors_in_dram);
 
-            if (conv_config.deallocate_activation) {
+            if (should_deallocate_act) {
                 input_tensor_post_tm.deallocate(/*force*/ true);
             }
 
@@ -710,7 +711,7 @@ Result conv2d_L1(
         return {conv_output, output_height, output_width, weight_tensor_on_device, bias_tensor_on_device};
     } else {
         // Matmul expects inputs to be in Tile Layout
-        tilize_with_optional_deallocation(input_tensor_post_tm, conv_config.deallocate_activation);
+        tilize_with_optional_deallocation(input_tensor_post_tm, should_deallocate_act);
 
         // run conv as matmul
         std::optional<ttnn::operations::matmul::MatmulProgramConfig> program_config = std::nullopt;
@@ -745,7 +746,7 @@ Result conv2d_L1(
             linear_activation,
             compute_config);
 
-        if (conv_config.deallocate_activation) {
+        if (should_deallocate_act) {
             input_tensor_post_tm.deallocate(/*force*/ true);
         }
         if (memory_config.has_value() && memory_config.value() != matmul_output.memory_config()) {
