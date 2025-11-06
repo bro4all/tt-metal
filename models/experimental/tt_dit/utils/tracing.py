@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import partial
 from typing import Any
 
 import ttnn
@@ -48,9 +47,8 @@ class Tracer(Callable):
             Any exception raised by the wrapped function during first invocation.
         """
         if self._trace_id is None:
-            for name, value in kwargs.items():
-                verified_value = _tree_map(_verify_value, value)
-                self._inputs[name] = _tree_map(partial(self._move_to_device_if_tensor, name=name), verified_value)
+            kwargs = _tree_map(_verify_value, kwargs, path_label="kwargs")
+            self._inputs = _tree_map(self._move_to_device_if_tensor, kwargs, path_label="kwargs")
 
             # compile
             self._function(**self._inputs)
@@ -63,7 +61,7 @@ class Tracer(Callable):
                 finally:
                     ttnn.end_trace_capture(self._device, trace_id, cq_id=tracer_cq_id)
 
-                outputs = _tree_map(_verify_value, outputs)
+                outputs = _tree_map(_verify_value, outputs, path_label="outputs")
             except Exception:
                 ttnn.release_trace(self._device, trace_id)
                 raise
@@ -77,7 +75,7 @@ class Tracer(Callable):
                     raise KeyError(msg)
                 prev = self._inputs[name]
 
-                _tree_map(partial(self._update_input, name=name), prev, new)
+                _tree_map(self._update_input, prev, new, path_label=f'kwargs["{name}"]')
 
             ttnn.execute_trace(self._device, self._trace_id, cq_id=tracer_cq_id, blocking=tracer_blocking_execution)
 
@@ -93,7 +91,7 @@ class Tracer(Callable):
             self._outputs = None
             ttnn.release_trace(self._device, trace_id)
 
-    def _move_to_device_if_tensor(self, value: Any, *, name: str) -> Any:
+    def _move_to_device_if_tensor(self, value: Any, *, path_label: str) -> Any:
         if not isinstance(value, ttnn.Tensor):
             return value
 
@@ -102,41 +100,41 @@ class Tracer(Callable):
         if value.device() == self._device:
             return value
 
-        msg = f"input '{name}' device {value.device()} does not match tracer device {self._device}"
+        msg = f"input '{path_label}' device {value.device()} does not match tracer device {self._device}"
         raise ValueError(msg)
 
-    def _update_input(self, prev: Any, new: Any, *, name: str) -> None:
+    def _update_input(self, prev: Any, new: Any, *, path_label: str) -> None:
         if type(new) is not type(prev):
-            msg = f"input '{name}' type {type(new)} does not match the initial type {type(prev)}"
+            msg = f"input '{path_label}' type {type(new)} does not match the initial type {type(prev)}"
             raise TypeError(msg)
 
         if isinstance(new, ttnn.Tensor):
             if new.shape != prev.shape or new.dtype != prev.dtype or new.layout != prev.layout:
-                msg = f"input '{name}' tensor properties do not match the initial value"
+                msg = f"input '{path_label}' tensor properties do not match the initial value"
                 raise ValueError(msg)
 
             if new.device() is None:
                 ttnn.copy_host_to_device_tensor(new, prev)
             else:
                 if new.device() != prev.device():
-                    msg = f"input '{name}' tensor device does not match the initial device"
+                    msg = f"input '{path_label}' tensor device does not match the initial device"
                     raise ValueError(msg)
                 ttnn.copy(new, prev)
 
         elif new != prev:
-            msg = f"input '{name}' does not match the initial value"
+            msg = f"input '{path_label}' does not match the initial value"
             raise ValueError(msg)
 
 
-def _verify_value(value: Any) -> Any:
+def _verify_value(value: Any, *, path_label: str) -> Any:
     if not isinstance(value, (ttnn.Tensor, int, float, str, bool)):
-        msg = f"value has unsupported type {type(value)}"
+        msg = f"value '{path_label}' has unsupported type {type(value)}"
         raise TypeError(msg)
 
     return value
 
 
-def _tree_map(f: Callable, x: Any, /, *xs: Any) -> Any:
+def _tree_map(f: Callable, x: Any, /, *xs: Any, path_label: str) -> Any:
     """Apply a function to leaves of nested data structures.
 
     Recursively traverses nested structures (tuples, lists, dicts) and applies
@@ -147,6 +145,7 @@ def _tree_map(f: Callable, x: Any, /, *xs: Any) -> Any:
             structures (1 + len(xs)). Applied to leaf elements.
         x: The first nested data structure to traverse.
         *xs: Additional nested data structures with the same shape as x.
+        path_label: String representing the current traversal path (used for error messages).
 
     Returns:
         A new nested structure with the same shape as the inputs, where each
@@ -156,36 +155,36 @@ def _tree_map(f: Callable, x: Any, /, *xs: Any) -> Any:
     Raises:
         ValueError: If the input structures don't have matching types at
             corresponding positions, or if dicts have different keys.
-
-    Examples:
-        >>> _tree_map(lambda a: a * 2, [1, 2, 3])
-        [2, 4, 6]
-
-        >>> _tree_map(lambda a, b: a + b, [1, 2], [10, 20])
-        [11, 22]
-
-        >>> _tree_map(lambda a, b: a + b,
-        ...          {"a": 1, "b": [2, 3]},
-        ...          {"a": 10, "b": [20, 30]})
-        {'a': 11, 'b': [22, 33]}
     """
     tx = type(x)
     for y in xs:
         if type(y) is not tx:
-            msg = f"types should be the same: {tx} != {type(y)}"
+            msg = f"types of '{path_label}' should be the same: {tx} != {type(y)}"
             raise ValueError(msg)
 
     if isinstance(x, tuple):
-        return tuple(_tree_map(f, *elts) for elts in zip(x, *xs, strict=True))
+        for y in xs:
+            if len(x) != len(y):
+                msg = f"tuple lengths of '{path_label}' should be the same: {len(x)} != {len(y)}"
+                raise ValueError(msg)
+
+        return tuple(
+            _tree_map(f, *elts, path_label=f"{path_label}[{i}]") for i, elts in enumerate(zip(x, *xs, strict=True))
+        )
 
     if isinstance(x, list):
-        return [_tree_map(f, *elts) for elts in zip(x, *xs, strict=True)]
+        for y in xs:
+            if len(x) != len(y):
+                msg = f"list lengths of '{path_label}' should be the same: {len(x)} != {len(y)}"
+                raise ValueError(msg)
+
+        return [_tree_map(f, *elts, path_label=f"{path_label}[{i}]") for i, elts in enumerate(zip(x, *xs, strict=True))]
 
     if isinstance(x, dict):
         for y in xs:
             if x.keys() != y.keys():
-                msg = f"dict keys should be the same: {x.keys()} != {y.keys()}"
+                msg = f"dict keys of '{path_label}' should be the same: {x.keys()} != {y.keys()}"
                 raise ValueError(msg)
-        return {key: _tree_map(f, *(d[key] for d in (x, *xs))) for key in x}
+        return {key: _tree_map(f, *(d[key] for d in (x, *xs)), path_label=f'{path_label}["{key}"]') for key in x}
 
-    return f(x, *xs)
+    return f(x, *xs, path_label=path_label)
