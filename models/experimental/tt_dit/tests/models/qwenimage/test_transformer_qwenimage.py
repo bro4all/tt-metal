@@ -105,7 +105,7 @@ def test_transformer(
     )
 
     if not cache.initialize_from_cache(
-        tt_model, torch_model, "Qwen-Image", "transformer", parallel_config, tuple(submesh_device.shape), "bf16"
+        tt_model, torch_model, "qwen-image", "transformer", parallel_config, tuple(submesh_device.shape), "bf16"
     ):
         logger.info(
             "Loading transformer weights from PyTorch state dict. To use cache, set TT_DIT_CACHE_DIR environment variable."
