@@ -19,8 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         test-group: [
-          { arch: wormhole_b0, runner-label: N150 },
-          { arch: wormhole_b0, runner-label: N300 },
+          { arch: blackhole, runner-label: BH-QB-GE },
         ]
     uses: ./.github/workflows/umd-unit-tests.yaml
     with:
