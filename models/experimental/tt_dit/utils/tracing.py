@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from types import NoneType
 from typing import TYPE_CHECKING, Any
 
 import ttnn
@@ -24,7 +25,7 @@ class Tracer:
         """
         self._function = function
         self._device = device
-        self._args: tuple[Any] = ()
+        self._args: tuple[Any, ...] = ()
         self._kwargs: dict[str, Any] = {}
         self._outputs: Any = None
         self._trace_id: ttnn.MeshTraceId | None = None
@@ -144,7 +145,7 @@ class Tracer:
 
 
 def _verify_value(value: Any, *, path_label: str) -> Any:
-    if not isinstance(value, (ttnn.Tensor, int, float, str, bool)):
+    if not isinstance(value, (ttnn.Tensor, int, float, str, bool, NoneType)):
         msg = f"value '{path_label}' has unsupported type {type(value)}"
         raise TypeError(msg)
 
