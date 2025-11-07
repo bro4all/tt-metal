@@ -450,6 +450,7 @@ jobs:
       TT_METAL_SIMULATOR: /work/sim/libttsim.so
       TT_METAL_SLOW_DISPATCH_MODE: 1
       TT_MULTIPROC_SIM_ENABLE: 1
+      TT_METAL_HOME: /work
       PYTHONPATH: /work
       LD_LIBRARY_PATH: /work/build/lib
     steps:
