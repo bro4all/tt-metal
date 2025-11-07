@@ -14,6 +14,7 @@ from loguru import logger
 import ttnn
 from models.common.utility_functions import is_blackhole, is_wormhole_b0, nearest_32
 from models.demos.gemma3.tt.load_checkpoints import (
+    convert_meta_to_hf,
     convert_vision_hf_to_meta,
     convert_vision_meta_to_hf,
     standardize_hf_keys_multimodal,
@@ -31,7 +32,6 @@ from models.tt_transformers.tt.common import (
 )
 from models.tt_transformers.tt.load_checkpoints import (
     convert_hf_to_meta,
-    convert_meta_to_hf,
     load_hf_state_dict,
     load_meta_state_dict,
     reverse_permute,

@@ -6,8 +6,10 @@ import re
 
 from models.tt_transformers.tt.load_checkpoints import (
     convert_hf_qkv_to_meta_format,
+    convert_meta_qkv_to_hf_format,
     map_hf_to_meta_keys,
     map_hf_to_meta_keys_vision_only,
+    map_meta_to_hf_keys,
     split_hf_keys,
     standardize_hf_keys,
 )
@@ -80,10 +82,10 @@ def map_vision_hf_to_meta_keys(state_dict, head_dim):
 
 # VIDETI NA OSNOVU TESTOVA DA LI TREBA OBRISATI,
 # AKO TESTOVI PROLAZE ONDA ZNACI DA TREBA OBRISATI, JER JE BESKORISNO SAMO SE IMPORTUJE OVO IZ TT_TRANSFORMERS
-# def convert_meta_to_hf(state_dict, head_dim):
-#     state_dict = convert_meta_qkv_to_hf_format(state_dict, head_dim)
-#     state_dict = map_meta_to_hf_keys(state_dict)
-#     return state_dict
+def convert_meta_to_hf(state_dict, head_dim):
+    state_dict = convert_meta_qkv_to_hf_format(state_dict, head_dim)
+    state_dict = map_meta_to_hf_keys(state_dict)
+    return state_dict
 
 
 # Funkcija map_vision_meta_to_hf_keys nigde nije deklarisana, tako da time
