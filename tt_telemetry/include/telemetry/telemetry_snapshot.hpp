@@ -43,6 +43,10 @@ struct TelemetrySnapshot {
     std::unordered_map<uint16_t, std::string> metric_unit_display_label_by_code;
     std::unordered_map<uint16_t, std::string> metric_unit_full_label_by_code;
 
+    // Physical link information (immutable, sent once per metric)
+    // Maps metric path to physical link topology info as JSON
+    std::unordered_map<std::string, nlohmann::json> physical_link_info;
+
     void clear() {
         bool_metrics.clear();
         uint_metrics.clear();
@@ -57,6 +61,7 @@ struct TelemetrySnapshot {
         string_metric_timestamps.clear();
         metric_unit_display_label_by_code.clear();
         metric_unit_full_label_by_code.clear();
+        physical_link_info.clear();
     }
 
     /**
@@ -142,11 +147,10 @@ private:
         }
 
         // Helper to check for metric type conflicts
-        auto check_metric_conflict = [this](
-                                         const std::string& path,
-                                         const char* new_type,
-                                         const char* existing_type,
-                                         const auto& existing_map) -> bool {
+        auto check_metric_conflict = [](const std::string& path,
+                                        const char* new_type,
+                                        const char* existing_type,
+                                        const auto& existing_map) -> bool {
             if (existing_map.find(path) != existing_map.end()) {
                 log_error(
                     tt::LogAlways,

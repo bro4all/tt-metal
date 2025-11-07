@@ -20,7 +20,7 @@ static std::unordered_map<Value, Key> invert_map(const std::unordered_map<Key, V
 }
 
 // Helper: Get board type for a given endpoint from FSD
-static BoardType get_board_type_for_endpoint(
+static tt::BoardType get_board_type_for_endpoint(
     const tt::scaleout_tools::fsd::proto::FactorySystemDescriptor_EndPoint& endpoint,
     const tt::scaleout_tools::fsd::proto::FactorySystemDescriptor& fsd) {
     const auto& board_locations = fsd.board_types().board_locations();
@@ -28,7 +28,7 @@ static BoardType get_board_type_for_endpoint(
         return board_loc.host_id() == endpoint.host_id() && board_loc.tray_id() == endpoint.tray_id();
     });
 
-    return (it == board_locations.end()) ? BoardType::UNKNOWN
+    return (it == board_locations.end()) ? tt::BoardType::UNKNOWN
                                          : tt::scaleout_tools::get_board_type_from_string(it->board_type());
 }
 
@@ -37,7 +37,7 @@ static BoardType get_board_type_for_endpoint(
 static const tt::scaleout_tools::Board& get_or_create_board(
     std::string_view hostname,
     uint32_t tray_id,
-    BoardType board_type,
+    tt::BoardType board_type,
     std::unordered_map<std::string, tt::scaleout_tools::Board>& board_cache) {
     std::string board_key = fmt::format("{}:{}", hostname, tray_id);
 
@@ -113,8 +113,8 @@ static void process_endpoint_if_local(
     }
 
     // Get board type
-    BoardType board_type = get_board_type_for_endpoint(endpoint, fsd);
-    if (board_type == BoardType::UNKNOWN) {
+    tt::BoardType board_type = get_board_type_for_endpoint(endpoint, fsd);
+    if (board_type == tt::BoardType::UNKNOWN) {
         log_warning(
             tt::LogAlways,
             "Could not determine board type for endpoint (host={}, tray={}, asic={}, channel={})",

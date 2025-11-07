@@ -15,8 +15,10 @@
 #include <string>
 #include <unordered_map>
 
+#include <boost/functional/hash.hpp>
+
 #include <tt_metal/fabric/physical_system_descriptor.hpp>
-#include <protobuf/factory_system_descriptor.pb.h>
+#include "protobuf/factory_system_descriptor.pb.h"
 #include <board/board.hpp>
 
 namespace tt::umd {
@@ -26,7 +28,10 @@ class Cluster;
 // Hash function for std::pair<tt::tt_metal::ASICLocation, tt::tt_metal::TrayID>
 struct ASICLocationAndTrayIDHash {
     std::size_t operator()(const std::pair<tt::tt_metal::ASICLocation, tt::tt_metal::TrayID>& p) const noexcept {
-        return std::hash<std::tuple<uint32_t, uint32_t>>{}(std::make_tuple(*p.first, *p.second));
+        std::size_t seed = 0;
+        boost::hash_combine(seed, *p.first);
+        boost::hash_combine(seed, *p.second);
+        return seed;
     }
 };
 
@@ -48,8 +53,11 @@ struct EthernetEndpoint {
 // Hash function for EthernetEndpoint to use as unordered_map key
 struct EthernetEndpointHash {
     std::size_t operator()(const EthernetEndpoint& ep) const noexcept {
-        return std::hash<std::tuple<uint32_t, uint32_t, uint32_t>>{}(
-            std::make_tuple(*ep.tray_id, *ep.asic_location, ep.channel));
+        std::size_t seed = 0;
+        boost::hash_combine(seed, *ep.tray_id);
+        boost::hash_combine(seed, *ep.asic_location);
+        boost::hash_combine(seed, ep.channel);
+        return seed;
     }
 };
 
