@@ -340,6 +340,10 @@ RunTimeOptions::RunTimeOptions() {
         this->force_jit_compile = true;
     }
 
+    if (getenv("TT_FABRIC_ENABLE_ELASTIC_CHANNELS")) {
+        this->enable_fabric_elastic_channels = true;
+    }
+
     const char* timeout_duration_for_operations_value = std::getenv("TT_METAL_OPERATION_TIMEOUT_SECONDS");
     float timeout_duration_for_operations =
         timeout_duration_for_operations_value ? std::stof(timeout_duration_for_operations_value) : 0.f;
