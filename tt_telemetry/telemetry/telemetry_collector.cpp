@@ -293,7 +293,10 @@ static void populate_physical_link_info_for_metric(
 
     auto endpoint_opt = parse_ethernet_endpoint(telemetry_path);
     if (!endpoint_opt) {
-        log_warning(tt::LogAlways, "Failed to parse Ethernet endpoint from metric path '{}'", metric_path);
+        log_warning(
+            tt::LogAlways,
+            "Failed to parse Ethernet endpoint from metric path '{}' - numeric conversion error (e.g., overflow)",
+            metric_path);
         return;
     }
 

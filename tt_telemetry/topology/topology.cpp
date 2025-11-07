@@ -19,6 +19,9 @@ static std::unordered_map<Value, Key> invert_map(const std::unordered_map<Key, V
     return inverse_map;
 }
 
+// Helper: Validate host_id is within bounds
+static bool is_valid_host_id(uint32_t host_id, int hosts_size) { return host_id < static_cast<uint32_t>(hosts_size); }
+
 // Helper: Get board type for a given endpoint from FSD
 static tt::BoardType get_board_type_for_endpoint(
     const tt::scaleout_tools::fsd::proto::FactorySystemDescriptor_EndPoint& endpoint,
@@ -71,7 +74,7 @@ static std::optional<PhysicalLinkInfo> build_physical_link_info(
         if (!is_external) {
             return PhysicalLinkInfo::create(port.port_type, port.port_id);
         } else {
-            if (remote_endpoint.host_id() >= fsd.hosts_size()) {
+            if (!is_valid_host_id(remote_endpoint.host_id(), fsd.hosts_size())) {
                 log_warning(tt::LogAlways, "Invalid remote host_id {} for external link", remote_endpoint.host_id());
                 return std::nullopt;
             }
@@ -192,8 +195,9 @@ TopologyHelper::TopologyHelper(
         const auto& endpoint_a = connection.endpoint_a();
         const auto& endpoint_b = connection.endpoint_b();
 
-        // Validate host IDs
-        if (endpoint_a.host_id() >= fsd.hosts_size() || endpoint_b.host_id() >= fsd.hosts_size()) {
+        // Validate host IDs using helper
+        if (!is_valid_host_id(endpoint_a.host_id(), fsd.hosts_size()) ||
+            !is_valid_host_id(endpoint_b.host_id(), fsd.hosts_size())) {
             log_warning(
                 tt::LogAlways,
                 "Skipping connection with invalid host_id (host_a={}, host_b={})",
