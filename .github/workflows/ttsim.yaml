@@ -426,7 +426,7 @@ jobs:
   ttsim-quad-galaxy-ttnn-unit-tests:
     if: ${{ inputs.run-quad-galaxy-ttnn-unit-tests }}
     runs-on: tt-ubuntu-2204-xlarge-stable
-    timeout-minutes: ${{ inputs.job-timeout }}
+    timeout-minutes: 30
     name: "TTSim Quad Galaxy ttnn unit tests - ${{ matrix.arch }}"
     strategy:
       fail-fast: false
@@ -476,7 +476,7 @@ jobs:
           mkdir -p $TT_METAL_SIMULATOR_HOME
           cp /work/ttsim/src/_out/${{ matrix.build_suffix }}/libttsim.so $TT_METAL_SIMULATOR_HOME/
           cp /work/tt_metal/soc_descriptors/${{ matrix.soc_desc }} $TT_METAL_SIMULATOR_HOME/soc_descriptor.yaml
-          cp /work/tt_metal/build/simulation/umd/child_process_tt_sim_chip $TT_METAL_SIMULATOR_HOME/
+          cp ./build/simulation/umd/child_process_tt_sim_chip $TT_METAL_SIMULATOR_HOME/
 
       - name: Quad Galaxy ttnn unit tests
         run: |
