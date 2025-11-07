@@ -86,6 +86,7 @@ enum class EnvVarID {
     TT_METAL_MULTI_AERISC,                  // Enable experimental multi-erisc mode
     TT_METAL_USE_MGD_1_0,                   // Use mesh graph descriptor 1.0
     TT_METAL_USE_MGD_2_0,                   // Use mesh graph descriptor 2.0
+    TT_METAL_FORCE_JIT_COMPILE,             // Force JIT compilation
 
     // ========================================
     // PROFILING & PERFORMANCE
