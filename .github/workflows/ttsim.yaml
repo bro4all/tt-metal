@@ -484,3 +484,4 @@ jobs:
       - name: Quad Galaxy ttnn unit tests
         run: |
           tt-run --mock-cluster-rank-binding ${{ matrix.mock_cluster_rank_binding }} --rank-binding ${{ matrix.rank_binding }} --mpi-args "--tag-output --allow-run-as-root" bash -c "pytest -svv \"tests/nightly/tg/ccl/test_all_to_all_combine_6U.py::test_all_to_all_combine_8x16_quad_galaxy\""
+          tt-run --mock-cluster-rank-binding ${{ matrix.mock_cluster_rank_binding }} --rank-binding ${{ matrix.rank_binding }} --mpi-args "--tag-output --allow-run-as-root" bash -c "pytest -svv \"tests/nightly/tg/ccl/test_all_to_all_dispatch_6U.py::test_all_to_all_dispatch_8x16_quad_galaxy\""
