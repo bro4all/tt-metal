@@ -188,7 +188,7 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
     TT_ASSERT(gather_config1.dtype() == DataType::UINT16);
 
     const auto& padding_config_storage0 = padding_config0.device_storage();
-    auto padding_config_buffer0 = padding_config_storage0.get_buffer();
+    auto* padding_config_buffer0 = padding_config_storage0.get_buffer();
     cb_indices.padding_config0 = cb_indices.get_next_cb_id();
     auto padding_config_cb0 = create_circular_buffer(
         program,
@@ -200,7 +200,7 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
         config_tensors_in_dram ? nullptr : padding_config_buffer0);
 
     const auto& padding_config_storage1 = padding_config1.device_storage();
-    auto padding_config_buffer1 = padding_config_storage1.get_buffer();
+    auto* padding_config_buffer1 = padding_config_storage1.get_buffer();
     cb_indices.padding_config1 = cb_indices.get_next_cb_id();
     auto padding_config_cb1 = create_circular_buffer(
         program,
@@ -212,7 +212,7 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
         config_tensors_in_dram ? nullptr : padding_config_buffer1);
 
     const auto& gather_config_storage0 = gather_config0.device_storage();
-    auto gather_config_buffer0 = gather_config_storage0.get_buffer();
+    auto* gather_config_buffer0 = gather_config_storage0.get_buffer();
     cb_indices.gather_config0 = cb_indices.get_next_cb_id();
     auto gather_config_cb0 = create_circular_buffer(
         program,
@@ -224,7 +224,7 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
         config_tensors_in_dram ? nullptr : gather_config_buffer0);
 
     const auto& gather_config_storage1 = gather_config1.device_storage();
-    auto gather_config_buffer1 = gather_config_storage1.get_buffer();
+    auto* gather_config_buffer1 = gather_config_storage1.get_buffer();
     cb_indices.gather_config1 = cb_indices.get_next_cb_id();
     auto gather_config_cb1 = create_circular_buffer(
         program,
@@ -353,8 +353,8 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(
                                                    const std::vector<Tensor>& input_tensors,
                                                    const std::vector<std::optional<const Tensor>>&,
                                                    const std::vector<Tensor>& output_tensors) {
-        auto src_buffer = input_tensors.at(0).buffer();
-        auto dst_buffer = output_tensors.at(0).buffer();
+        auto* src_buffer = input_tensors.at(0).buffer();
+        auto* dst_buffer = output_tensors.at(0).buffer();
 
         UpdateDynamicCircularBufferAddress(program, src_cb, *src_buffer);
         UpdateDynamicCircularBufferAddress(program, out_cb, *dst_buffer);
@@ -494,7 +494,7 @@ operation::ProgramWithCallbacks inplace_untilize_with_halo_multi_core(
     TT_ASSERT(remote_config.dtype() == DataType::UINT16);
 
     const auto& padding_config_storage = padding_config.device_storage();
-    auto padding_config_buffer = padding_config_storage.get_buffer();
+    auto* padding_config_buffer = padding_config_storage.get_buffer();
     cb_indices.padding_config_cb_id = cb_indices.get_next_cb_id();
     auto padding_config_cb = create_circular_buffer(
         program,
@@ -506,7 +506,7 @@ operation::ProgramWithCallbacks inplace_untilize_with_halo_multi_core(
         config_tensors_in_dram ? nullptr : padding_config_buffer);
 
     const auto& local_config_storage = local_config.device_storage();
-    auto local_config_buffer = local_config_storage.get_buffer();
+    auto* local_config_buffer = local_config_storage.get_buffer();
     cb_indices.local_config_cb_id = cb_indices.get_next_cb_id();
     auto local_config_cb = create_circular_buffer(
         program,
@@ -518,7 +518,7 @@ operation::ProgramWithCallbacks inplace_untilize_with_halo_multi_core(
         config_tensors_in_dram ? nullptr : local_config_buffer);
 
     const auto& remote_config_storage = remote_config.device_storage();
-    auto remote_config_buffer = remote_config_storage.get_buffer();
+    auto* remote_config_buffer = remote_config_storage.get_buffer();
     cb_indices.remote_config_cb_id = cb_indices.get_next_cb_id();
     auto remote_config_cb = create_circular_buffer(
         program,
@@ -721,8 +721,8 @@ operation::ProgramWithCallbacks inplace_untilize_with_halo_multi_core(
                                                    const std::vector<Tensor>& input_tensors,
                                                    const std::vector<std::optional<const Tensor>>&,
                                                    const std::vector<Tensor>& output_tensors) {
-        auto src_buffer = input_tensors.at(0).buffer();
-        auto dst_buffer = output_tensors.at(0).buffer();
+        auto* src_buffer = input_tensors.at(0).buffer();
+        auto* dst_buffer = output_tensors.at(0).buffer();
 
         UpdateDynamicCircularBufferAddress(program, src_cb, *src_buffer);
         UpdateDynamicCircularBufferAddress(program, out_cb, *dst_buffer);

@@ -30,7 +30,7 @@ namespace {
 // This reimplements tt::Cluster::get_bus_id() and should be moved to tt::umd::Cluster
 inline uint16_t get_bus_id(const std::unique_ptr<tt::umd::Cluster>& cluster, ChipId chip) {
     // Prefer cached value from cluster descriptor (available for silicon and our simulator/mock descriptors)
-    auto cluster_desc = cluster->get_cluster_description();
+    auto* cluster_desc = cluster->get_cluster_description();
     uint16_t bus_id = cluster_desc->get_bus_id(chip);
 
     return bus_id;
@@ -94,7 +94,7 @@ TrayID get_tray_id_for_chip(
 
 std::pair<TrayID, ASICLocation> get_asic_position(
     const std::unique_ptr<tt::umd::Cluster>& cluster, tt::ARCH arch, ChipId chip_id, bool using_mock_cluster_desc) {
-    auto cluster_desc = cluster->get_cluster_description();
+    auto* cluster_desc = cluster->get_cluster_description();
     if (cluster_desc->get_board_type(chip_id) == BoardType::UBB_WORMHOLE ||
         cluster_desc->get_board_type(chip_id) == BoardType::UBB_BLACKHOLE) {
         constexpr std::string_view ubb_mobo_name = "S7T-MB";
@@ -294,7 +294,7 @@ void PhysicalSystemDescriptor::run_local_discovery(bool run_live_discovery) {
         add_local_asic_descriptor(src_unique_id, src);
         std::unordered_map<ChipId, size_t> visited_dst;
         // Populate ASIC Graph for Current Host
-        for (auto& [chan, dst] : conn) {
+        for (const auto& [chan, dst] : conn) {
             auto dst_chip = std::get<0>(dst);
             auto dst_chan = std::get<1>(dst);
             if (visited_dst.find(dst_chip) == visited_dst.end()) {
