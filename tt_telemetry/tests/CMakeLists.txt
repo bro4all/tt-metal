@@ -2,7 +2,14 @@
 
 add_executable(telemetry_unit_tests)
 
-target_sources(telemetry_unit_tests PRIVATE test_exception_handling.cpp)
+target_sources(
+    telemetry_unit_tests
+    PRIVATE
+        test_exception_handling.cpp
+        test_physical_link_info.cpp
+        test_ethernet_path_parsing.cpp
+        test_topology_helper_api.cpp
+)
 
 target_include_directories(
     telemetry_unit_tests
