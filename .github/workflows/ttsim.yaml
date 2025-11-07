@@ -476,7 +476,7 @@ jobs:
           mkdir -p $TT_METAL_SIMULATOR_HOME
           cp /work/ttsim/src/_out/${{ matrix.build_suffix }}/libttsim.so $TT_METAL_SIMULATOR_HOME/
           cp /work/tt_metal/soc_descriptors/${{ matrix.soc_desc }} $TT_METAL_SIMULATOR_HOME/soc_descriptor.yaml
-          cp ./build/simulation/umd/child_process_tt_sim_chip $TT_METAL_SIMULATOR_HOME/
+          cp /work/build/simulation/umd/child_process_tt_sim_chip $TT_METAL_SIMULATOR_HOME/
 
       - name: Quad Galaxy ttnn unit tests
         run: |
