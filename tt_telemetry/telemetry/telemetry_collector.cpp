@@ -354,13 +354,8 @@ static void send_initial_snapshot(
         uint_metrics_, snapshot->uint_metrics, snapshot->uint_metric_timestamps, &snapshot->uint_metric_units);
     process_metrics_to_snapshot<DoubleMetric, double>(
         double_metrics_, snapshot->double_metrics, snapshot->double_metric_timestamps, &snapshot->double_metric_units);
-
-    for (size_t i = 0; i < string_metrics_.size(); i++) {
-        std::string path = get_cluster_wide_telemetry_path(*string_metrics_[i]);
-        snapshot->string_metrics[path] = string_metrics_[i]->value();
-        snapshot->string_metric_units[path] = static_cast<uint16_t>(string_metrics_[i]->units);
-        snapshot->string_metric_timestamps[path] = string_metrics_[i]->timestamp();
-    }
+    process_metrics_to_snapshot<StringMetric, std::string>(
+        string_metrics_, snapshot->string_metrics, snapshot->string_metric_timestamps, &snapshot->string_metric_units);
 
     // Populate unit label maps for initial snapshot
     snapshot->metric_unit_display_label_by_code = create_metric_unit_display_label_map();
@@ -372,6 +367,7 @@ static void send_initial_snapshot(
         populate_physical_link_info_for_metrics(bool_metrics_, topology_translation, snapshot->physical_link_info);
         populate_physical_link_info_for_metrics(uint_metrics_, topology_translation, snapshot->physical_link_info);
         populate_physical_link_info_for_metrics(double_metrics_, topology_translation, snapshot->physical_link_info);
+        populate_physical_link_info_for_metrics(string_metrics_, topology_translation, snapshot->physical_link_info);
     }
 
     for (auto& subscriber : subscribers) {
@@ -387,17 +383,8 @@ static void update_delta_snapshot_with_local_telemetry(std::shared_ptr<Telemetry
         uint_metrics_, snapshot->uint_metrics, snapshot->uint_metric_timestamps, &snapshot->uint_metric_units);
     process_metrics_to_snapshot<DoubleMetric, double, true>(
         double_metrics_, snapshot->double_metrics, snapshot->double_metric_timestamps, &snapshot->double_metric_units);
-
-    for (size_t i = 0; i < string_metrics_.size(); i++) {
-        if (!string_metrics_[i]->changed_since_transmission()) {
-            continue;
-        }
-        std::string path = get_cluster_wide_telemetry_path(*string_metrics_[i]);
-        snapshot->string_metrics[path] = string_metrics_[i]->value();
-        snapshot->string_metric_units[path] = static_cast<uint16_t>(string_metrics_[i]->units);
-        snapshot->string_metric_timestamps[path] = string_metrics_[i]->timestamp();
-        string_metrics_[i]->mark_transmitted();
-    }
+    process_metrics_to_snapshot<StringMetric, std::string, true>(
+        string_metrics_, snapshot->string_metrics, snapshot->string_metric_timestamps, &snapshot->string_metric_units);
 
     // Add unit label maps to the snapshot (if not already present from remote aggregation)
     if (snapshot->metric_unit_display_label_by_code.empty()) {
