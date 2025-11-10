@@ -243,3 +243,8 @@ SECTIONS {
   .riscv.attributes 0 : { *(.riscv.attributes) } :attributes
 
 }
+
+#if IS_TLS && defined(TYPE_FIRMWARE)
+PROVIDE(__local_base = TLS_START;)
+PROVIDE(__local_stride = TLS_SIZE;)
+#endif

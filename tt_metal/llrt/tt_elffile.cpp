@@ -494,9 +494,10 @@ void ElfFile::Impl::Elf<Is64>::LoadImage() {
                     if (seg.IsDeleted()) {
                         continue;
                     }
-                    if (seg.membytes > words[ix]) {
+                    auto limit = words[ix];
+                    if (seg.membytes > limit) {
                         TT_THROW(
-                            "{}: phdr[{}] [{:#x},+{:#x}) overflows {} limit of {:#x} bytes, {}",
+                            "{}: phdr[{}] [{:#x},+{:#x}) overflows region:{} limit of {:#x} bytes, {}",
                             path_,
                             phdr_ix,
                             seg.address,

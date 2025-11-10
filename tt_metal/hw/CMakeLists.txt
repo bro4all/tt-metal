@@ -438,6 +438,7 @@ foreach(ARCH_CPU IN LISTS TLS_ARCH_CPUS)
     set(HW_OBJ_PATTERNS
         "substitutes.o:tt_metal/hw/toolchain/substitutes.cpp"
         "crt0-tls.o:tt_metal/hw/toolchain/crt0-tls.S"
+        "crt0.o:tt_metal/hw/toolchain/crt0.S"
         "noc.o:tt_metal/hw/firmware/src/tt-2xx/quasar/noc.c:tt-qsr64"
     )
     set(GPP_DEFINES -D${ARCH})
