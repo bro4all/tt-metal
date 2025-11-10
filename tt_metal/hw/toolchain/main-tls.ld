@@ -239,8 +239,8 @@ SECTIONS {
   .phdrs 0 (INFO) :
   {
     LONG(TEXT_SIZE)
-    IF_TLS(LONG(TLS_SIZE - (ADDR(.tdata) - TLS_START)))
-    LONG(DATA_SIZE - STACK_MIN_SIZE - (ADDR(.data) - IF_TLS(DATA_START)IF_NOT_TLS(TLS_START)))
+    LONG(TLS_SIZE - STACK_MIN_SIZE - (ADDR(IF_TLS(.tdata)IF_NOT_TLS(.data)) - TLS_START))
+    IF_TLS(LONG(DATA_SIZE - (ADDR(.data) - DATA_START)))
   }
 
   .riscv.attributes 0 : { *(.riscv.attributes) } :attributes
