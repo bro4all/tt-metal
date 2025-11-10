@@ -656,7 +656,7 @@ class ModelArgs:
         self.processor = None if dummy_weights else self.create_processor()
 
         if device is not None:  # Avoid issue with test_torch.py not having a device
-            self.n_local_heads = self.n_heads // self.cluster_shape[1]
+            self.n_local_heads = self.n_padded_heads // self.cluster_shape[1]
 
             grid = device.compute_with_storage_grid_size()
             self.max_grid_size = ttnn.CoreGrid(x=grid.x, y=grid.y)
@@ -749,20 +749,15 @@ class ModelArgs:
                 k_chunk_size=256 if seqlen >= 2048 else 64,
             )
 
-            # nlp_concat_heads_decode will shard the data across this number of cores
-            assert (
-                self.n_heads % self.cluster_shape[1] == 0
-            ), f"n_heads must be divisible by num_devices: {self.n_heads} % {self.cluster_shape[1]}"
-
             # Note: for some models (e.g. Mistral-Small) n_heads * head_dim != dim
             self.model_config["ATTN_OUTPUT_PROGCFG"] = (
                 None
                 if self.is_galaxy
                 else self.dram_matmul_config(
                     m=self.tile_padded_batch_rows,
-                    k=(self.n_heads * self.head_dim) // self.num_devices,
+                    k=(self.n_padded_heads * self.head_dim) // self.num_devices,
                     n=self.dim,
-                    num_cores=self.n_heads // self.num_devices,
+                    num_cores=self.n_padded_heads // self.num_devices,
                 )
             )
 
@@ -854,9 +849,9 @@ class ModelArgs:
             )
             # Attention output is not necessarily the same dimension as the self.dim, e.g. in Mistral
             k_dim = (
-                (self.n_heads * self.head_dim) // self.cluster_shape[0]
+                (self.n_padded_heads * self.head_dim) // self.cluster_shape[0]
                 if self.is_galaxy
-                else (self.n_heads * self.head_dim) // self.num_devices
+                else (self.n_padded_heads * self.head_dim) // self.num_devices
             )
             # TODO: #26657 (if self.num_devices == 8 and os.getenv("ACTUAL_DEVICE", "") != "TG") should be refactored, and investigate if ACTUAL_DEVICE environment variable is still used
             n_dim = (
@@ -917,7 +912,7 @@ class ModelArgs:
                 ttnn.ShardOrientation.ROW_MAJOR,
                 use_height_and_width_as_shard_shape=True,
             )
-            self.qkv_size = self.head_dim * (2 * self.n_kv_heads + self.n_heads)
+            self.qkv_size = self.head_dim * (2 * self.n_kv_heads + self.n_padded_heads)
             self.min_kv_prefill_shard_seqlen = (self.tile_size * 8 * 8) / (self.n_kv_heads // self.cluster_shape[1])
             self.model_config["XQKV_PREFILL_PROGCFG"] = lambda seq_len: ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=(8, 8),
@@ -1231,7 +1226,7 @@ class ModelArgs:
             self.model_config["VISION_XATTN_Q_PROGCFG"] = lambda seq_len: self.matmul_config(
                 m=min(seq_len, 1024),
                 k=self.dim,
-                n=(self.head_dim * self.n_heads) // self.num_devices,
+                n=(self.head_dim * self.n_padded_heads) // self.num_devices,
                 grid_size=(8, 8),
                 in0_block_w=1,
                 fuse_batch=seq_len <= 1024,
