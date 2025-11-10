@@ -95,8 +95,6 @@ OUTPUT_ARCH(riscv)
 
 ENTRY(_start)
 
-
-
 PHDRS {
   attributes 0x70000003;
   IF_KERNEL(firmtext PT_LOAD; firmtextdel 0x60000000;)
@@ -158,8 +156,9 @@ SECTIONS {
     *(.tbss.end)
   } :tdata :tls
   __tbss_words = ABSOLUTE(SIZEOF(.tbss)) / 4;
+#else
+  /DISCARD/ : { *(.tdata.start .tdata.end .tbss.start .tbss.end) }
 #endif
-
 /* Data-like */
 #if TYPE_KERNEL
   .firmdata DATA_START : AT(LOADADDR(.firmtdata) + SIZEOF(.firmtdata)) { *_object.o(.data) } :firmdata :firmdatadel

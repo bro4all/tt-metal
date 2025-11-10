@@ -284,8 +284,7 @@ foreach(ARCH_CPU IN LISTS TLS_ARCH_CPUS)
                         ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/${HW_OUTPUT_DIR}
                     COMMAND
                         ${CMAKE_CXX_COMPILER} -DTYPE_${TYPE_DEFINE} -DCOMPILE_FOR_${PROC_DEFINE} -DARCH_${ARCH_DEFINE}
-                        -DOBJECTS="${CPU}-crt0-tls.o" -I${HW_INCLUDE} -E -P -x c -o
-                        ${PROJECT_SOURCE_DIR}/${HW_OUTPUT_DIR}/${HW_OUTPUT_FILE}
+                        -I${HW_INCLUDE} -E -P -x c -o ${PROJECT_SOURCE_DIR}/${HW_OUTPUT_DIR}/${HW_OUTPUT_FILE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/toolchain/main-tls.ld
                     DEPENDS
                         ${CMAKE_CURRENT_SOURCE_DIR}/toolchain/main-tls.ld
