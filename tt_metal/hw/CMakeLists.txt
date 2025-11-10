@@ -419,7 +419,7 @@ foreach(ARCH_CPU IN LISTS TLS_ARCH_CPUS)
     list(POP_FRONT CPUS)
 
     # TODO:Review this list
-    set(CPP_INCLUDES
+    set(GPP_INCLUDES
         -I.
         -I..
         -I${PROJECT_SOURCE_DIR}
@@ -431,26 +431,39 @@ foreach(ARCH_CPU IN LISTS TLS_ARCH_CPUS)
         -I${PROJECT_SOURCE_DIR}/tt_metal/hw/inc/debug
         -I${PROJECT_SOURCE_DIR}/tt_metal/hw/firmware/src/tt-2xx
         -I${PROJECT_SOURCE_DIR}/tt_metal/hw/inc/tt-2xx/${ARCH}
+        -I${PROJECT_SOURCE_DIR}/tt_metal/hw/inc/tt-2xx/${ARCH}/noc
         -I${PROJECT_SOURCE_DIR}/tt_metal/hw/ckernels/${ARCH}/metal/common
         -I${PROJECT_SOURCE_DIR}/tt_metal/hw/ckernels/${ARCH}/metal/llk_io
     )
     set(HW_OBJ_DIR ${PROJECT_SOURCE_DIR}/runtime/hw/lib/${ARCH})
-    set(HW_OBJ_SRC_PAIRS
+    set(HW_OBJ_PATTERNS
         "substitutes.o:tt_metal/hw/toolchain/substitutes.cpp"
         "crt0-tls.o:tt_metal/hw/toolchain/crt0-tls.S"
+        "noc.o:tt_metal/hw/firmware/src/tt-2xx/quasar/noc.c:tt-qsr64"
     )
     set(GPP_DEFINES -D${ARCH})
 
-    foreach(HW_PAIR IN LISTS HW_OBJ_SRC_PAIRS)
-        string(REPLACE ":" ";" HW_PAIR_LIST ${HW_PAIR})
-        list(GET HW_PAIR_LIST 0 HWOBJ)
-        list(GET HW_PAIR_LIST 1 HWSRC)
+    foreach(HW_PATTERN IN LISTS HW_OBJ_PATTERNS)
+        string(REPLACE ":" ";" HW_LIST ${HW_PATTERN})
+        list(LENGTH HW_LIST HW_LENGTH)
+        list(GET HW_LIST 0 HWOBJ)
+        list(GET HW_LIST 1 HWSRC)
+        if(HW_LENGTH GREATER 2)
+            list(GET HW_LIST 2 HWCPUS)
+            string(REPLACE " " ";" HWCPUS ${HWCPUS})
+        else()
+            set(HWCPUS ${CPUS})
+        endif()
         foreach(CPU IN LISTS CPUS)
+            list(FIND HWCPUS ${CPU} HWENABLE)
+            if(HWENABLE LESS 0)
+                continue()
+            endif()
             set(HW_OBJ_FILE "${CPU}-${HWOBJ}")
 
             set(GPP_FLAGS
                 -mcpu=${CPU}
-                ${CPP_FLAGS_common}
+                ${GPP_FLAGS_common}
             )
             add_custom_command(
                 OUTPUT
