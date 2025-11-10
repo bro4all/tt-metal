@@ -20,6 +20,7 @@ from ....utils.tracing import Tracer
 @pytest.mark.parametrize(
     ("mesh_device", "submesh_shape", "sp_axis", "tp_axis", "num_links"),
     [
+        pytest.param((1, 8), (1, 8), 0, 1, 1, id="1x8sp0tp1"),
         pytest.param((2, 4), (2, 4), 0, 1, 1, id="2x4sp0tp1"),
         pytest.param((4, 8), (4, 8), 0, 1, 4, id="4x8sp0tp1"),
     ],
