@@ -560,27 +560,6 @@ def test_conv2d_slicing_validation_errors(device):
 def test_pool2d_slicing_validation_errors(device):
     """Test that validation errors are raised correctly for MaxPool2d slicing"""
 
-    # Test that height/width slicing raises error
-    with pytest.raises(ValueError, match="Height and Width slicing are not supported"):
-        MaxPool2dConfiguration(
-            input_height=16,
-            input_width=16,
-            channels=16,
-            batch_size=1,
-            kernel_size=(2, 2),
-            slice_strategy=HeightSliceStrategyConfiguration(num_slices=2),
-        )
-
-    with pytest.raises(ValueError, match="Height and Width slicing are not supported"):
-        MaxPool2dConfiguration(
-            input_height=16,
-            input_width=16,
-            channels=16,
-            batch_size=1,
-            kernel_size=(2, 2),
-            slice_strategy=WidthSliceStrategyConfiguration(num_slices=2),
-        )
-
     # Test that channels not divisible by num_slices raises error
     with pytest.raises(ValueError, match="must be divisible by number of slices"):
         MaxPool2dConfiguration(
@@ -743,8 +722,10 @@ def test_maxpool2d_slicing_strategies(input_size, channels, batch_size, pool_con
         slice_strategy = None
     elif slice_config["type"] == "channel_slice":
         slice_strategy = ChannelSliceStrategyConfiguration(num_slices=slice_config["num_slices"])
-    elif slice_config["type"] in ["height_slice", "width_slice"]:
-        pytest.skip(f"{slice_config['type']} slicing is not supported for MaxPool2d")
+    elif slice_config["type"] == "height_slice":
+        slice_strategy = HeightSliceStrategyConfiguration(num_slices=slice_config["num_slices"])
+    elif slice_config["type"] == "width_slice":
+        slice_strategy = WidthSliceStrategyConfiguration(num_slices=slice_config["num_slices"])
     else:
         raise ValueError(f"Unknown slice type: {slice_config['type']}")
 

@@ -328,14 +328,6 @@ class MaxPool2dConfiguration:
     slice_strategy: Optional[SliceStrategy] = None
 
     def __post_init__(self):
-        # Validate that only channel slicing is supported for MaxPool2d
-        if self.slice_strategy is not None and isinstance(
-            self.slice_strategy, (HeightSliceStrategyConfiguration, WidthSliceStrategyConfiguration)
-        ):
-            raise ValueError(
-                "Height and Width slicing are not supported for MaxPool2d. Only channel slicing is supported."
-            )
-
         # Validate channel slicing configuration
         if self.slice_strategy is not None and isinstance(self.slice_strategy, ChannelSliceStrategyConfiguration):
             if self.channels % self.slice_strategy.get_num_slices() != 0:
@@ -680,6 +672,14 @@ class TtMaxPool2d:
         self.configuration = configuration
         self.device = device
 
+        # Create slice_config for Height/Width slicing (similar to TtConv2d)
+        # Channel slicing is handled separately with manual logic
+        self.slice_config = None
+        if configuration.slice_strategy is not None and not isinstance(
+            configuration.slice_strategy, ChannelSliceStrategyConfiguration
+        ):
+            self.slice_config = to_slice_config(configuration.slice_strategy)
+
         # Check for channel slicing
         self.use_channel_slicing = configuration.slice_strategy is not None and isinstance(
             configuration.slice_strategy, ChannelSliceStrategyConfiguration
@@ -690,7 +690,7 @@ class TtMaxPool2d:
             self.channels_per_slice = configuration.channels // self.num_slices
 
     def get_maxpool2d_kwargs(self):
-        return {
+        kwargs = {
             "batch_size": self.configuration.batch_size,
             "input_h": self.configuration.input_height,
             "input_w": self.configuration.input_width,
@@ -704,6 +704,10 @@ class TtMaxPool2d:
             "dtype": self.configuration.dtype,
             "output_layout": self.configuration.output_layout,
         }
+        # Add dram_slice_config if present (for Height/Width slicing)
+        if self.slice_config is not None:
+            kwargs["dram_slice_config"] = self.slice_config
+        return kwargs
 
     def _apply_channel_slicing(self, x):
         """Apply channel slicing to the input tensor and return the result."""

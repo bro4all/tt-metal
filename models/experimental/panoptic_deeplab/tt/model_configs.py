@@ -203,7 +203,7 @@ class ModelOptimisations:
         )
         self.register_layer_override(
             "stem.maxpool",
-            slice_strategy=ChannelSliceStrategyConfiguration(num_slices=2),
+            slice_strategy=WidthSliceStrategyConfiguration(num_slices=3),
             dtype=ttnn.bfloat8_b,
             output_layout=ttnn.TILE_LAYOUT,
         )
