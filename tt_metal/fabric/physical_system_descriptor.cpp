@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <fstream>
 
 #include <umd/device/cluster.hpp>
 #include <umd/device/soc_descriptor.hpp>
