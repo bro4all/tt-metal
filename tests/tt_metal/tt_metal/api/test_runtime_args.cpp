@@ -612,4 +612,46 @@ TEST_F(MeshDeviceFixture, TensixSetCommonRuntimeArgsMultipleCreateKernel) {
     }
 }
 
+TEST_F(MeshDeviceFixture, TensixChangeRTACountBetweenRuns) {
+    auto mesh_device = this->devices_.at(0);
+    auto& cq = mesh_device->mesh_command_queue();
+    auto zero_coord = distributed::MeshCoordinate(0, 0);
+    auto device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
+
+    CoreRange core_range(CoreCoord(0, 0), CoreCoord(1, 1));
+    CoreRangeSet core_range_set(core_range);
+
+    // First, create a program with 2 unique runtime args
+    std::vector<uint32_t> initial_runtime_args = {0x1111, 0x2222};
+    std::vector<uint32_t> common_runtime_args = {};
+
+    auto [workload, kernel] = unit_tests::runtime_args::initialize_program_compute(
+        mesh_device, core_range_set, initial_runtime_args.size(), common_runtime_args.size());
+    auto& program = workload.get_programs().at(device_range);
+
+    SetRuntimeArgs(program, kernel, core_range_set, initial_runtime_args);
+
+    std::map<CoreCoord, std::vector<uint32_t>> core_to_rt_args;
+    for (auto x = core_range.start_coord.x; x <= core_range.end_coord.x; x++) {
+        for (auto y = core_range.start_coord.y; y <= core_range.end_coord.y; y++) {
+            CoreCoord logical_core(x, y);
+            core_to_rt_args[logical_core] = initial_runtime_args;
+        }
+    }
+
+    // First run with 2 unique RTAs
+    log_info(LogTest, "First run with {} unique RTAs", initial_runtime_args.size());
+    distributed::EnqueueMeshWorkload(cq, workload, false);
+    unit_tests::runtime_args::verify_results(true, mesh_device, workload, core_to_rt_args, common_runtime_args);
+
+    // Now try to change to 4 unique runtime args
+    std::vector<uint32_t> expanded_runtime_args = {0x3333, 0x4444, 0x5555, 0x6666};
+    log_info(LogTest, "Attempting to change to {} unique RTAs", expanded_runtime_args.size());
+
+    // This should throw with current implementation
+    EXPECT_ANY_THROW({ SetRuntimeArgs(program, kernel, core_range_set, expanded_runtime_args); })
+        << "Expected exception when changing RTA count from " << initial_runtime_args.size() << " to "
+        << expanded_runtime_args.size();
+}
+
 }  // namespace tt::tt_metal
