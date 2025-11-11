@@ -287,7 +287,7 @@ Result conv2d_DRAM(
             mm_output_memory_config,
             output_dtype,
             program_config,
-            conv_config.activation.value(),
+            conv_config.activation,
             compute_config);
         if (conv_config.deallocate_activation) {
             input_tensor_on_device.deallocate(true);
@@ -734,7 +734,7 @@ Result conv2d_L1(
             mm_output_memory_config,
             output_dtype,
             program_config,
-            conv_config.activation.value(),
+            conv_config.activation,
             compute_config);
 
         if (conv_config.deallocate_activation) {

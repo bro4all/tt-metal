@@ -748,9 +748,10 @@ std::tuple<ttnn::Tensor, ParallelConfig, ParallelConfig> shard_or_reshard_tensor
         // In case we are in auto sharded codepath and convolution maps to matmul
         // Skip sharding of the input tensor and run the matmul out of interleaved tensor.
         bool auto_shard_mm = auto_shard && is_mm_conv;
+        const bool needs_tilization = is_mm_conv && input_tensor.layout() == Layout::ROW_MAJOR &&
+                                      parallel_config.shard_scheme != TensorMemoryLayout::HEIGHT_SHARDED;
         if (input_tensor_on_device) {
-            if (is_mm_conv && input_tensor.layout() == Layout::ROW_MAJOR &&
-                parallel_config.shard_scheme != TensorMemoryLayout::HEIGHT_SHARDED) {
+            if (needs_tilization) {
                 // Workaround #13979 ttnn::tilize doesn't support BLOCK_SHARDED layout
                 Tensor input_tensor_tilized = ttnn::to_layout(input_tensor, Layout::TILE);
                 if (conv_config.deallocate_activation) {
@@ -790,7 +791,18 @@ std::tuple<ttnn::Tensor, ParallelConfig, ParallelConfig> shard_or_reshard_tensor
             }
         } else {
             input_tensor = ttnn::to_device(
-                input_tensor, device, (auto_shard_mm ? ttnn::DRAM_MEMORY_CONFIG : input_tensor_sharded_memory_config));
+                input_tensor,
+                device,
+                ((auto_shard_mm || needs_tilization) ? ttnn::DRAM_MEMORY_CONFIG : input_tensor_sharded_memory_config));
+            if (needs_tilization) {
+                // Workaround #13979 ttnn::tilize doesn't support BLOCK_SHARDED layout
+                Tensor input_tensor_tilized = ttnn::to_layout(input_tensor, Layout::TILE);
+                if (conv_config.deallocate_activation) {
+                    input_tensor.deallocate(/*force*/ true);
+                    input_tensor_tilized = ttnn::move(input_tensor_tilized);
+                }
+                input_tensor = input_tensor_tilized;
+            }
         }
     }
     return {input_tensor, parallel_config, output_parallel_config};

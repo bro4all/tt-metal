@@ -635,7 +635,7 @@ def test_conv_features_multi_device(
 
 
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 16384}], indirect=True)
-@pytest.mark.parametrize("stride", [2])
+@pytest.mark.parametrize("stride", [1])
 @pytest.mark.parametrize("batch_size", [2])
 @pytest.mark.parametrize(
     "output_channels, input_channels, input_height, input_width, shard_layout, config",
@@ -669,6 +669,7 @@ def test_conv_features_multi_device(
     "filter, pad",
     [
         [3, 1],
+        [1, 0],
     ],
 )
 @pytest.mark.parametrize("enable_act_double_buffer", [True])
