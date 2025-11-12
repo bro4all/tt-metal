@@ -319,8 +319,9 @@ RunTimeOptions::RunTimeOptions() {
         force_context_reinit = true;
     }
 
-    if (getenv("TT_METAL_FABRIC_BLACKHOLE_TWO_ERISC")) {
-        this->enable_2_erisc_mode_with_fabric = true;
+    // Presence-based override to force-disable fabric 2-ERISC mode, even if defaults would enable
+    if (getenv("TT_METAL_DISABLE_FABRIC_BLACKHOLE_TWO_ERISC")) {
+        this->disable_fabric_2_erisc_mode = true;
     }
 
     if (getenv("TT_METAL_DISABLE_MULTI_AERISC")) {
