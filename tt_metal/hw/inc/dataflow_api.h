@@ -2377,6 +2377,10 @@ private:
     using src_args_t = typename noc_traits_t<T>::src_args_type;
     template <typename T>
     using dst_args_t = typename noc_traits_t<T>::dst_args_type;
+    template <typename T>
+    using src_args_mcast_t = typename noc_traits_t<T>::src_args_mcast_type;
+    template <typename T>
+    using dst_args_mcast_t = typename noc_traits_t<T>::dst_args_mcast_type;
 
     template <AddressType address_type>
     using addr_underlying_t = std::conditional_t<address_type == AddressType::LOCAL_L1, uint32_t, uint64_t>;
@@ -2391,6 +2395,18 @@ private:
     auto get_dst_ptr(const Dst& dst, const dst_args_t<Dst>& dst_args) const {
         return addr_underlying_t<address_type>{
             noc_traits_t<Dst>::template dst_addr<address_type>(dst, *this, dst_args)};
+    }
+
+    template <AddressType address_type, typename Src>
+    auto get_src_ptr_mcast(const Src& src, const src_args_mcast_t<Src>& src_args) const {
+        return addr_underlying_t<address_type>{
+            noc_traits_t<Src>::template src_addr_mcast<address_type>(src, *this, src_args)};
+    }
+
+    template <AddressType address_type, typename Dst>
+    auto get_dst_ptr_mcast(const Dst& dst, const dst_args_mcast_t<Dst>& dst_args) const {
+        return addr_underlying_t<address_type>{
+            noc_traits_t<Dst>::template dst_addr_mcast<address_type>(dst, *this, dst_args)};
     }
 
 public:
@@ -2560,7 +2576,7 @@ public:
         static_assert(response_mode == ResponseMode::NON_POSTED, "Mcasts with posted transactions are not supported"); // TODO: Make this an arch specific assertion
 
         auto src_addr = get_src_ptr<AddressType::LOCAL_L1>(src, src_args);
-        auto dst_noc_addr = get_dst_ptr<AddressType::NOC>(dst, dst_args);
+        auto dst_noc_addr = get_dst_ptr_mcast<AddressType::NOC>(dst, dst_args);
         if (mcast_mode == McastMode::INCLUDE_SRC) {
             noc_async_write_multicast_loopback_src(src_addr, dst_noc_addr, size_bytes, num_dsts, linked, noc_id_);
         } else if constexpr (mcast_mode == McastMode::EXCLUDE_SRC) {
@@ -2759,7 +2775,14 @@ private:
 template <>
 struct noc_traits_t<CircularBuffer> {
     struct src_args_type {};
-    struct dst_args_type {
+    struct dst_args_type {};
+    struct src_args_mcast_type {
+        uint32_t noc_x_start{};
+        uint32_t noc_y_start{};
+        uint32_t noc_x_end{};
+        uint32_t noc_y_end{};
+    };
+    struct dst_args_mcast_type {
         uint32_t noc_x_start{};
         uint32_t noc_y_start{};
         uint32_t noc_x_end{};
@@ -2767,16 +2790,23 @@ struct noc_traits_t<CircularBuffer> {
     };
     template <Noc::AddressType address_type>
     static auto src_addr(const CircularBuffer& src, const Noc&, const src_args_type&) {
-        static_assert(address_type == Noc::AddressType::LOCAL_L1, "CircularBuffer can only be used as L1 source");
+        static_assert(address_type == Noc::AddressType::LOCAL_L1, "Need to specify start and end coordinates as args to use CircularBuffer as a source");
         return src.get_read_ptr();
     }
     template <Noc::AddressType address_type>
     static auto dst_addr(const CircularBuffer& dst, const Noc& noc, const dst_args_type& args) {
-        if constexpr (address_type == Noc::AddressType::LOCAL_L1) {
-            return dst.get_write_ptr();
-        } else {
-            return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, dst.get_write_ptr(), noc.get_noc_id());
-        }
+        static_assert(address_type == Noc::AddressType::LOCAL_L1, "");
+        return dst.get_write_ptr();
+    }
+    template <Noc::AddressType address_type>
+    static auto src_addr_mcast(const CircularBuffer& src, const Noc& noc, const src_args_mcast_type& args) {
+        static_assert(address_type == Noc::AddressType::NOC, "");
+        return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, src.get_read_ptr(), noc.get_noc_id());
+    }
+    template <Noc::AddressType address_type>
+    static auto dst_addr_mcast(const CircularBuffer& dst, const Noc& noc, const dst_args_mcast_type& args) {
+        static_assert(address_type == Noc::AddressType::NOC, "");
+        return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, dst.get_write_ptr(), noc.get_noc_id());
     }
 };
 
@@ -2797,7 +2827,14 @@ template <CircularBuffer::PtrType PtrSel>
 class noc_traits_t<CircularBufferView<PtrSel>> {
 public:
     struct src_args_type {};
-    struct dst_args_type {
+    struct dst_args_type {};
+    struct src_args_mcast_type {
+        uint32_t noc_x_start{};
+        uint32_t noc_y_start{};
+        uint32_t noc_x_end{};
+        uint32_t noc_y_end{};
+    };
+    struct dst_args_mcast_type {
         uint32_t noc_x_start{};
         uint32_t noc_y_start{};
         uint32_t noc_x_end{};
@@ -2810,12 +2847,20 @@ public:
     }
     template <Noc::AddressType address_type>
     static auto dst_addr(const CircularBufferView<PtrSel>& view, const Noc& noc, const dst_args_type& args) {
-        if constexpr (address_type == Noc::AddressType::LOCAL_L1) {
-            return get_local_addr(view);
-        } else {
-            auto local_addr = get_local_addr(view);
-            return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, local_addr, noc.get_noc_id());
-        }
+        static_assert(address_type == Noc::AddressType::LOCAL_L1, "CircularBuffer can only be used as L1 source");
+        return get_local_addr(view);
+    }
+    template <Noc::AddressType address_type>
+    static auto src_addr_mcast(const CircularBufferView<PtrSel>& view, const Noc& noc, const src_args_mcast_type& args) {
+        static_assert(address_type == Noc::AddressType::NOC, "");
+        auto local_addr = get_local_addr(view);
+        return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, local_addr, noc.get_noc_id());
+    }
+    template <Noc::AddressType address_type>
+    static auto dst_addr_mcast(const CircularBufferView<PtrSel>& view, const Noc& noc, const dst_args_mcast_type& args) {
+        static_assert(address_type == Noc::AddressType::NOC, "");
+        auto local_addr = get_local_addr(view);
+        return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, local_addr, noc.get_noc_id());
     }
 private:
     static constexpr auto get_local_addr(const CircularBufferView<PtrSel>& view) {
@@ -3049,14 +3094,14 @@ struct noc_traits_t<UnicastEndpoint> {
 
 template <>
 struct noc_traits_t<MulticastEndpoint> {
-    struct src_args_type {
+    struct src_args_mcast_type {
         uint32_t noc_x_start{};
         uint32_t noc_y_start{};
         uint32_t noc_x_end{};
         uint32_t noc_y_end{};
         uint32_t addr{};
     };
-    struct dst_args_type {
+    struct dst_args_mcast_type {
         uint32_t noc_x_start{};
         uint32_t noc_y_start{};
         uint32_t noc_x_end{};
@@ -3064,14 +3109,14 @@ struct noc_traits_t<MulticastEndpoint> {
         uint32_t addr{};
     };
     template <Noc::AddressType address_type>
-    static auto src_addr(const MulticastEndpoint& src, const Noc& noc, const src_args_type& args) {
+    static auto src_addr_mcast(const MulticastEndpoint& src, const Noc& noc, const src_args_mcast_type& args) {
         static_assert(address_type == Noc::AddressType::NOC);
         uint64_t noc_addr = src.get_noc_multicast_addr(
             args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, args.addr, noc.get_noc_id());
         return noc_addr;
     }
     template <Noc::AddressType address_type>
-    static auto dst_addr(const MulticastEndpoint& dst, const Noc& noc, const dst_args_type& args) {
+    static auto src_addr_mcast(const MulticastEndpoint& dst, const Noc& noc, const dst_args_mcast_type& args) {
         static_assert(address_type == Noc::AddressType::NOC);
         uint64_t noc_addr = dst.get_noc_multicast_addr(
             args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, args.addr, noc.get_noc_id());
