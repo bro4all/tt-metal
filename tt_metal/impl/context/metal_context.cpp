@@ -229,42 +229,12 @@ void MetalContext::initialize(
         dprint_server_->attach_devices();
     }
     watcher_server_->init_devices();
+    for (ChipId device_id : all_devices) {
+        ClearNocData(device_id);
 
-    // Parallelize device initialization
-    {
-        ZoneScoped;
-        std::string zoneName = "Parallel Device Final Initialization";
-        ZoneName(zoneName.c_str(), zoneName.size());
+        reset_cores(device_id);
 
-        std::vector<std::future<void>> futures;
-        std::vector<ChipId> device_ids;
-
-        futures.reserve(all_devices.size());
-        device_ids.reserve(all_devices.size());
-
-        // Launch async tasks for each device
-        for (ChipId device_id : all_devices) {
-            device_ids.push_back(device_id);
-            futures.emplace_back(std::async(std::launch::async, [this, device_id]() {
-                ClearNocData(device_id);
-
-                reset_cores(device_id);
-
-                initialize_and_launch_firmware(device_id);
-            }));
-        }
-
-        // Wait for all async tasks to complete
-        for (size_t i = 0; i < futures.size(); ++i) {
-            ChipId device_id = device_ids[i];
-            try {
-                futures[i].wait();
-            } catch (const std::exception& e) {
-                TT_THROW("Device final initialization failed for device {}: {}", device_id, e.what());
-            } catch (...) {
-                TT_THROW("Device final initialization failed for device {} with unknown exception", device_id);
-            }
-        }
+        initialize_and_launch_firmware(device_id);
     }
     // Watcher needs to init before FW since FW needs watcher mailboxes to be set up, and needs to attach after FW
     // starts since it also writes to watcher mailboxes.
