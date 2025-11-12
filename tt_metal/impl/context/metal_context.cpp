@@ -514,8 +514,9 @@ void MetalContext::clear_launch_messages_on_eth_cores(ChipId device_id) {
 }
 
 tt::tt_fabric::ControlPlane& MetalContext::get_control_plane() {
+    std::lock_guard<std::mutex> lock(control_plane_mutex_);
     if (!control_plane_) {
-        this->initialize_control_plane();
+        this->initialize_control_plane_impl();
     }
     return *control_plane_;
 }
@@ -672,6 +673,11 @@ void MetalContext::construct_control_plane(const std::filesystem::path& mesh_gra
 }
 
 void MetalContext::initialize_control_plane() {
+    std::lock_guard<std::mutex> lock(control_plane_mutex_);
+    initialize_control_plane_impl();
+}
+
+void MetalContext::initialize_control_plane_impl() {
     if (custom_mesh_graph_desc_path_.has_value()) {
         log_debug(tt::LogDistributed, "Using custom mesh graph descriptor: {}", custom_mesh_graph_desc_path_.value());
         std::filesystem::path mesh_graph_desc_path = std::filesystem::path(custom_mesh_graph_desc_path_.value());
