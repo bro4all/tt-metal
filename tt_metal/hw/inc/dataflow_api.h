@@ -2345,7 +2345,8 @@ void reset_noc_trid_barrier_counter(uint32_t id_mask = NOC_CLEAR_OUTSTANDING_REQ
 
 namespace experimental {
 
-struct MulticastEndpoint;  // Forward declaration can be removed when 2.0 objects are split into different headers
+// Forward declaration can be removed when 2.0 objects are split into different headers
+struct MulticastEndpoint;
 
 template <typename T>
 struct noc_traits_t {
@@ -2366,6 +2367,8 @@ public:
     enum class ResponseMode { NON_POSTED, POSTED };
 
     enum class BarrierMode { TXN_ID, FULL };
+
+    enum class McastMode { INCLUDE_SRC, EXCLUDE_SRC };
 
     static constexpr uint32_t INVALID_TXN_ID = 0xFFFFFFFF;
 
@@ -2419,6 +2422,7 @@ public:
      * @param src_args Additional arguments for source address calculation
      * @param dst_args Additional arguments for destination address calculation
      * @param read_req_vc Virtual channel to use for the read request (default: NOC_UNICAST_WRITE_VC)
+     * @param trid Transaction ID to use when transaction id mode is enabled (default: INVALID_TXN_ID)
      * @tparam txn_id_mode Whether transaction id will be used for the noc transaction (default: DISABLED)
      * @tparam max_page_size Maximum page size for the transfer (default: NOC_MAX_BURST_SIZE + 1)
      * @tparam enable_noc_tracing Enable NoC tracing for debugging (default: true)
@@ -2457,10 +2461,11 @@ public:
      * @param src_args Additional arguments for source address calculation
      * @param dst_args Additional arguments for destination address calculation
      * @param vc Virtual channel to use for the write transaction (default: NOC_UNICAST_WRITE_VC)
+     * @param trid Transaction ID to use when transaction id mode is enabled (default: INVALID_TXN_ID)
      * @tparam txn_id_mode Whether transaction id will be used for the noc transaction (default: DISABLED)
-     * @tparam max_page_size Maximum page size for the transfer (default: NOC_MAX_BURST_SIZE + 1)
      * @tparam response_mode Posted noc transactions do not get ack from receiver, non-posted ones do (default:
      * NON_POSTED)
+     * @tparam max_page_size Maximum page size for the transfer (default: NOC_MAX_BURST_SIZE + 1)
      * @tparam enable_noc_tracing Enable NoC tracing for debugging (default: true)
      */
     template <
@@ -2510,6 +2515,56 @@ public:
                 size_bytes,
                 noc_id_,
                 vc);
+        }
+    }
+
+    /** @brief Initiates an asynchronous write from a source address in memory on the core executing this function call to a rectangular destination grid.
+     *
+     * The destination nodes must be a set of Tensix cores and must form a rectangular grid.
+     *
+     * @see async_write_barrier.
+     *
+     * @param src Source object (e.g., local L1 memory)
+     * @param dst Destination object (e.g., TensorAccessor)
+     * @param size_bytes Size of the data transfer in bytes
+     * @param num_dsts Number of destinations that the multicast source is targeting
+     * @param src_args Additional arguments for source address calculation
+     * @param dst_args Additional arguments for destination address calculation
+     * @param linked
+     * @param trid Transaction ID to use when transaction id mode is enabled (default: INVALID_TXN_ID)
+     * @tparam mcast_mode Indicates whether the sender is included in the multicast destinations
+     * @tparam txn_id_mode Whether transaction id will be used for the noc transaction (default: DISABLED)
+     * @tparam response_mode Posted noc transactions do not get ack from receiver, non-posted ones do (default:
+     * NON_POSTED)
+     * @tparam max_page_size Maximum page size for the transfer (default: NOC_MAX_BURST_SIZE + 1)
+     * @tparam enable_noc_tracing Enable NoC tracing for debugging (default: true)
+     */
+    template <
+        McastMode mcast_mode = McastMode::EXCLUDE_SRC,
+        TxnIdMode txn_id_mode = TxnIdMode::DISABLED,
+        ResponseMode response_mode = ResponseMode::NON_POSTED,
+        uint32_t max_page_size = NOC_MAX_BURST_SIZE + 1,
+        bool enable_noc_tracing = true,
+        typename Src,
+        typename Dst>
+    void async_write_multicast(
+        const Src& src,
+        const Dst& dst,
+        uint32_t size_bytes,
+        uint32_t num_dsts,
+        const src_args_t<Src>& src_args,
+        const dst_args_t<Dst>& dst_args,
+        bool linked = false,
+        uint32_t trid = INVALID_TXN_ID) const {
+        static_assert(txn_id_mode == TxnIdMode::DISABLED, "Mcasts with transaction id are not supported yet");
+        static_assert(response_mode == ResponseMode::NON_POSTED, "Mcasts with posted transactions are not supported"); // TODO: Make this an arch specific assertion
+
+        auto src_addr = get_src_ptr<AddressType::LOCAL_L1>(src, src_args);
+        auto dst_noc_addr = get_dst_ptr<AddressType::NOC>(dst, dst_args);
+        if (mcast_mode == McastMode::INCLUDE_SRC) {
+            noc_async_write_multicast_loopback_src(src_addr, dst_noc_addr, size_bytes, num_dsts, linked, noc_id_);
+        } else if constexpr (mcast_mode == McastMode::EXCLUDE_SRC) {
+            noc_async_write_multicast<max_page_size>(src_addr, dst_noc_addr, size_bytes, num_dsts, linked, noc_id_);
         }
     }
 
@@ -2661,6 +2716,9 @@ private:
 
 class CircularBuffer {
 public:
+
+    enum class PtrType { WRITE, READ };
+
     explicit CircularBuffer(uint32_t cb_id) : cb_id_(cb_id) {}
 
     uint32_t get_cb_id() const { return cb_id_; }
@@ -2701,16 +2759,71 @@ private:
 template <>
 struct noc_traits_t<CircularBuffer> {
     struct src_args_type {};
-    struct dst_args_type {};
+    struct dst_args_type {
+        uint32_t noc_x_start{};
+        uint32_t noc_y_start{};
+        uint32_t noc_x_end{};
+        uint32_t noc_y_end{};
+    };
     template <Noc::AddressType address_type>
     static auto src_addr(const CircularBuffer& src, const Noc&, const src_args_type&) {
         static_assert(address_type == Noc::AddressType::LOCAL_L1, "CircularBuffer can only be used as L1 source");
         return src.get_read_ptr();
     }
     template <Noc::AddressType address_type>
-    static auto dst_addr(const CircularBuffer& dst, const Noc&, const dst_args_type&) {
-        static_assert(address_type == Noc::AddressType::LOCAL_L1, "CircularBuffer can only be used as L1 destination");
-        return dst.get_write_ptr();
+    static auto dst_addr(const CircularBuffer& dst, const Noc& noc, const dst_args_type& args) {
+        if constexpr (address_type == Noc::AddressType::LOCAL_L1) {
+            return dst.get_write_ptr();
+        } else {
+            return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, dst.get_write_ptr(), noc.get_noc_id());
+        }
+    }
+};
+
+template <CircularBuffer::PtrType PtrSel>
+struct CircularBufferView {
+    const CircularBuffer& cb;
+    explicit constexpr CircularBufferView(const CircularBuffer& c) : cb(c) {}
+};
+
+// Convenience helper: use<CircularBuffer::PtrType::READ>(cb)
+// This allows user to indicate whether the read or write pointer should be used as the source or destination address depending on whether the CircularBuffer is src or dst in the Noc apis
+template <CircularBuffer::PtrType PtrSel>
+constexpr auto use(const CircularBuffer& cb) {
+    return CircularBufferView<PtrSel>(cb);
+}
+
+template <CircularBuffer::PtrType PtrSel>
+class noc_traits_t<CircularBufferView<PtrSel>> {
+public:
+    struct src_args_type {};
+    struct dst_args_type {
+        uint32_t noc_x_start{};
+        uint32_t noc_y_start{};
+        uint32_t noc_x_end{};
+        uint32_t noc_y_end{};
+    };
+    template <Noc::AddressType address_type>
+    static auto src_addr(const CircularBufferView<PtrSel>& view, const Noc&, const src_args_type&) {
+        static_assert(address_type == Noc::AddressType::LOCAL_L1, "CircularBuffer can only be used as L1 source");
+        return get_local_addr(view);
+    }
+    template <Noc::AddressType address_type>
+    static auto dst_addr(const CircularBufferView<PtrSel>& view, const Noc& noc, const dst_args_type& args) {
+        if constexpr (address_type == Noc::AddressType::LOCAL_L1) {
+            return get_local_addr(view);
+        } else {
+            auto local_addr = get_local_addr(view);
+            return ::get_noc_multicast_addr(args.noc_x_start, args.noc_y_start, args.noc_x_end, args.noc_y_end, local_addr, noc.get_noc_id());
+        }
+    }
+private:
+    static constexpr auto get_local_addr(const CircularBufferView<PtrSel>& view) {
+        if constexpr (PtrSel == CircularBuffer::PtrType::READ) {
+            return view.cb.get_read_ptr();
+        } else {
+            return view.cb.get_write_ptr();
+        }
     }
 };
 
