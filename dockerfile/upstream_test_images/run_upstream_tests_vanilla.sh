@@ -95,6 +95,10 @@ test_suite_bh_multi_pcie_metal_unit_tests() {
     # This changes the connection count assert == 4 to assert >= 4
     if [[ "$hw_topology" == "blackhole_deskbox" ]]; then
         local min_connections_arg="--min-connections 4"
+    # QB GE has 2 internal trace connections but 4 warp connections
+    # So we need to assert the connection count is >= 2 but not == 2
+    elif [[ "$hw_topology" == "blackhole_qb_ge" ]]; then
+        local min_connections_arg="--min-connections 2"
     else
         local min_connections_arg=""
     fi
