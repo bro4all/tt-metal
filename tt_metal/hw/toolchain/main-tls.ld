@@ -130,8 +130,8 @@ SECTIONS {
     *(.gnu.warning)
     . = ALIGN(4);
    } :text
-   IF_TLS(__tdata_lma = .;)
-   IF_NOT_TLS(__data_lma = .;)
+   IF_KERNEL(IF_TLS(__tdata_lma = .;)
+   IF_NOT_TLS(__data_lma = .;))
 
 #if TYPE_KERNEL
   .firmtdata TLS_START : AT(TLS_START + TLS_SIZE) { *_object.o(.tdata) } :firmtdata :firmtls :firmtdatadel
@@ -140,7 +140,7 @@ SECTIONS {
 #if IS_TLS
 /* TLS-like */
   .tdata IF_FIRMWARE(TLS_START)IF_KERNEL(ADDR(.firmtbss) + SIZEOF(.firmbss))
-  : AT(__tdata_lma)
+  : IF_KERNEL(AT(__tdata_lma))
   {
     *(.tdata.start) /* define __tdata_start as TLS symbol) */
     *(.tdata .tdata.* .gnu.linkonce.td.*)
@@ -169,7 +169,7 @@ SECTIONS {
 #endif
   .data IF_FIRMWARE(DATA_START)
         IF_KERNEL(IF_TLS(ADDR(.firmbss) + SIZEOF(.firmbss))IF_NOT_TLS(ADDR(.firmtbss) + SIZEOF(.firmtbss)))
-  : AT(IF_TLS(LOADADDR(.tdata) + SIZEOF(.tdata))IF_NOT_TLS(__data_lma))
+  : IF_KERNEL(AT(IF_TLS(LOADADDR(.tdata) + SIZEOF(.tdata))IF_NOT_TLS(__data_lma)))
   {
     IF_NOT_TLS(__data_start = .;)
      *(.rodata .rodata.* .gnu.linkonce.r.*)
@@ -213,7 +213,7 @@ SECTIONS {
 #endif
   .bss
   : {
-    IF_NOT_TLS(__bss_start = .;)
+    __bss_start = .;
     *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
     *(.dynsbss)
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
@@ -222,9 +222,9 @@ SECTIONS {
     *(.bss .bss.* .gnu.linkonce.b.*)
     *(COMMON)
     . = ALIGN(4);
-    IF_NOT_TLS(__bss_end = .;)
+    __bss_end = .;
   } :data
-  IF_NOT_TLS(__bss_words = ABSOLUTE(SIZEOF(.bss)) / 4;)
+  __bss_words = ABSOLUTE(SIZEOF(.bss)) / 4;
 
 #if TYPE_KERNEL
   /DISCARD/ : { *_object.o(*) }
@@ -244,7 +244,7 @@ SECTIONS {
 
 }
 
-#if IS_TLS && defined(TYPE_FIRMWARE)
-PROVIDE(__local_base = TLS_START;)
-PROVIDE(__local_stride = TLS_SIZE;)
+#if TYPE_FIRMWARE
+PROVIDE(__local_base = TLS_START);
+PROVIDE(__local_stride = TLS_SIZE);
 #endif
