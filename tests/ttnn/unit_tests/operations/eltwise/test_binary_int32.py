@@ -925,3 +925,45 @@ def test_div_inf_nan_cases(use_legacy, device):
     output_tensor = ttnn.to_torch(output_tensor)
 
     assert torch.allclose(torch_output_tensor, output_tensor, atol=1e-10, rtol=1e-5, equal_nan=True)
+
+
+def test_divide_edge_cases(device):
+    pairs = [
+        (1, 2),
+        (2, 1),
+        (3, 2),
+        (2, 2),
+        (16777215, 1),
+        (16777216, 2),
+        (-16777215, 3),
+        (16777216, -3),
+        (-16777216, -4),
+    ]
+
+    numerators, denominators = zip(*pairs)
+    torch_input_tensor_a = torch.tensor(numerators, dtype=torch.int32)
+    input_tensor_a = ttnn.from_torch(
+        torch_input_tensor_a,
+        dtype=ttnn.int32,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    torch_input_tensor_b = torch.tensor(denominators, dtype=torch.int32)
+    input_tensor_b = ttnn.from_torch(
+        torch_input_tensor_b,
+        dtype=ttnn.int32,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    golden_function = ttnn.get_golden_function(ttnn.divide)
+    torch_output_tensor = golden_function(torch_input_tensor_a, torch_input_tensor_b, device=device).to(torch.int32)
+
+    # round modes are not supported in binary ng, so we use legacy implementation for testing
+    output_tensor = ttnn.divide(input_tensor_a, input_tensor_b)
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert torch.max(torch.abs(torch_output_tensor - output_tensor)) <= 1

@@ -347,6 +347,23 @@ BinaryNgDeviceOperation::spec_return_value_t BinaryNgDeviceOperation::compute_ou
                 MemoryConfig(memory_layout, buffer_type, output_shard_spec)));
     }
 
+    // auto output_dtype = attributes.get_dtype();
+    // // Special case: DIV(int32, int32) → float32
+    // if (attributes.binary_op_type == BinaryOpType::DIV) {
+    //     const auto& input_tensor_a = tensor_args.input_tensor_a;
+    //     const auto& input_tensor_b = tensor_args.input_tensor_b;
+
+    //     auto dtype_a = input_tensor_a.dtype();
+    //     auto dtype_b = input_tensor_b.has_value()
+    //                     ? input_tensor_b->dtype()
+    //                     : dtype_a;
+
+    //     bool both_int32 = (dtype_a == DataType::INT32 && dtype_b == DataType::INT32);
+    //     if (both_int32 && !attributes.dtype.has_value()) {
+    //         output_dtype = DataType::FLOAT32;
+    //     }
+    // }
+
     // If not sharded, use the memory config from input a that is interleaved
     return TensorSpec(
         output_shape, TensorLayout(attributes.get_dtype(), PageConfig(Layout::TILE), attributes.memory_config));
