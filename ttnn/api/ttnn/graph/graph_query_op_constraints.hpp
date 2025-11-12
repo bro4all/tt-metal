@@ -76,6 +76,24 @@ struct ConstraintQueryResponse {
     std::optional<std::string> error_message;
 };
 
+struct ProgramCacheState {
+    tt::tt_metal::distributed::MeshDevice* device_ = nullptr;
+    bool was_enabled_ = false;
+
+    ProgramCacheState(tt::tt_metal::distributed::MeshDevice* device) : device_(device) {
+        was_enabled_ = device_->get_program_cache().is_enabled();
+    }
+
+    ~ProgramCacheState() {
+        if (was_enabled_) {
+            device_->enable_program_cache();
+        }
+    }
+
+    ProgramCacheState(const ProgramCacheState&) = delete;
+    ProgramCacheState& operator=(const ProgramCacheState&) = delete;
+};
+
 /**
  * @brief Captures the graph operations and extracts resource usage constraints.
  *
@@ -99,7 +117,7 @@ auto query_op_constraints(Op op, tt::tt_metal::distributed::MeshDevice* device, 
     // outer graph capture is to avoid dispatching/allocating dummy input tensors
     {
         // disable program cache to avoid writing to it with unallocated memory addresses. See #25772
-        bool cache_was_enabled = device->get_program_cache().is_enabled();
+        ProgramCacheState program_cache_state(device);
         device->disable_and_clear_program_cache();
 
         auto capture_outer = ScopedGraphCapture(GraphProcessor::RunMode::NO_DISPATCH);
@@ -134,9 +152,6 @@ auto query_op_constraints(Op op, tt::tt_metal::distributed::MeshDevice* device, 
                 ExecutionStatus::Error, {0, 0, 0}, /* output_tensor_spec= */ std::nullopt, e.what()};
         }
 
-        if (cache_was_enabled) {
-            device->enable_program_cache();
-        }
     }  // end of outer graph capture
 
     // extract memory footprint from the trace
