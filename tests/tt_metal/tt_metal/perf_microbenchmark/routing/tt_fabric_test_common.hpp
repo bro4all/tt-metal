@@ -151,8 +151,19 @@ public:
 
         // Use the new ControlPlane validation API - always skip on mismatch
         const auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
-        if (!control_plane.is_fabric_config_valid(new_fabric_config)) {
-            log_warning(tt::LogTest, "Fabric configuration validation failed - can't open device");
+        const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
+        if (topology == Topology::Torus && cluster.get_cluster_type() != tt::tt_metal::ClusterType::GALAXY) {
+            log_warning(
+                tt::LogTest, "Torus fabric configuration is only supported on Galaxy systems - can't open device");
+            return false;
+        }
+        try {
+            if (!control_plane.is_fabric_config_valid(new_fabric_config)) {
+                log_warning(tt::LogTest, "Fabric configuration validation failed - can't open device");
+                return false;
+            }
+        } catch (const std::exception& e) {
+            log_warning(tt::LogTest, "Fabric configuration validation failed: {} - can't open device", e.what());
             return false;
         }
 

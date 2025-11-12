@@ -2776,13 +2776,8 @@ bool ControlPlane::is_fabric_config_valid(tt::tt_fabric::FabricConfig fabric_con
     };
 
     if (torus_fabric_configs.count(fabric_config)) {
-        try {
-            validate_torus_setup(fabric_config);
-            return true;  // Validation passed if no exception was thrown
-        } catch (const std::exception& e) {
-            log_warning(tt::LogFabric, "Fabric configuration validation failed: {}", e.what());
-            return false;
-        }
+        validate_torus_setup(fabric_config);
+        return true;  // Validation passed if no exception was thrown
     }
 
     // Non-torus configurations are valid by default since we always have at least mesh topology,
@@ -2794,7 +2789,7 @@ void ControlPlane::validate_torus_setup(tt::tt_fabric::FabricConfig fabric_confi
     TT_ASSERT(physical_system_descriptor_ != nullptr, "Physical system descriptor not initialized");
 
     auto all_hostnames = physical_system_descriptor_->get_all_hostnames();
-    auto cabling_descriptor_path = get_cabling_descriptor_path(fabric_config);
+    auto cabling_descriptor_path = get_galaxy_cabling_descriptor_path(fabric_config);
     // Check if the cabling descriptor file exists
     TT_ASSERT(std::filesystem::exists(cabling_descriptor_path),
               "Cabling descriptor file not found: {}", cabling_descriptor_path);
@@ -2814,7 +2809,13 @@ void ControlPlane::validate_torus_setup(tt::tt_fabric::FabricConfig fabric_confi
     log_debug(tt::LogFabric, "Torus validation passed for configuration: {}", static_cast<int>(fabric_config));
 }
 
-std::string ControlPlane::get_cabling_descriptor_path(tt::tt_fabric::FabricConfig fabric_config) const {
+std::string ControlPlane::get_galaxy_cabling_descriptor_path(tt::tt_fabric::FabricConfig fabric_config) const {
+    auto cluster_type = tt::tt_metal::MetalContext::instance().get_cluster().get_cluster_type();
+    TT_FATAL(
+        cluster_type == tt::tt_metal::ClusterType::GALAXY,
+        "get_galaxy_cabling_descriptor_path is only supported on Galaxy systems, but cluster type is {}",
+        static_cast<int>(cluster_type));
+
     static const std::string X_TORUS_PATH = "tools/tests/scaleout/cabling_descriptors/wh_galaxy_x_torus_superpod.textproto";
     static const std::string Y_TORUS_PATH = "tools/tests/scaleout/cabling_descriptors/wh_galaxy_y_torus_superpod.textproto";
     static const std::string XY_TORUS_PATH = "tools/tests/scaleout/cabling_descriptors/wh_galaxy_xy_torus_superpod.textproto";
@@ -2837,7 +2838,6 @@ std::string ControlPlane::get_cabling_descriptor_path(tt::tt_fabric::FabricConfi
     const auto& root_dir = tt::tt_metal::MetalContext::instance().rtoptions().get_root_dir();
     return root_dir + it->second;
 }
-
 
 ControlPlane::~ControlPlane() = default;
 
