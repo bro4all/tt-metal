@@ -15,7 +15,6 @@ from loguru import logger
 from skimage import io
 
 import ttnn
-from models.demos.vanilla_unet.common import VANILLA_UNET_L1_SMALL_SIZE
 from models.demos.yolov9c.common import YOLOV9C_L1_SMALL_SIZE
 
 
