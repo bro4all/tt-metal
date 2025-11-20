@@ -92,10 +92,15 @@ class ViTLayerTTNN:
         # reshape QKV: [B, seq, 3, heads, head_dim]
         head_dim = cfg.hidden_size // cfg.num_heads
         seq_len = qkv.shape[1]
-        q, k, v = ttnn.split(qkv, cfg.hidden_size, dim=-1)
-        q = ttnn.reshape(q, (q.shape[0], seq_len, cfg.num_heads, head_dim))
-        k = ttnn.reshape(k, (k.shape[0], seq_len, cfg.num_heads, head_dim))
-        v = ttnn.reshape(v, (v.shape[0], seq_len, cfg.num_heads, head_dim))
+        # Avoid ttnn.split (currently asserting inside split_with_slice_impl on WH) by reshaping
+        # and slicing the stacked Q/K/V dimension manually.
+        qkv = ttnn.reshape(qkv, (qkv.shape[0], seq_len, 3, cfg.hidden_size))
+        q = ttnn.slice(qkv, (0, 0, 0, 0), (qkv.shape[0], seq_len, 1, cfg.hidden_size))
+        k = ttnn.slice(qkv, (0, 0, 1, 0), (qkv.shape[0], seq_len, 2, cfg.hidden_size))
+        v = ttnn.slice(qkv, (0, 0, 2, 0), (qkv.shape[0], seq_len, 3, cfg.hidden_size))
+        q = ttnn.reshape(q, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
+        k = ttnn.reshape(k, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
+        v = ttnn.reshape(v, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
 
         # scaled dot-product attention
         attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, seq, heads, seq]
