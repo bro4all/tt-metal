@@ -53,7 +53,6 @@ class ReassembleLayer:
         y = ttnn.conv2d(
             input_tensor=x_2d,
             weight_tensor=self.proj_w,
-            bias_tensor=self.proj_b,
             device=device,
             in_channels=self.proj_w.shape[1],
             out_channels=self.proj_w.shape[0],
@@ -67,6 +66,10 @@ class ReassembleLayer:
             groups=1,
             dtype=self.dtype,
         )
+        if self.proj_b is not None:
+            bias = self.proj_b if isinstance(self.proj_b, ttnn.Tensor) else to_tt(self.proj_b)
+            bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+            y = ttnn.add(y, bias)
 
         # learned resize (conv / deconv) if available, otherwise fallback to scale factor
         if self.resize_w is not None:
@@ -76,7 +79,7 @@ class ReassembleLayer:
                 res = ttnn.conv_transpose2d(
                     input_tensor=y,
                     weight_tensor=self.resize_w,
-                    bias_tensor=self.resize_b,
+                    bias_tensor=None,
                     device=device,
                     in_channels=self.resize_w.shape[0],
                     out_channels=self.resize_w.shape[1],
@@ -94,12 +97,16 @@ class ReassembleLayer:
                     dtype=self.dtype,
                 )
                 y = res[0]
+                if self.resize_b is not None:
+                    bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
+                    bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                    y = ttnn.add(y, bias)
             else:
                 stride = int(1 / self.factor)
                 y = ttnn.conv2d(
                     input_tensor=y,
                     weight_tensor=self.resize_w,
-                    bias_tensor=self.resize_b,
+                    bias_tensor=None,
                     device=device,
                     in_channels=self.resize_w.shape[1],
                     out_channels=self.resize_w.shape[0],
@@ -113,6 +120,10 @@ class ReassembleLayer:
                     groups=1,
                     dtype=self.dtype,
                 )
+                if self.resize_b is not None:
+                    bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
+                    bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                    y = ttnn.add(y, bias)
 
         if self.factor != 1 and self.resize_w is None:
             # ttnn.upsample handles both >1 (upsample) and <1 (downsample when factor<1 treated as stride>1)
@@ -225,7 +236,7 @@ class ReassemblyStage:
             fused = ttnn.conv2d(
                 input_tensor=feat,
                 weight_tensor=conv_w,
-                bias_tensor=conv_b,
+                bias_tensor=None,
                 device=device,
                 in_channels=conv_w.shape[1],
                 out_channels=conv_w.shape[0],
@@ -239,5 +250,14 @@ class ReassemblyStage:
                 groups=1,
                 dtype=self.cfg.dtype,
             )
+            if conv_b is not None:
+                bias = conv_b if isinstance(conv_b, ttnn.Tensor) else ttnn.from_torch(
+                    torch.from_numpy(conv_b).contiguous(),
+                    dtype=self.cfg.dtype,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=device,
+                )
+                bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                fused = ttnn.add(fused, bias)
             outputs.append(fused)
         return outputs

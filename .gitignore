@@ -140,6 +140,5 @@ ttnn/ttnn/.rpath_checked__ttnn
 Testing
 
 # DPT demo local outputs
-models/demos/wormhole/dpt/assets/
 models/demos/wormhole/dpt/out_reference/
 models/demos/wormhole/dpt/weights/
