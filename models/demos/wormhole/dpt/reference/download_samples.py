@@ -9,7 +9,7 @@ import urllib.request
 
 SAMPLES = {
     "coco_dog": "http://images.cocodataset.org/val2017/000000039769.jpg",
-    "coco_bus": "http://images.cocodataset.org/val2017/000000578815.jpg",
+    "coco_zebra": "http://images.cocodataset.org/val2017/000000397133.jpg",
 }
 
 
