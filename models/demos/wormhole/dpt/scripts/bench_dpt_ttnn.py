@@ -20,6 +20,11 @@ from models.demos.wormhole.dpt.tt.dpt_ttnn import DPTTTNN, DPTConfig
 
 
 def prepare_input(image_path: Path, size: int) -> torch.Tensor:
+    if not image_path.exists():
+        alt = next((p for p in image_path.parent.glob("*.jpg")), None)
+        if alt is None:
+            raise FileNotFoundError(f"No image found at {image_path} or in {image_path.parent}")
+        image_path = alt
     image = Image.open(image_path).convert("RGB").resize((size, size))
     arr = (torch.from_numpy(np.array(image).astype(np.float32)) / 127.5) - 1.0  # [-1, 1]
     return arr.unsqueeze(0)  # NHWC with batch dim
