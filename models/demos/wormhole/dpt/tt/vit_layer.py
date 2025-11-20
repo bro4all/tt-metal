@@ -46,13 +46,13 @@ class ViTLayerTTNN:
 
         # reshape QKV: [B, seq, 3, heads, head_dim]
         head_dim = cfg.hidden_size // cfg.num_heads
-        q, k, v = ttnn.split(qkv, 3, dim=-1)
-        q = ttnn.reshape(q, (-1, cfg.seq_len, cfg.num_heads, head_dim))
-        k = ttnn.reshape(k, (-1, cfg.seq_len, cfg.num_heads, head_dim))
-        v = ttnn.reshape(v, (-1, cfg.seq_len, cfg.num_heads, head_dim))
+        q, k, v = ttnn.split(qkv, cfg.hidden_size, dim=-1)
+        q = ttnn.reshape(q, (q.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
+        k = ttnn.reshape(k, (k.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
+        v = ttnn.reshape(v, (v.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
 
         # scaled dot-product attention
-        attn_scores = ttnn.matmul(q, tnn.transpose(k, (0, 1, 3, 2)))  # shape [B, seq, heads, seq]
+        attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, seq, heads, seq]
         attn_scores = ttnn.scale(attn_scores, 1.0 / (head_dim ** 0.5))
         attn_probs = ttnn.softmax(attn_scores, dim=-1)
         context = ttnn.matmul(attn_probs, v)  # [B, seq, heads, head_dim]

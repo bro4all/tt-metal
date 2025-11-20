@@ -1,18 +1,164 @@
 """
-Fusion + refinement head for DPT (simplified skeleton).
+Fusion/refinement blocks for DPT neck + depth head.
 """
 from dataclasses import dataclass
+from typing import Sequence
 import ttnn  # type: ignore
+
+
+@dataclass
+class FusionBlockConfig:
+    hidden_size: int = 256
+    dtype = ttnn.bfloat16
+
+
+class ResidualConvUnit:
+    def __init__(self, cfg: FusionBlockConfig, w1, b1, w2, b2):
+        self.cfg = cfg
+        self.w1 = w1
+        self.b1 = b1
+        self.w2 = w2
+        self.b2 = b2
+
+    def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
+        y = ttnn.relu(x)
+        y = ttnn.conv2d(
+            input_tensor=y,
+            weight_tensor=self.w1,
+            bias_tensor=self.b1,
+            in_channels=self.w1.shape[1],
+            out_channels=self.w1.shape[0],
+            batch_size=y.shape[0],
+            input_height=y.shape[1],
+            input_width=y.shape[2],
+            kernel_size=(self.w1.shape[2], self.w1.shape[3]),
+            stride=(1, 1),
+            padding=(1, 1),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
+        y = ttnn.relu(y)
+        y = ttnn.conv2d(
+            input_tensor=y,
+            weight_tensor=self.w2,
+            bias_tensor=self.b2,
+            in_channels=self.w2.shape[1],
+            out_channels=self.w2.shape[0],
+            batch_size=y.shape[0],
+            input_height=y.shape[1],
+            input_width=y.shape[2],
+            kernel_size=(self.w2.shape[2], self.w2.shape[3]),
+            stride=(1, 1),
+            padding=(1, 1),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
+        return ttnn.add(y, x)
+
+
+class FeatureFusionBlock:
+    """
+    Two RCUs + optional residual skip + upsample + 1x1 projection.
+    Mirrors DPTFeatureFusionLayer.
+    """
+
+    def __init__(self, cfg: FusionBlockConfig, proj_w, proj_b, r1_w1, r1_b1, r1_w2, r1_b2, r2_w1, r2_b1, r2_w2, r2_b2):
+        self.cfg = cfg
+        self.proj_w = proj_w
+        self.proj_b = proj_b
+        self.rcu1 = ResidualConvUnit(cfg, r1_w1, r1_b1, r1_w2, r1_b2)
+        self.rcu2 = ResidualConvUnit(cfg, r2_w1, r2_b1, r2_w2, r2_b2)
+
+    def __call__(self, x: ttnn.Tensor, residual: ttnn.Tensor | None) -> ttnn.Tensor:
+        if residual is not None:
+            # align spatial shapes if needed
+            if hasattr(residual, "shape") and hasattr(x, "shape"):
+                rh, rw = residual.shape[1], residual.shape[2]
+                xh, xw = x.shape[1], x.shape[2]
+                if (rh != xh) or (rw != xw):
+                    residual = ttnn.upsample(residual, scale_factor=(xh / rh, xw / rw))
+            x = ttnn.add(x, self.rcu1(residual))
+
+        x = self.rcu2(x)
+        x = ttnn.upsample(x, scale_factor=(2.0, 2.0))
+        x = ttnn.conv2d(
+            input_tensor=x,
+            weight_tensor=self.proj_w,
+            bias_tensor=self.proj_b,
+            in_channels=self.proj_w.shape[1],
+            out_channels=self.proj_w.shape[0],
+            batch_size=x.shape[0],
+            input_height=x.shape[1],
+            input_width=x.shape[2],
+            kernel_size=(self.proj_w.shape[2], self.proj_w.shape[3]),
+            stride=(1, 1),
+            padding=(0, 0),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
+        return x
+
+
+class FeatureFusionStage:
+    """
+    Top-down fusion over four feature maps (reverse order), returning the fused pyramid.
+    """
+
+    def __init__(self, cfg: FusionBlockConfig, weights) -> None:
+        self.blocks: list[FeatureFusionBlock] = []
+        for i in range(4):
+            p_w = weights[f"neck.fusion_stage.layers.{i}.projection.weight"]
+            p_b = weights[f"neck.fusion_stage.layers.{i}.projection.bias"]
+
+            r1_w1 = weights[f"neck.fusion_stage.layers.{i}.residual_layer1.convolution1.weight"]
+            r1_b1 = weights[f"neck.fusion_stage.layers.{i}.residual_layer1.convolution1.bias"]
+            r1_w2 = weights[f"neck.fusion_stage.layers.{i}.residual_layer1.convolution2.weight"]
+            r1_b2 = weights[f"neck.fusion_stage.layers.{i}.residual_layer1.convolution2.bias"]
+
+            r2_w1 = weights[f"neck.fusion_stage.layers.{i}.residual_layer2.convolution1.weight"]
+            r2_b1 = weights[f"neck.fusion_stage.layers.{i}.residual_layer2.convolution1.bias"]
+            r2_w2 = weights[f"neck.fusion_stage.layers.{i}.residual_layer2.convolution2.weight"]
+            r2_b2 = weights[f"neck.fusion_stage.layers.{i}.residual_layer2.convolution2.bias"]
+
+            self.blocks.append(FeatureFusionBlock(cfg, p_w, p_b, r1_w1, r1_b1, r1_w2, r1_b2, r2_w1, r2_b1, r2_w2, r2_b2))
+
+    def __call__(self, features: Sequence[ttnn.Tensor]) -> list[ttnn.Tensor]:
+        fused_outputs = []
+        fused = None
+        for feat, block in zip(features[::-1], self.blocks):
+            fused = block(feat if fused is None else fused, residual=None if fused is None else feat)
+            fused_outputs.append(fused)
+        return fused_outputs
 
 
 @dataclass
 class FusionHeadConfig:
     features: int = 256
     dtype = ttnn.bfloat16
+    add_projection: bool = False
+    head_in_index: int = -1
 
 
 class FusionHead:
-    def __init__(self, cfg: FusionHeadConfig, conv1_w, conv1_b, conv2_w, conv2_b, conv3_w, conv3_b):
+    """
+    Depth estimation head (three convs) matching DPTDepthEstimationHead.
+    """
+
+    def __init__(
+        self,
+        cfg: FusionHeadConfig,
+        conv1_w,
+        conv1_b,
+        conv2_w,
+        conv2_b,
+        conv3_w,
+        conv3_b,
+        projection_w=None,
+        projection_b=None,
+    ):
         self.cfg = cfg
         self.conv1_w = conv1_w
         self.conv1_b = conv1_b
@@ -20,14 +166,80 @@ class FusionHead:
         self.conv2_b = conv2_b
         self.conv3_w = conv3_w
         self.conv3_b = conv3_b
+        self.projection_w = projection_w
+        self.projection_b = projection_b
 
-    def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
-        y = ttnn.conv2d(x, self.conv1_w, bias=self.conv1_b, dtype=self.cfg.dtype)
-        y = ttnn.relu(y)
+    def __call__(self, fused_pyramid: Sequence[ttnn.Tensor]) -> ttnn.Tensor:
+        x = fused_pyramid[self.cfg.head_in_index]
+
+        if self.projection_w is not None:
+            x = ttnn.conv2d(
+                input_tensor=x,
+                weight_tensor=self.projection_w,
+                bias_tensor=self.projection_b,
+                in_channels=self.projection_w.shape[1],
+                out_channels=self.projection_w.shape[0],
+                batch_size=x.shape[0],
+                input_height=x.shape[1],
+                input_width=x.shape[2],
+                kernel_size=(self.projection_w.shape[2], self.projection_w.shape[3]),
+                stride=(1, 1),
+                padding=(1, 1),
+                dilation=(1, 1),
+                groups=1,
+                dtype=self.cfg.dtype,
+            )
+            x = ttnn.relu(x)
+
+        y = ttnn.conv2d(
+            input_tensor=x,
+            weight_tensor=self.conv1_w,
+            bias_tensor=self.conv1_b,
+            in_channels=self.conv1_w.shape[1],
+            out_channels=self.conv1_w.shape[0],
+            batch_size=x.shape[0],
+            input_height=x.shape[1],
+            input_width=x.shape[2],
+            kernel_size=(self.conv1_w.shape[2], self.conv1_w.shape[3]),
+            stride=(1, 1),
+            padding=(1, 1),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
         y = ttnn.upsample(y, scale_factor=(2.0, 2.0))
-        y = ttnn.conv2d(y, self.conv2_w, bias=self.conv2_b, dtype=self.cfg.dtype)
+        y = ttnn.conv2d(
+            input_tensor=y,
+            weight_tensor=self.conv2_w,
+            bias_tensor=self.conv2_b,
+            in_channels=self.conv2_w.shape[1],
+            out_channels=self.conv2_w.shape[0],
+            batch_size=y.shape[0],
+            input_height=y.shape[1],
+            input_width=y.shape[2],
+            kernel_size=(self.conv2_w.shape[2], self.conv2_w.shape[3]),
+            stride=(1, 1),
+            padding=(1, 1),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
         y = ttnn.relu(y)
-        y = ttnn.conv2d(y, self.conv3_w, bias=self.conv3_b, dtype=self.cfg.dtype)
-        if not self.cfg.dtype == ttnn.bfloat16:
-            y = ttnn.to_dtype(y, dtype=ttnn.bfloat16)
+        y = ttnn.conv2d(
+            input_tensor=y,
+            weight_tensor=self.conv3_w,
+            bias_tensor=self.conv3_b,
+            in_channels=self.conv3_w.shape[1],
+            out_channels=self.conv3_w.shape[0],
+            batch_size=y.shape[0],
+            input_height=y.shape[1],
+            input_width=y.shape[2],
+            kernel_size=(self.conv3_w.shape[2], self.conv3_w.shape[3]),
+            stride=(1, 1),
+            padding=(0, 0),
+            dilation=(1, 1),
+            groups=1,
+            dtype=self.cfg.dtype,
+        )
+        y = ttnn.relu(y)  # non-negative depth
         return y
