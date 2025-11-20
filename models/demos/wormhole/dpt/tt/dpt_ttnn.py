@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import ttnn  # type: ignore
+import numpy as np
 
 
 @dataclass
@@ -19,6 +20,7 @@ class DPTConfig:
     features: int = 256
     taps: tuple[int, int, int, int] = (6, 12, 18, 24)
     non_negative: bool = True
+    dtype = ttnn.bfloat16
 
 
 class DPTTTNN:
@@ -41,5 +43,8 @@ class DPTTTNN:
 
 def load_weights(weights_dir: Path) -> Dict[str, Any]:
     """Placeholder for weight loading/format conversion."""
-    # TODO: load npy/safetensors after conversion, reshape per-op, return dict.
-    return {}
+    fused_path = weights_dir / "fused_qkv_state_dict.npz"
+    if not fused_path.exists():
+        raise FileNotFoundError(f"Missing fused weights at {fused_path}")
+    npz = np.load(fused_path)
+    return {k: npz[k] for k in npz.files}

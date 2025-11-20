@@ -19,6 +19,14 @@ python models/demos/wormhole/dpt/reference/run_pytorch_baseline.py \
   --hf-token $HF_TOKEN
 ```
 
+## Weight conversion (QKV fused NPZ)
+```bash
+HF_HOME=/tmp/hf_cache TRANSFORMERS_CACHE=/tmp/hf_cache \
+  python models/demos/wormhole/dpt/scripts/convert_weights.py \
+  --model Intel/dpt-large \
+  --outdir models/demos/wormhole/dpt/weights
+```
+
 Outputs: `(npz, png)` per image, plus `metrics.json` with PCC/MAE.
 
 ## Next steps (TTNN)
