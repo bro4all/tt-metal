@@ -30,6 +30,11 @@ class DPTTTNN:
         self.weights_dir = weights_dir
         # load converted weights, set up sharding and fused ops (later)
         self.weights = load_weights(weights_dir)
+        # stash common tensors
+        self.patch_w = self.weights["dpt.embeddings.patch_embeddings.projection.weight"]
+        self.patch_b = self.weights["dpt.embeddings.patch_embeddings.projection.bias"]
+        self.pos_embed = self.weights["dpt.embeddings.position_embeddings"]
+
         self.vit_cfg = ViTLayerConfig(
             hidden_size=cfg.hidden_size,
             num_heads=cfg.num_heads,
