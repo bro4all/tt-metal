@@ -3,9 +3,9 @@ Patch embedding for DPT (ViT-L/16).
 Takes NHWC input normalized to [-1,1], folds into patches, applies linear proj, and adds pos embeddings.
 """
 from dataclasses import dataclass
+from typing import Tuple, Any
 import numpy as np
 import ttnn  # type: ignore
-from typing import Tuple
 
 
 @dataclass
@@ -13,7 +13,7 @@ class PatchEmbedConfig:
     image_size: int = 384
     patch_size: int = 16
     hidden_size: int = 1024
-    dtype = ttnn.bfloat16
+    dtype: Any = ttnn.bfloat16
 
 
 def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: PatchEmbedConfig) -> ttnn.Tensor:
