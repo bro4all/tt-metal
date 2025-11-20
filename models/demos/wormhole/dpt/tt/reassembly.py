@@ -19,6 +19,7 @@ class ReassemblyBlock:
         self.cfg = cfg
         self.proj_w = proj_w
         self.proj_b = proj_b
+        # TODO: add residual conv units to match DPT
 
     def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
         # 1x1 projection (conv)
