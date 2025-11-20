@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 import ttnn  # type: ignore
 import numpy as np
+from .vit_layer import ViTLayerConfig, ViTLayerTTNN
 
 
 @dataclass
@@ -27,8 +28,17 @@ class DPTTTNN:
     def __init__(self, cfg: DPTConfig, weights_dir: Path):
         self.cfg = cfg
         self.weights_dir = weights_dir
-        # TODO: load converted weights, set up sharding and fused ops.
+        # load converted weights, set up sharding and fused ops (later)
         self.weights = load_weights(weights_dir)
+        self.vit_cfg = ViTLayerConfig(
+            hidden_size=cfg.hidden_size,
+            num_heads=cfg.num_heads,
+            seq_len=(cfg.image_size // cfg.patch_size) ** 2,
+            dtype=cfg.dtype,
+        )
+        self.layers = [
+            ViTLayerTTNN(self.vit_cfg, self.weights, layer_idx=i) for i in range(cfg.num_layers)
+        ]
 
     def __call__(self, images: ttnn.Tensor) -> ttnn.Tensor:
         """
@@ -37,7 +47,10 @@ class DPTTTNN:
         Returns:
             depth tensor (N, H, W, 1) in tile layout
         """
-        # TODO: implement end-to-end graph using TTNN APIs.
+        # TODO:
+        # 1) Patch embed (fold -> linear) + pos embed add
+        # 2) Encoder over 24 layers, collect taps (6,12,18,24)
+        # 3) Reassembly + fusion + refinement head
         raise NotImplementedError
 
 
