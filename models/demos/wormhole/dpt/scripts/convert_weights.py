@@ -24,21 +24,21 @@ import torch
 from transformers import DPTForDepthEstimation
 
 
-def fuse_qkv(sd: Dict[str, torch.Tensor], num_layers: int) -> Dict[str, torch.Tensor]:
+def fuse_qkv(sd: Dict[str, torch.Tensor], num_layers: int, prefix: str = "dpt.encoder.layer.") -> Dict[str, torch.Tensor]:
     fused = {}
     for k, v in sd.items():
         fused[k] = v
 
     for i in range(num_layers):
-        prefix = f"backbone.encoder.layer.{i}.attention.attention."
-        q_w = fused.pop(prefix + "query.weight")
-        k_w = fused.pop(prefix + "key.weight")
-        v_w = fused.pop(prefix + "value.weight")
-        q_b = fused.pop(prefix + "query.bias")
-        k_b = fused.pop(prefix + "key.bias")
-        v_b = fused.pop(prefix + "value.bias")
-        fused[prefix + "qkv.weight"] = torch.cat([q_w, k_w, v_w], dim=0)
-        fused[prefix + "qkv.bias"] = torch.cat([q_b, k_b, v_b], dim=0)
+        pfx = f"{prefix}{i}.attention.attention."
+        q_w = fused.pop(pfx + "query.weight")
+        k_w = fused.pop(pfx + "key.weight")
+        v_w = fused.pop(pfx + "value.weight")
+        q_b = fused.pop(pfx + "query.bias")
+        k_b = fused.pop(pfx + "key.bias")
+        v_b = fused.pop(pfx + "value.bias")
+        fused[pfx + "qkv.weight"] = torch.cat([q_w, k_w, v_w], dim=0)
+        fused[pfx + "qkv.bias"] = torch.cat([q_b, k_b, v_b], dim=0)
     return fused
 
 
