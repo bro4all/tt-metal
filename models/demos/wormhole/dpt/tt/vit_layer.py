@@ -12,6 +12,7 @@ class ViTLayerConfig:
     num_heads: int = 16
     seq_len: int = (384 // 16) * (384 // 16)  # 576
     dtype = ttnn.bfloat16
+    # TODO: add per-op sharding configs when we tune perf
 
 
 class ViTLayerTTNN:
