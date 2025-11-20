@@ -3,6 +3,7 @@ DPT neck reassembly and fusion building blocks.
 Mirror the HuggingFace DPTReassembleStage + conv stem.
 """
 from dataclasses import dataclass
+from typing import Any, Sequence
 from typing import Sequence
 import ttnn  # type: ignore
 
@@ -13,7 +14,7 @@ class ReassemblyConfig:
     neck_hidden_sizes: Sequence[int]
     reassemble_factors: Sequence[float]
     fusion_hidden_size: int = 256
-    dtype = ttnn.bfloat16
+    dtype: Any = ttnn.bfloat16
 
 
 class ReassembleLayer:

@@ -2,6 +2,7 @@
 Fusion/refinement blocks for DPT neck + depth head.
 """
 from dataclasses import dataclass
+from typing import Any, Sequence
 from typing import Sequence
 import ttnn  # type: ignore
 
@@ -9,7 +10,7 @@ import ttnn  # type: ignore
 @dataclass
 class FusionBlockConfig:
     hidden_size: int = 256
-    dtype = ttnn.bfloat16
+    dtype: Any = ttnn.bfloat16
 
 
 class ResidualConvUnit:
@@ -137,7 +138,7 @@ class FeatureFusionStage:
 @dataclass
 class FusionHeadConfig:
     features: int = 256
-    dtype = ttnn.bfloat16
+    dtype: Any = ttnn.bfloat16
     add_projection: bool = False
     head_in_index: int = -1
 

@@ -3,6 +3,7 @@ Minimal ViT encoder layer for DPT on TTNN.
 Currently a skeleton: wire fused QKV + softmax + MLP using TTNN building blocks.
 """
 from dataclasses import dataclass
+from typing import Any
 import ttnn  # type: ignore
 
 
@@ -11,7 +12,7 @@ class ViTLayerConfig:
     hidden_size: int = 1024
     num_heads: int = 16
     seq_len: int = (384 // 16) * (384 // 16)  # 576
-    dtype = ttnn.bfloat16
+    dtype: Any = ttnn.bfloat16
     # TODO: add per-op sharding configs when we tune perf
 
 
