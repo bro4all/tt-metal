@@ -80,6 +80,14 @@ class ViTLayerTTNN:
 
         # Fused QKV linear
         qkv = ttnn.linear(ln1, self.qkv_w, bias=self.qkv_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
+        # Sanity-check the fused projection produced the expected 3 * hidden width before splitting.
+        expected_last = cfg.hidden_size * 3
+        actual_last = qkv.shape[-1]
+        if actual_last != expected_last:
+            raise RuntimeError(
+                f"[ViT layer {self.idx}] fused QKV has last_dim={actual_last}, expected {expected_last}; "
+                f"full shape={qkv.shape}"
+            )
 
         # reshape QKV: [B, seq, 3, heads, head_dim]
         head_dim = cfg.hidden_size // cfg.num_heads
