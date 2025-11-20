@@ -32,13 +32,6 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
 
     # Ensure weights live on device as TTNN tensors
     device = x.device()
-    if not isinstance(proj_w, ttnn.Tensor):
-        proj_w = ttnn.from_torch(
-            torch.from_numpy(proj_w).contiguous(),
-            dtype=cfg.dtype,
-            layout=ttnn.ROW_MAJOR_LAYOUT,
-            device=device,
-        )
     if not isinstance(proj_b, ttnn.Tensor):
         proj_b = ttnn.from_torch(
             torch.from_numpy(proj_b).contiguous(),
@@ -47,11 +40,15 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
             device=device,
         )
 
-    # linear projection expects weight [hidden, 3*patch*patch]
-    proj_w_flat = ttnn.reshape(proj_w, (cfg.hidden_size, -1))
-    tokens = ttnn.linear(
-        folded, proj_w_flat, bias=proj_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG
-    )
+    # linear projection expects weight [in=3*patch*patch, out=hidden]
+    if isinstance(proj_w, ttnn.Tensor):
+        proj_w_tt = proj_w
+    else:
+        proj_w_flat = torch.from_numpy(proj_w).reshape(cfg.hidden_size, -1).t().contiguous()
+        proj_w_tt = ttnn.from_torch(
+            proj_w_flat, dtype=cfg.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+        )
+    tokens = ttnn.linear(folded, proj_w_tt, bias=proj_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
 
     # flatten spatial (H/ps, W/ps) -> sequence
     patch_grid = cfg.image_size // patch_size
