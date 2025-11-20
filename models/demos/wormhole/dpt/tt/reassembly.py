@@ -161,7 +161,7 @@ class ReassemblyStage:
             if rw.ndim == 2:
                 rw = rw.t()
             self.readout_w[stage] = ttnn.from_torch(
-                rw.contiguous(), dtype=self.cfg.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+                rw.contiguous(), dtype=self.cfg.dtype, layout=ttnn.TILE_LAYOUT, device=device
             )
         if self.readout_b[stage] is not None and not isinstance(self.readout_b[stage], ttnn.Tensor):
             self.readout_b[stage] = ttnn.from_torch(

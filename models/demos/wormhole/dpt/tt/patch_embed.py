@@ -46,7 +46,7 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
     else:
         proj_w_flat = torch.from_numpy(proj_w).reshape(cfg.hidden_size, -1).t().contiguous()
         proj_w_tt = ttnn.from_torch(
-            proj_w_flat, dtype=cfg.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+            proj_w_flat, dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=device
         )
     tokens = ttnn.linear(folded, proj_w_tt, bias=proj_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
 

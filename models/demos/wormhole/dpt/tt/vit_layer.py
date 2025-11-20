@@ -42,25 +42,25 @@ class ViTLayerTTNN:
         cfg = self.cfg
         device = x.device()
 
-        def to_tt(tensor, transpose: bool = False):
+        def to_tt(tensor, transpose: bool = False, layout=ttnn.ROW_MAJOR_LAYOUT):
             if isinstance(tensor, ttnn.Tensor):
                 return tensor
             data = torch.from_numpy(tensor)
             if transpose and data.ndim == 2:
                 data = data.t()
-            return ttnn.from_torch(data.contiguous(), dtype=cfg.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
+            return ttnn.from_torch(data.contiguous(), dtype=cfg.dtype, layout=layout, device=device)
 
         self.ln1_w = to_tt(self.ln1_w)
         self.ln1_b = to_tt(self.ln1_b)
         self.ln2_w = to_tt(self.ln2_w)
         self.ln2_b = to_tt(self.ln2_b)
-        self.qkv_w = to_tt(self.qkv_w, transpose=True)
+        self.qkv_w = to_tt(self.qkv_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.qkv_b = to_tt(self.qkv_b)
-        self.out_w = to_tt(self.out_w, transpose=True)
+        self.out_w = to_tt(self.out_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.out_b = to_tt(self.out_b)
-        self.ff1_w = to_tt(self.ff1_w, transpose=True)
+        self.ff1_w = to_tt(self.ff1_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.ff1_b = to_tt(self.ff1_b)
-        self.ff2_w = to_tt(self.ff2_w, transpose=True)
+        self.ff2_w = to_tt(self.ff2_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.ff2_b = to_tt(self.ff2_b)
         # LayerNorm before attention
         ln1 = ttnn.layer_norm(x, self.ln1_w, self.ln1_b, epsilon=1e-5, dtype=cfg.dtype)
