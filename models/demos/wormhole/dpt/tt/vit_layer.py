@@ -12,7 +12,7 @@ import ttnn  # type: ignore
 class ViTLayerConfig:
     hidden_size: int = 1024
     num_heads: int = 16
-    seq_len: int = (384 // 16) * (384 // 16)  # 576
+    seq_len: int = (384 // 16) * (384 // 16) + 1  # include CLS token
     dtype: Any = ttnn.bfloat16
     # TODO: add per-op sharding configs when we tune perf
 
@@ -50,10 +50,23 @@ class ViTLayerTTNN:
                 data = data.t()
             return ttnn.from_torch(data.contiguous(), dtype=cfg.dtype, layout=layout, device=device)
 
-        self.ln1_w = to_tt(self.ln1_w, layout=ttnn.TILE_LAYOUT)
-        self.ln1_b = to_tt(self.ln1_b, layout=ttnn.TILE_LAYOUT)
-        self.ln2_w = to_tt(self.ln2_w, layout=ttnn.TILE_LAYOUT)
-        self.ln2_b = to_tt(self.ln2_b, layout=ttnn.TILE_LAYOUT)
+        def ln_param(param):
+            """
+            Tile-layout gamma/beta padded to tile height (32) so LayerNorm kernel accepts it.
+            Shape after expansion: [1, 1, 32, hidden].
+            """
+            if isinstance(param, ttnn.Tensor):
+                return param
+            data = torch.from_numpy(param)
+            expanded = data.unsqueeze(0).repeat(32, 1).unsqueeze(0).unsqueeze(0)
+            return ttnn.from_torch(
+                expanded.contiguous(), dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=device
+            )
+
+        self.ln1_w = ln_param(self.ln1_w)
+        self.ln1_b = ln_param(self.ln1_b)
+        self.ln2_w = ln_param(self.ln2_w)
+        self.ln2_b = ln_param(self.ln2_b)
         self.qkv_w = to_tt(self.qkv_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.qkv_b = to_tt(self.qkv_b)
         self.out_w = to_tt(self.out_w, transpose=True, layout=ttnn.TILE_LAYOUT)
@@ -70,10 +83,11 @@ class ViTLayerTTNN:
 
         # reshape QKV: [B, seq, 3, heads, head_dim]
         head_dim = cfg.hidden_size // cfg.num_heads
+        seq_len = qkv.shape[1]
         q, k, v = ttnn.split(qkv, cfg.hidden_size, dim=-1)
-        q = ttnn.reshape(q, (q.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
-        k = ttnn.reshape(k, (k.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
-        v = ttnn.reshape(v, (v.shape[0], cfg.seq_len, cfg.num_heads, head_dim))
+        q = ttnn.reshape(q, (q.shape[0], seq_len, cfg.num_heads, head_dim))
+        k = ttnn.reshape(k, (k.shape[0], seq_len, cfg.num_heads, head_dim))
+        v = ttnn.reshape(v, (v.shape[0], seq_len, cfg.num_heads, head_dim))
 
         # scaled dot-product attention
         attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, seq, heads, seq]
@@ -82,7 +96,7 @@ class ViTLayerTTNN:
         context = ttnn.matmul(attn_probs, v)  # [B, seq, heads, head_dim]
 
         # merge heads
-        context = ttnn.reshape(context, (-1, cfg.seq_len, cfg.hidden_size))
+        context = ttnn.reshape(context, (-1, seq_len, cfg.hidden_size))
         attn_out = ttnn.linear(context, self.out_w, bias=self.out_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
 
         # Residual 1

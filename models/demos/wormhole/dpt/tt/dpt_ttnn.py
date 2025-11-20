@@ -45,7 +45,7 @@ class DPTTTNN:
         self.vit_cfg = ViTLayerConfig(
             hidden_size=cfg.hidden_size,
             num_heads=cfg.num_heads,
-            seq_len=(cfg.image_size // cfg.patch_size) ** 2,
+            seq_len=(cfg.image_size // cfg.patch_size) ** 2 + 1,
             dtype=cfg.dtype,
         )
         self.layers = [
