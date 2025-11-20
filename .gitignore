@@ -83,6 +83,7 @@ hf_data/
 
 # exclude venv
 venv/
+.venv311/
 
 # exclude pytorch binaries
 *.pt
