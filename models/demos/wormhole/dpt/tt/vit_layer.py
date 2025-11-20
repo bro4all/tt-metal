@@ -110,7 +110,7 @@ class ViTLayerTTNN:
 
         # scaled dot-product attention
         attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, seq, heads, seq]
-        attn_scores = ttnn.scale(attn_scores, 1.0 / (head_dim ** 0.5))
+        attn_scores = ttnn.multiply(attn_scores, 1.0 / (head_dim**0.5))
         attn_probs = ttnn.softmax(attn_scores, dim=-1)
         context = ttnn.matmul(attn_probs, v)  # [B, seq, heads, head_dim]
 
