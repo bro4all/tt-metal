@@ -10,6 +10,9 @@ python3 -m pip install numpy==1.26.4 torch==2.2.2+cpu torchvision==0.17.2+cpu tr
 # Ensure demo assets are present (use branch-hosted copies to avoid coco downloads).
 python3 - <<'PY'
 import pathlib, urllib.request
+import numpy as np
+from PIL import Image
+
 base = pathlib.Path("models/demos/wormhole/dpt/assets")
 base.mkdir(parents=True, exist_ok=True)
 urls = {
@@ -19,9 +22,16 @@ urls = {
 }
 for name, url in urls.items():
     out = base / name
-    if not out.exists():
+    if out.exists():
+        continue
+    try:
         urllib.request.urlretrieve(url, out)
         print(f"downloaded {name}")
+    except Exception as e:
+        # Fall back to synthetic image if remote fetch fails (e.g., private repo access).
+        arr = (np.random.rand(384, 384, 3) * 255).astype(np.uint8)
+        Image.fromarray(arr).save(out)
+        print(f"generated synthetic {name} due to download error: {e}")
 PY
 
 # Cache locations to avoid HOME pollution on the instance.
