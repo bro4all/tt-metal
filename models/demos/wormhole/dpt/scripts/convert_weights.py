@@ -62,10 +62,14 @@ def main() -> None:
         args.model, torch_dtype=torch.float32, low_cpu_mem_usage=False
     ).to(args.device)
 
-    # HF checkpoint is missing residual_layer1 weights in fusion_stage layers.{0-3}.
-    # Copy residual_layer2 weights into residual_layer1 to avoid random init drift.
     sd = model.state_dict()
-    for i in range(model.config.neck.fusion_layers):
+    # Infer fusion layer count from present keys to stay robust to config schema.
+    fusion_layers = (
+        max(int(k.split(".")[3]) for k in sd.keys() if k.startswith("neck.fusion_stage.layers.")) + 1
+    )
+    # HF checkpoint is missing residual_layer1 weights in fusion_stage layers.{0..N-1}.
+    # Copy residual_layer2 weights into residual_layer1 to avoid random init drift.
+    for i in range(fusion_layers):
         for conv in ("convolution1", "convolution2"):
             src_w = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.weight"
             src_b = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.bias"

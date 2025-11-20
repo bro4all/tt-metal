@@ -46,9 +46,12 @@ def run(
     ).to(device)
     processor = DPTImageProcessor.from_pretrained("Intel/dpt-large")
 
-    # Fill missing residual_layer1 weights by copying residual_layer2 (HF checkpoint omits them).
     sd = model.state_dict()
-    for i in range(model.config.neck.fusion_layers):
+    fusion_layers = (
+        max(int(k.split(".")[3]) for k in sd.keys() if k.startswith("neck.fusion_stage.layers.")) + 1
+    )
+    # Fill missing residual_layer1 weights by copying residual_layer2 (HF checkpoint omits them).
+    for i in range(fusion_layers):
         for conv in ("convolution1", "convolution2"):
             src_w = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.weight"
             src_b = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.bias"
