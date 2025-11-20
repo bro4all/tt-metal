@@ -9,6 +9,9 @@ from typing import Any, Dict
 import ttnn  # type: ignore
 import numpy as np
 from .vit_layer import ViTLayerConfig, ViTLayerTTNN
+from .patch_embed import PatchEmbedConfig, patch_embed
+from .reassembly import ReassemblyBlock, ReassemblyConfig
+from .fusion_head import FusionHead, FusionHeadConfig
 
 
 @dataclass
@@ -44,6 +47,37 @@ class DPTTTNN:
         self.layers = [
             ViTLayerTTNN(self.vit_cfg, self.weights, layer_idx=i) for i in range(cfg.num_layers)
         ]
+        # Reassembly blocks (channels from DPT paper: 256,512,1024,1024 -> 256)
+        self.reassembly = [
+            ReassemblyBlock(ReassemblyConfig(in_channels=256, out_channels=cfg.features, upsample=True),
+                            self.weights["dpt.scratch.layer1_rn.weight"],
+                            self.weights["dpt.scratch.layer1_rn.bias"]),
+            ReassemblyBlock(ReassemblyConfig(in_channels=512, out_channels=cfg.features, upsample=True),
+                            self.weights["dpt.scratch.layer2_rn.weight"],
+                            self.weights["dpt.scratch.layer2_rn.bias"]),
+            ReassemblyBlock(ReassemblyConfig(in_channels=1024, out_channels=cfg.features, upsample=True),
+                            self.weights["dpt.scratch.layer3_rn.weight"],
+                            self.weights["dpt.scratch.layer3_rn.bias"]),
+            ReassemblyBlock(ReassemblyConfig(in_channels=1024, out_channels=cfg.features, upsample=False),
+                            self.weights["dpt.scratch.layer4_rn.weight"],
+                            self.weights["dpt.scratch.layer4_rn.bias"]),
+        ]
+        # Fusion head weights
+        self.fusion_head = FusionHead(
+            FusionHeadConfig(features=cfg.features, dtype=cfg.dtype),
+            self.weights["dpt.scratch.output_conv.0.weight"],
+            self.weights["dpt.scratch.output_conv.0.bias"],
+            self.weights["dpt.scratch.output_conv.2.weight"],
+            self.weights["dpt.scratch.output_conv.2.bias"],
+            self.weights["dpt.scratch.output_conv.4.weight"],
+            self.weights["dpt.scratch.output_conv.4.bias"],
+        )
+        self.patch_cfg = PatchEmbedConfig(
+            image_size=cfg.image_size,
+            patch_size=cfg.patch_size,
+            hidden_size=cfg.hidden_size,
+            dtype=cfg.dtype,
+        )
 
     def __call__(self, images: ttnn.Tensor) -> ttnn.Tensor:
         """
@@ -52,11 +86,30 @@ class DPTTTNN:
         Returns:
             depth tensor (N, H, W, 1) in tile layout
         """
-        # TODO:
-        # 1) Patch embed (fold -> linear) + pos embed add
-        # 2) Encoder over 24 layers, collect taps (6,12,18,24)
-        # 3) Reassembly + fusion + refinement head
-        raise NotImplementedError
+        # Patch embed + pos add
+        x = patch_embed(images, self.patch_w, self.patch_b, self.pos_embed, self.patch_cfg)
+
+        # Encoder + taps
+        taps = {}
+        for i, layer in enumerate(self.layers, 1):
+            x = layer(x)
+            if i in self.cfg.taps:
+                taps[i] = x
+
+        # Reassembly expects taps in order 6,12,18,24 (mapped to 0..3)
+        feats = [
+            self.reassembly[0](taps[self.cfg.taps[0]]),
+            self.reassembly[1](taps[self.cfg.taps[1]]),
+            self.reassembly[2](taps[self.cfg.taps[2]]),
+            self.reassembly[3](taps[self.cfg.taps[3]]),
+        ]
+
+        # Simple top-down fusion (DPT uses FeatureFusionBlock_custom; placeholder here)
+        fused = feats[-1]
+        for f in reversed(feats[:-1]):
+            fused = ttnn.add(fused, f)
+        depth = self.fusion_head(fused)
+        return depth
 
 
 def load_weights(weights_dir: Path) -> Dict[str, Any]:
