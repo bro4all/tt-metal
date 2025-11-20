@@ -95,9 +95,15 @@ class ViTLayerTTNN:
         # Avoid ttnn.split (currently asserting inside split_with_slice_impl on WH) by reshaping
         # and slicing the stacked Q/K/V dimension manually.
         qkv = ttnn.reshape(qkv, (qkv.shape[0], seq_len, 3, cfg.hidden_size))
-        q = ttnn.slice(qkv, (0, 0, 0, 0), (qkv.shape[0], seq_len, 1, cfg.hidden_size))
-        k = ttnn.slice(qkv, (0, 0, 1, 0), (qkv.shape[0], seq_len, 2, cfg.hidden_size))
-        v = ttnn.slice(qkv, (0, 0, 2, 0), (qkv.shape[0], seq_len, 3, cfg.hidden_size))
+        q = ttnn.slice(
+            qkv, (0, 0, 0, 0), (qkv.shape[0], seq_len, 1, cfg.hidden_size), memory_config=ttnn.DRAM_MEMORY_CONFIG
+        )
+        k = ttnn.slice(
+            qkv, (0, 0, 1, 0), (qkv.shape[0], seq_len, 2, cfg.hidden_size), memory_config=ttnn.DRAM_MEMORY_CONFIG
+        )
+        v = ttnn.slice(
+            qkv, (0, 0, 2, 0), (qkv.shape[0], seq_len, 3, cfg.hidden_size), memory_config=ttnn.DRAM_MEMORY_CONFIG
+        )
         q = ttnn.reshape(q, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
         k = ttnn.reshape(k, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
         v = ttnn.reshape(v, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
