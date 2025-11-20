@@ -47,6 +47,9 @@ def save_npz(tensors: Dict[str, torch.Tensor], path: Path) -> None:
 
 
 def main() -> None:
+    # Make missing-weight handling deterministic and explicit.
+    torch.manual_seed(0)
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="Intel/dpt-large")
     ap.add_argument("--outdir", type=Path, default=Path("weights/converted"))
@@ -56,9 +59,23 @@ def main() -> None:
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     model = DPTForDepthEstimation.from_pretrained(
-        args.model, torch_dtype=torch.float32, low_cpu_mem_usage=True
+        args.model, torch_dtype=torch.float32, low_cpu_mem_usage=False
     ).to(args.device)
+
+    # HF checkpoint is missing residual_layer1 weights in fusion_stage layers.{0-3}.
+    # Copy residual_layer2 weights into residual_layer1 to avoid random init drift.
     sd = model.state_dict()
+    for i in range(model.config.neck.fusion_layers):
+        for conv in ("convolution1", "convolution2"):
+            src_w = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.weight"
+            src_b = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.bias"
+            dst_w = f"neck.fusion_stage.layers.{i}.residual_layer1.{conv}.weight"
+            dst_b = f"neck.fusion_stage.layers.{i}.residual_layer1.{conv}.bias"
+            if dst_w not in sd:
+                sd[dst_w] = sd[src_w].clone()
+            if dst_b not in sd:
+                sd[dst_b] = sd[src_b].clone()
+
     num_layers = model.config.num_hidden_layers
 
     # Raw dump

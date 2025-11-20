@@ -12,7 +12,7 @@ from typing import Dict, Optional
 import numpy as np
 from PIL import Image
 import torch
-from transformers import pipeline
+from transformers import DPTForDepthEstimation, DPTImageProcessor
 
 
 def save_depth_png(depth: np.ndarray, path: Path) -> None:
@@ -39,11 +39,27 @@ def run(
     compare_dir: Optional[Path],
     device: str,
 ) -> Dict[str, Dict[str, float]]:
-    pipe = pipeline(
-        task="depth-estimation",
-        model="Intel/dpt-large",
-        device=0 if device.startswith("cuda") else -1,
-    )
+    # Manual load so we can patch missing fusion weights deterministically.
+    torch.manual_seed(0)
+    model = DPTForDepthEstimation.from_pretrained(
+        "Intel/dpt-large", torch_dtype=torch.float32, low_cpu_mem_usage=False
+    ).to(device)
+    processor = DPTImageProcessor.from_pretrained("Intel/dpt-large")
+
+    # Fill missing residual_layer1 weights by copying residual_layer2 (HF checkpoint omits them).
+    sd = model.state_dict()
+    for i in range(model.config.neck.fusion_layers):
+        for conv in ("convolution1", "convolution2"):
+            src_w = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.weight"
+            src_b = f"neck.fusion_stage.layers.{i}.residual_layer2.{conv}.bias"
+            dst_w = f"neck.fusion_stage.layers.{i}.residual_layer1.{conv}.weight"
+            dst_b = f"neck.fusion_stage.layers.{i}.residual_layer1.{conv}.bias"
+            if dst_w not in sd:
+                sd[dst_w] = sd[src_w].clone()
+            if dst_b not in sd:
+                sd[dst_b] = sd[src_b].clone()
+    model.load_state_dict(sd, strict=False)
+    model.eval()
 
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics: Dict[str, Dict[str, float]] = {}
@@ -51,8 +67,11 @@ def run(
     for img_path in sorted(image_dir.glob("*")):
         if img_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".bmp"}:
             continue
-        result = pipe(Image.open(img_path))
-        depth = np.array(result["depth"])
+        inputs = processor(images=Image.open(img_path), return_tensors="pt")
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = model(**inputs)
+            depth = outputs.predicted_depth.squeeze(0).cpu().numpy()
 
         stem = img_path.stem
         npz_path = output_dir / f"{stem}.npz"
