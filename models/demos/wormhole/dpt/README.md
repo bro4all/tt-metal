@@ -12,6 +12,7 @@ Platforms: Wormhole (N150/N300). Goal: run DPT-Large depth estimation end-to-end
 ## Quickstart (baseline only, CPU/GPU)
 ```bash
 pip install torch torchvision timm transformers huggingface_hub pillow opencv-python numpy
+python models/demos/wormhole/dpt/reference/download_samples.py  # grab two small COCO images
 python models/demos/wormhole/dpt/reference/run_pytorch_baseline.py \
   --images assets/samples \
   --output out/reference \
