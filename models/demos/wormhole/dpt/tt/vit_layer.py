@@ -63,7 +63,7 @@ class ViTLayerTTNN:
         self.ff2_w = to_tt(self.ff2_w, transpose=True, layout=ttnn.TILE_LAYOUT)
         self.ff2_b = to_tt(self.ff2_b)
         # LayerNorm before attention
-        ln1 = ttnn.layer_norm(x, weight=self.ln1_w, bias=self.ln1_b, epsilon=1e-5, dtype=cfg.dtype)
+        ln1 = ttnn.layer_norm(x, weight=self.ln1_w, bias=self.ln1_b, epsilon=1e-5)
 
         # Fused QKV linear
         qkv = ttnn.linear(ln1, self.qkv_w, bias=self.qkv_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
@@ -89,7 +89,7 @@ class ViTLayerTTNN:
         x = ttnn.add(x, attn_out)
 
         # LayerNorm + MLP
-        ln2 = ttnn.layer_norm(x, weight=self.ln2_w, bias=self.ln2_b, epsilon=1e-5, dtype=cfg.dtype)
+        ln2 = ttnn.layer_norm(x, weight=self.ln2_w, bias=self.ln2_b, epsilon=1e-5)
         ff1 = ttnn.linear(ln2, self.ff1_w, bias=self.ff1_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
         ff1 = ttnn.gelu(ff1)
         ff2 = ttnn.linear(ff1, self.ff2_w, bias=self.ff2_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
