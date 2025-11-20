@@ -4,6 +4,7 @@ Fusion/refinement blocks for DPT neck + depth head.
 from dataclasses import dataclass
 from typing import Any, Sequence
 from typing import Sequence
+import torch
 import ttnn  # type: ignore
 
 
@@ -22,6 +23,35 @@ class ResidualConvUnit:
         self.b2 = b2
 
     def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
+        device = x.device()
+        if not isinstance(self.w1, ttnn.Tensor):
+            self.w1 = ttnn.from_torch(
+                torch.from_numpy(self.w1).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+        if not isinstance(self.w2, ttnn.Tensor):
+            self.w2 = ttnn.from_torch(
+                torch.from_numpy(self.w2).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+        if self.b1 is not None and not isinstance(self.b1, ttnn.Tensor):
+            self.b1 = ttnn.from_torch(
+                torch.from_numpy(self.b1).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+        if self.b2 is not None and not isinstance(self.b2, ttnn.Tensor):
+            self.b2 = ttnn.from_torch(
+                torch.from_numpy(self.b2).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
         y = ttnn.relu(x)
         y = ttnn.conv2d(
             input_tensor=y,
@@ -73,6 +103,21 @@ class FeatureFusionBlock:
         self.rcu2 = ResidualConvUnit(cfg, r2_w1, r2_b1, r2_w2, r2_b2)
 
     def __call__(self, x: ttnn.Tensor, residual: ttnn.Tensor | None) -> ttnn.Tensor:
+        device = x.device()
+        if not isinstance(self.proj_w, ttnn.Tensor):
+            self.proj_w = ttnn.from_torch(
+                torch.from_numpy(self.proj_w).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+        if self.proj_b is not None and not isinstance(self.proj_b, ttnn.Tensor):
+            self.proj_b = ttnn.from_torch(
+                torch.from_numpy(self.proj_b).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
         if residual is not None:
             # align spatial shapes if needed
             if hasattr(residual, "shape") and hasattr(x, "shape"):
@@ -172,6 +217,26 @@ class FusionHead:
 
     def __call__(self, fused_pyramid: Sequence[ttnn.Tensor]) -> ttnn.Tensor:
         x = fused_pyramid[self.cfg.head_in_index]
+        device = x.device()
+
+        def to_tt(t):
+            if t is None or isinstance(t, ttnn.Tensor):
+                return t
+            return ttnn.from_torch(
+                torch.from_numpy(t).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+
+        self.projection_w = to_tt(self.projection_w)
+        self.projection_b = to_tt(self.projection_b)
+        self.conv1_w = to_tt(self.conv1_w)
+        self.conv1_b = to_tt(self.conv1_b)
+        self.conv2_w = to_tt(self.conv2_w)
+        self.conv2_b = to_tt(self.conv2_b)
+        self.conv3_w = to_tt(self.conv3_w)
+        self.conv3_b = to_tt(self.conv3_b)
 
         if self.projection_w is not None:
             x = ttnn.conv2d(

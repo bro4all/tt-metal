@@ -5,6 +5,7 @@ Mirror the HuggingFace DPTReassembleStage + conv stem.
 from dataclasses import dataclass
 from typing import Any, Sequence
 from typing import Sequence
+import torch
 import ttnn  # type: ignore
 
 
@@ -32,6 +33,20 @@ class ReassembleLayer:
         self.dtype = dtype
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
+        device = x_2d.device()
+
+        def to_tt(tensor):
+            if tensor is None or isinstance(tensor, ttnn.Tensor):
+                return tensor
+            return ttnn.from_torch(
+                torch.from_numpy(tensor).contiguous(), dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+            )
+
+        # lazily materialize weights on device
+        self.proj_w = to_tt(self.proj_w)
+        self.proj_b = to_tt(self.proj_b)
+        self.resize_w = to_tt(self.resize_w)
+        self.resize_b = to_tt(self.resize_b)
         # projection 1x1
         B, H, W, _ = x_2d.shape
         kH, kW = self.proj_w.shape[2], self.proj_w.shape[3]
@@ -140,6 +155,21 @@ class ReassemblyStage:
         tokens: (B, seq, hidden)
         Applies readout project (concatenate cls with patches) when weights exist.
         """
+        device = tokens.device()
+        if self.readout_w[stage] is not None and not isinstance(self.readout_w[stage], ttnn.Tensor):
+            self.readout_w[stage] = ttnn.from_torch(
+                torch.from_numpy(self.readout_w[stage]).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+        if self.readout_b[stage] is not None and not isinstance(self.readout_b[stage], ttnn.Tensor):
+            self.readout_b[stage] = ttnn.from_torch(
+                torch.from_numpy(self.readout_b[stage]).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
         # split cls and patches
         cls_token = ttnn.slice(tokens, (0, 0, 0), (tokens.shape[0], 1, tokens.shape[2]))
         patches = ttnn.slice(tokens, (0, 1, 0), (tokens.shape[0], tokens.shape[1], tokens.shape[2]))
@@ -171,6 +201,23 @@ class ReassemblyStage:
             feat = self.layers[i](feat)
             # fuse conv to common hidden size
             conv_w, conv_b = self.convs[i]
+            device = feat.device()
+            if not isinstance(conv_w, ttnn.Tensor):
+                conv_w = ttnn.from_torch(
+                    torch.from_numpy(conv_w).contiguous(),
+                    dtype=self.cfg.dtype,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=device,
+                )
+                self.convs[i] = (conv_w, conv_b)
+            if conv_b is not None and not isinstance(conv_b, ttnn.Tensor):
+                conv_b = ttnn.from_torch(
+                    torch.from_numpy(conv_b).contiguous(),
+                    dtype=self.cfg.dtype,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=device,
+                )
+                self.convs[i] = (conv_w, conv_b)
             kH, kW = conv_w.shape[2], conv_w.shape[3]
             fused = ttnn.conv2d(
                 input_tensor=feat,

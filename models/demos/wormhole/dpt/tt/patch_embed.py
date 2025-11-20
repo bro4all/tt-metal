@@ -5,6 +5,7 @@ Takes NHWC input normalized to [-1,1], folds into patches, applies linear proj, 
 from dataclasses import dataclass
 from typing import Tuple, Any
 import numpy as np
+import torch
 import ttnn  # type: ignore
 
 
@@ -29,8 +30,25 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
     folded = ttnn.fold(x, stride_h=patch_size, stride_w=patch_size)
     folded = ttnn.to_layout(folded, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
 
+    # Ensure weights live on device as TTNN tensors
+    device = x.device()
+    if not isinstance(proj_w, ttnn.Tensor):
+        proj_w = ttnn.from_torch(
+            torch.from_numpy(proj_w).contiguous(),
+            dtype=cfg.dtype,
+            layout=ttnn.ROW_MAJOR_LAYOUT,
+            device=device,
+        )
+    if not isinstance(proj_b, ttnn.Tensor):
+        proj_b = ttnn.from_torch(
+            torch.from_numpy(proj_b).contiguous(),
+            dtype=cfg.dtype,
+            layout=ttnn.ROW_MAJOR_LAYOUT,
+            device=device,
+        )
+
     # linear projection expects weight [hidden, 3*patch*patch]
-    proj_w_flat = proj_w.reshape(cfg.hidden_size, -1)
+    proj_w_flat = ttnn.reshape(proj_w, (cfg.hidden_size, -1))
     tokens = ttnn.linear(
         folded, proj_w_flat, bias=proj_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG
     )
@@ -43,10 +61,17 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
     # prepend CLS token (broadcast across batch)
     batch = tokens.shape[0]
     cls = np.repeat(cls_token, repeats=batch, axis=0)  # (B, 1, hidden)
-    cls_tt = ttnn.from_torch(cls, dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=tokens.device())
+    cls_tt = ttnn.from_torch(
+        torch.from_numpy(cls).contiguous(), dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=tokens.device()
+    )
     tokens = ttnn.concat([cls_tt, tokens], dim=1)
 
     # add positional embeddings
-    pos = ttnn.from_torch(pos_embed, dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=tokens.device())
+    pos = ttnn.from_torch(
+        torch.from_numpy(pos_embed).contiguous(),
+        dtype=cfg.dtype,
+        layout=ttnn.TILE_LAYOUT,
+        device=tokens.device(),
+    )
     tokens = ttnn.add(tokens, pos)
     return tokens

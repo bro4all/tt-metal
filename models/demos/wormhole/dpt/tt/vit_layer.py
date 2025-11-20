@@ -4,6 +4,7 @@ Currently a skeleton: wire fused QKV + softmax + MLP using TTNN building blocks.
 """
 from dataclasses import dataclass
 from typing import Any
+import torch
 import ttnn  # type: ignore
 
 
@@ -39,6 +40,30 @@ class ViTLayerTTNN:
 
     def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
         cfg = self.cfg
+        device = x.device()
+
+        def to_tt(tensor):
+            if isinstance(tensor, ttnn.Tensor):
+                return tensor
+            return ttnn.from_torch(
+                torch.from_numpy(tensor).contiguous(),
+                dtype=cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+
+        self.ln1_w = to_tt(self.ln1_w)
+        self.ln1_b = to_tt(self.ln1_b)
+        self.ln2_w = to_tt(self.ln2_w)
+        self.ln2_b = to_tt(self.ln2_b)
+        self.qkv_w = to_tt(self.qkv_w)
+        self.qkv_b = to_tt(self.qkv_b)
+        self.out_w = to_tt(self.out_w)
+        self.out_b = to_tt(self.out_b)
+        self.ff1_w = to_tt(self.ff1_w)
+        self.ff1_b = to_tt(self.ff1_b)
+        self.ff2_w = to_tt(self.ff2_w)
+        self.ff2_b = to_tt(self.ff2_b)
         # LayerNorm before attention
         ln1 = ttnn.layer_norm(x, self.ln1_w, self.ln1_b, epsilon=1e-5, dtype=cfg.dtype)
 
