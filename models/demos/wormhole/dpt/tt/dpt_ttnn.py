@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
-import ttnn  # type: ignore
 import numpy as np
+import torch
+import ttnn  # type: ignore
 from .vit_layer import ViTLayerConfig, ViTLayerTTNN
 from .patch_embed import PatchEmbedConfig, patch_embed
 from .reassembly import ReassemblyStage, ReassemblyConfig
@@ -139,8 +140,16 @@ class DPTTTNN:
             # restore envs
             os.environ["DPT_FORCE_TORCH_NECK"] = prev_neck
             os.environ["DPT_FORCE_TORCH_FUSION"] = prev_fusion
-            self.debug_neck_feats_torch = [ttnn.to_torch(f).float() for f in feats_torch_ttnn]
-            self.debug_fused_torch = [ttnn.to_torch(f).float() for f in fused_torch_ttnn]
+            # Convert TTNN and torch tensors to torch.FloatTensor for PCC debug.
+            def _to_torch_float(t):
+                if isinstance(t, ttnn.Tensor):
+                    return ttnn.to_torch(t).float()
+                if isinstance(t, torch.Tensor):
+                    return t.float()
+                return torch.as_tensor(t, dtype=torch.float32)
+
+            self.debug_neck_feats_torch = [_to_torch_float(f) for f in feats_torch_ttnn]
+            self.debug_fused_torch = [_to_torch_float(f) for f in fused_torch_ttnn]
         return depth
 
 

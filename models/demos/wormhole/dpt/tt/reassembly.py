@@ -146,13 +146,16 @@ class ReassembleLayer:
         else:
             if self.proj_w_prepared is None or self.proj_w_prepared.device() != device:
                 if isinstance(self.proj_w_src, ttnn.Tensor):
-                    w_host = ttnn.to_layout(self.proj_w_src, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.dtype)
+                    w_host = ttnn.from_torch(
+                        ttnn.to_torch(self.proj_w_src).contiguous(),
+                        dtype=self.dtype,
+                        layout=ttnn.ROW_MAJOR_LAYOUT,
+                    )
                 else:
                     w_host = ttnn.from_torch(
                         torch.from_numpy(self.proj_w_src).contiguous(),
                         dtype=self.dtype,
                         layout=ttnn.ROW_MAJOR_LAYOUT,
-                        device=device,
                     )
                 self.proj_w_prepared = ttnn.prepare_conv_weights(
                     weight_tensor=w_host,
@@ -177,13 +180,16 @@ class ReassembleLayer:
                 )
                 if self.proj_b_src is not None:
                     if isinstance(self.proj_b_src, ttnn.Tensor):
-                        b_host = ttnn.to_layout(self.proj_b_src, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.dtype)
+                        b_host = ttnn.from_torch(
+                            ttnn.to_torch(self.proj_b_src).contiguous(),
+                            dtype=self.dtype,
+                            layout=ttnn.ROW_MAJOR_LAYOUT,
+                        )
                     else:
                         b_host = ttnn.from_torch(
                             torch.from_numpy(self.proj_b_src).contiguous(),
                             dtype=self.dtype,
                             layout=ttnn.ROW_MAJOR_LAYOUT,
-                            device=device,
                         )
                     self.proj_b_prepared = ttnn.prepare_conv_bias(
                         bias_tensor=b_host,
@@ -222,7 +228,6 @@ class ReassembleLayer:
                 groups=1,
                 dtype=self.dtype,
                 conv_config=self.resize_conv_config,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
 
         # learned resize (conv / deconv) if available, otherwise fallback to scale factor
@@ -325,9 +330,8 @@ class ReassembleLayer:
                         output_padding=(0, 0),
                         dilation=(1, 1),
                         groups=1,
-                        mirror_kernel=True,
+                        mirror_kernel=False,
                         return_output_dim=True,
-                        memory_config=ttnn.DRAM_MEMORY_CONFIG,
                         conv_config=self.resize_conv_config,
                         dtype=self.dtype,
                     )
@@ -348,13 +352,16 @@ class ReassembleLayer:
                 else:
                     if self.resize_w_prepared_conv is None or self.resize_w_prepared_conv.device() != device:
                         if isinstance(self.resize_w_src, ttnn.Tensor):
-                            w_host = ttnn.to_layout(self.resize_w_src, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.dtype)
+                            w_host = ttnn.from_torch(
+                                ttnn.to_torch(self.resize_w_src).contiguous(),
+                                dtype=self.dtype,
+                                layout=ttnn.ROW_MAJOR_LAYOUT,
+                            )
                         else:
                             w_host = ttnn.from_torch(
                                 torch.from_numpy(self.resize_w_src).contiguous(),
                                 dtype=self.dtype,
                                 layout=ttnn.ROW_MAJOR_LAYOUT,
-                                device=device,
                             )
                         self.resize_w_prepared_conv = ttnn.prepare_conv_weights(
                             weight_tensor=w_host,
@@ -379,13 +386,16 @@ class ReassembleLayer:
                         )
                         if self.resize_b_src is not None:
                             if isinstance(self.resize_b_src, ttnn.Tensor):
-                                b_host = ttnn.to_layout(self.resize_b_src, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.dtype)
+                                b_host = ttnn.from_torch(
+                                    ttnn.to_torch(self.resize_b_src).contiguous(),
+                                    dtype=self.dtype,
+                                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                                )
                             else:
                                 b_host = ttnn.from_torch(
                                     torch.from_numpy(self.resize_b_src).contiguous(),
                                     dtype=self.dtype,
                                     layout=ttnn.ROW_MAJOR_LAYOUT,
-                                    device=device,
                                 )
                             self.resize_b_prepared_conv = ttnn.prepare_conv_bias(
                                 bias_tensor=b_host,
@@ -422,7 +432,6 @@ class ReassembleLayer:
                         padding=(1, 1),
                         dilation=(1, 1),
                         groups=1,
-                        memory_config=ttnn.DRAM_MEMORY_CONFIG,
                         conv_config=self.resize_conv_config,
                         dtype=self.dtype,
                     )
@@ -568,13 +577,16 @@ class ReassemblyStage:
                 kH, kW = conv_w.shape[2], conv_w.shape[3]
                 if self.fuse_w_prepared[i] is None or self.fuse_w_prepared[i].device() != device:
                     if isinstance(conv_w, ttnn.Tensor):
-                        w_host = ttnn.to_layout(conv_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+                        w_host = ttnn.from_torch(
+                            ttnn.to_torch(conv_w).contiguous(),
+                            dtype=self.cfg.dtype,
+                            layout=ttnn.ROW_MAJOR_LAYOUT,
+                        )
                     else:
                         w_host = ttnn.from_torch(
                             torch.from_numpy(conv_w).contiguous(),
                             dtype=self.cfg.dtype,
                             layout=ttnn.ROW_MAJOR_LAYOUT,
-                            device=device,
                         )
                     self.fuse_w_prepared[i] = ttnn.prepare_conv_weights(
                         weight_tensor=w_host,
@@ -599,13 +611,16 @@ class ReassemblyStage:
                     )
                     if conv_b is not None:
                         if isinstance(conv_b, ttnn.Tensor):
-                            b_host = ttnn.to_layout(conv_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+                            b_host = ttnn.from_torch(
+                                ttnn.to_torch(conv_b).contiguous(),
+                                dtype=self.cfg.dtype,
+                                layout=ttnn.ROW_MAJOR_LAYOUT,
+                            )
                         else:
                             b_host = ttnn.from_torch(
                                 torch.from_numpy(conv_b).contiguous(),
                                 dtype=self.cfg.dtype,
                                 layout=ttnn.ROW_MAJOR_LAYOUT,
-                                device=device,
                             )
                         self.fuse_b_prepared[i] = ttnn.prepare_conv_bias(
                             bias_tensor=b_host,
@@ -642,7 +657,6 @@ class ReassemblyStage:
                     padding=(1, 1),
                     dilation=(1, 1),
                     groups=1,
-                    memory_config=self.fuse_memory_config,
                     conv_config=self.fuse_conv_config,
                     dtype=self.cfg.dtype,
                 )
