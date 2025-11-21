@@ -38,6 +38,10 @@ class DPTTTNN:
         # load converted weights, set up sharding and fused ops (later)
         self.weights = load_weights(weights_dir)
         self.debug_taps: list[ttnn.Tensor] | None = None
+        self.debug_neck_feats_ttnn: list[ttnn.Tensor] | None = None
+        self.debug_neck_feats_torch: list[Any] | None = None
+        self.debug_fused_ttnn: list[ttnn.Tensor] | None = None
+        self.debug_fused_torch: list[Any] | None = None
         # stash common tensors
         self.patch_w = self.weights["dpt.embeddings.patch_embeddings.projection.weight"]
         self.patch_b = self.weights["dpt.embeddings.patch_embeddings.projection.bias"]
@@ -108,6 +112,35 @@ class DPTTTNN:
         depth = self.fusion_head(fused_pyramid)
         if os.getenv("DPT_DEBUG_TAPS", "0") == "1":
             self.debug_taps = taps
+        if os.getenv("DPT_DEBUG_NECK", "0") == "1":
+            # cache TT neck outputs
+            self.debug_neck_feats_ttnn = feats
+            self.debug_fused_ttnn = fused_pyramid
+            # run a torch neck reference by temporarily forcing torch neck/fusion
+            prev_neck = os.getenv("DPT_FORCE_TORCH_NECK", "0")
+            prev_fusion = os.getenv("DPT_FORCE_TORCH_FUSION", "1")
+            os.environ["DPT_FORCE_TORCH_NECK"] = "1"
+            os.environ["DPT_FORCE_TORCH_FUSION"] = "1"
+            torch_reassembly = ReassemblyStage(
+                ReassemblyConfig(
+                    hidden_size=self.cfg.hidden_size,
+                    neck_hidden_sizes=self.cfg.neck_hidden_sizes,
+                    reassemble_factors=self.cfg.reassemble_factors,
+                    fusion_hidden_size=self.cfg.features,
+                    dtype=self.cfg.dtype,
+                ),
+                self.weights,
+            )
+            torch_fusion = FeatureFusionStage(
+                FusionBlockConfig(hidden_size=self.cfg.features, dtype=self.cfg.dtype), self.weights
+            )
+            feats_torch_ttnn = torch_reassembly(taps, patch_hw)
+            fused_torch_ttnn = torch_fusion(feats_torch_ttnn)
+            # restore envs
+            os.environ["DPT_FORCE_TORCH_NECK"] = prev_neck
+            os.environ["DPT_FORCE_TORCH_FUSION"] = prev_fusion
+            self.debug_neck_feats_torch = [ttnn.to_torch(f).float() for f in feats_torch_ttnn]
+            self.debug_fused_torch = [ttnn.to_torch(f).float() for f in fused_torch_ttnn]
         return depth
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -131,11 +132,37 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                         stats["pcc_taps_mean"] = float(np.mean(tap_pccs))
                         stats["pcc_taps_min"] = float(np.min(tap_pccs))
                         stats["pcc_taps_max"] = float(np.max(tap_pccs))
+                # Neck-level PCC (TT neck vs torch neck debug)
+                if os.getenv("DPT_DEBUG_NECK", "0") == "1":
+                    feats_tt = getattr(model, "debug_neck_feats_ttnn", None)
+                    feats_th = getattr(model, "debug_neck_feats_torch", None)
+                    fused_tt = getattr(model, "debug_fused_ttnn", None)
+                    fused_th = getattr(model, "debug_fused_torch", None)
+                    if feats_tt and feats_th:
+                        neck_pccs = []
+                        for tt, th in zip(feats_tt, feats_th):
+                            tt_np = ttnn.to_torch(tt).float().cpu().numpy().ravel()
+                            th_np = th.cpu().numpy().ravel()
+                            neck_pccs.append(pcc(tt_np, th_np))
+                        stats["pcc_neck_mean"] = float(np.mean(neck_pccs))
+                        stats["pcc_neck_min"] = float(np.min(neck_pccs))
+                        stats["pcc_neck_max"] = float(np.max(neck_pccs))
+                    if fused_tt and fused_th:
+                        fused_pccs = []
+                        for tt, th in zip(fused_tt, fused_th):
+                            tt_np = ttnn.to_torch(tt).float().cpu().numpy().ravel()
+                            th_np = th.cpu().numpy().ravel()
+                            fused_pccs.append(pcc(tt_np, th_np))
+                        stats["pcc_fused_mean"] = float(np.mean(fused_pccs))
+                        stats["pcc_fused_min"] = float(np.min(fused_pccs))
+                        stats["pcc_fused_max"] = float(np.max(fused_pccs))
             results[stem] = stats
 
             pcc_str = f"{stats.get('pcc_vs_ref', 'N/A')}"
             if args.compare_hidden and "pcc_taps_mean" in stats:
                 pcc_str += f" taps_mean={stats['pcc_taps_mean']:.4f}"
+            if os.getenv("DPT_DEBUG_NECK", "0") == "1" and "pcc_neck_mean" in stats:
+                pcc_str += f" neck_mean={stats['pcc_neck_mean']:.4f}"
             print(f"{stem}: pcc={pcc_str} shape={depth_np.shape} range=({stats['min']:.2f},{stats['max']:.2f})")
 
         if args.metrics:

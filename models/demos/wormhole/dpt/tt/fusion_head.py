@@ -22,6 +22,15 @@ class ResidualConvUnit:
         self.b1 = b1
         self.w2 = w2
         self.b2 = b2
+        self.w1_prepared = None
+        self.b1_prepared = None
+        self.w2_prepared = None
+        self.b2_prepared = None
+        self.conv_config = ttnn.Conv2dConfig(
+            config_tensors_in_dram=True,
+            output_layout=ttnn.ROW_MAJOR_LAYOUT,
+        )
+        self.memory_config = ttnn.DRAM_MEMORY_CONFIG
 
     def __call__(self, x: ttnn.Tensor) -> ttnn.Tensor:
         device = x.device()
@@ -58,10 +67,53 @@ class ResidualConvUnit:
         x_tile = ttnn.to_layout(x_rm, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(x_tile)
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+        if self.w1_prepared is None or self.w1_prepared.device() != device:
+            self.w1_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.w1, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.w1.shape[1],
+                out_channels=self.w1.shape[0],
+                batch_size=y.shape[0],
+                input_height=y.shape[1],
+                input_width=y.shape[2],
+                kernel_size=(self.w1.shape[2], self.w1.shape[3]),
+                stride=(1, 1),
+                padding=(1, 1),
+                dilation=(1, 1),
+                has_bias=self.b1 is not None,
+                groups=1,
+                device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+            )
+            if self.b1 is not None:
+                self.b1_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.b1, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.w1.shape[1],
+                    out_channels=self.w1.shape[0],
+                    batch_size=y.shape[0],
+                    input_height=y.shape[1],
+                    input_width=y.shape[2],
+                    kernel_size=(self.w1.shape[2], self.w1.shape[3]),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         y = ttnn.conv2d(
             input_tensor=y,
-            weight_tensor=self.w1,
-            bias_tensor=None,
+            weight_tensor=self.w1_prepared,
+            bias_tensor=self.b1_prepared,
             device=device,
             in_channels=self.w1.shape[1],
             out_channels=self.w1.shape[0],
@@ -74,23 +126,59 @@ class ResidualConvUnit:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.b1 is not None:
-            b1 = self.b1 if isinstance(self.b1, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.b1).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=device,
-            )
-            b1 = ttnn.reshape(b1, (1, 1, 1, b1.shape[0]))
-            y = ttnn.add(y, b1)
         y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(y_tile)
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+        if self.w2_prepared is None or self.w2_prepared.device() != device:
+            self.w2_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.w2, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.w2.shape[1],
+                out_channels=self.w2.shape[0],
+                batch_size=y.shape[0],
+                input_height=y.shape[1],
+                input_width=y.shape[2],
+                kernel_size=(self.w2.shape[2], self.w2.shape[3]),
+                stride=(1, 1),
+                padding=(1, 1),
+                dilation=(1, 1),
+                has_bias=self.b2 is not None,
+                groups=1,
+                device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+            )
+            if self.b2 is not None:
+                self.b2_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.b2, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.w2.shape[1],
+                    out_channels=self.w2.shape[0],
+                    batch_size=y.shape[0],
+                    input_height=y.shape[1],
+                    input_width=y.shape[2],
+                    kernel_size=(self.w2.shape[2], self.w2.shape[3]),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         y = ttnn.conv2d(
             input_tensor=y,
-            weight_tensor=self.w2,
-            bias_tensor=None,
+            weight_tensor=self.w2_prepared,
+            bias_tensor=self.b2_prepared,
             device=device,
             in_channels=self.w2.shape[1],
             out_channels=self.w2.shape[0],
@@ -103,16 +191,9 @@ class ResidualConvUnit:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.b2 is not None:
-            b2 = self.b2 if isinstance(self.b2, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.b2).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=device,
-            )
-            b2 = ttnn.reshape(b2, (1, 1, 1, b2.shape[0]))
-            y = ttnn.add(y, b2)
         return ttnn.add(y, x_rm)
 
 
@@ -126,6 +207,13 @@ class FeatureFusionBlock:
         self.cfg = cfg
         self.proj_w = proj_w
         self.proj_b = proj_b
+        self.proj_w_prepared = None
+        self.proj_b_prepared = None
+        self.conv_config = ttnn.Conv2dConfig(
+            config_tensors_in_dram=True,
+            output_layout=ttnn.ROW_MAJOR_LAYOUT,
+        )
+        self.memory_config = ttnn.DRAM_MEMORY_CONFIG
         self.rcu1 = ResidualConvUnit(cfg, r1_w1, r1_b1, r1_w2, r1_b2)
         self.rcu2 = ResidualConvUnit(cfg, r2_w1, r2_b1, r2_w2, r2_b2)
 
@@ -159,10 +247,67 @@ class FeatureFusionBlock:
 
         x = self.rcu2(x)
         x = ttnn.upsample(x, scale_factor=(2.0, 2.0))
+        if self.proj_w_prepared is None or self.proj_w_prepared.device() != device:
+            if not isinstance(self.proj_w, ttnn.Tensor):
+                self.proj_w = ttnn.from_torch(
+                    torch.from_numpy(self.proj_w).contiguous(),
+                    dtype=self.cfg.dtype,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=device,
+                )
+            self.proj_w_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.proj_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.proj_w.shape[1],
+                out_channels=self.proj_w.shape[0],
+                batch_size=x.shape[0],
+                input_height=x.shape[1],
+                input_width=x.shape[2],
+                kernel_size=(self.proj_w.shape[2], self.proj_w.shape[3]),
+                stride=(1, 1),
+                padding=(0, 0),
+                dilation=(1, 1),
+                has_bias=self.proj_b is not None,
+                groups=1,
+                device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+            )
+            if self.proj_b is not None:
+                if not isinstance(self.proj_b, ttnn.Tensor):
+                    self.proj_b = ttnn.from_torch(
+                        torch.from_numpy(self.proj_b).contiguous(),
+                        dtype=self.cfg.dtype,
+                        layout=ttnn.ROW_MAJOR_LAYOUT,
+                        device=device,
+                    )
+                self.proj_b_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.proj_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.proj_w.shape[1],
+                    out_channels=self.proj_w.shape[0],
+                    batch_size=x.shape[0],
+                    input_height=x.shape[1],
+                    input_width=x.shape[2],
+                    kernel_size=(self.proj_w.shape[2], self.proj_w.shape[3]),
+                    stride=(1, 1),
+                    padding=(0, 0),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         x = ttnn.conv2d(
             input_tensor=x,
-            weight_tensor=self.proj_w,
-            bias_tensor=None,
+            weight_tensor=self.proj_w_prepared,
+            bias_tensor=self.proj_b_prepared,
             device=device,
             in_channels=self.proj_w.shape[1],
             out_channels=self.proj_w.shape[0],
@@ -175,16 +320,9 @@ class FeatureFusionBlock:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.proj_b is not None:
-            pb = self.proj_b if isinstance(self.proj_b, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.proj_b).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=device,
-            )
-            pb = ttnn.reshape(pb, (1, 1, 1, pb.shape[0]))
-            x = ttnn.add(x, pb)
         return x
 
 
@@ -304,6 +442,19 @@ class FusionHead:
         self.conv3_b = conv3_b
         self.projection_w = projection_w
         self.projection_b = projection_b
+        self.conv_config = ttnn.Conv2dConfig(
+            config_tensors_in_dram=True,
+            output_layout=ttnn.ROW_MAJOR_LAYOUT,
+        )
+        self.memory_config = ttnn.DRAM_MEMORY_CONFIG
+        self.proj_w_prepared = None
+        self.proj_b_prepared = None
+        self.conv1_w_prepared = None
+        self.conv1_b_prepared = None
+        self.conv2_w_prepared = None
+        self.conv2_b_prepared = None
+        self.conv3_w_prepared = None
+        self.conv3_b_prepared = None
 
     def __call__(self, fused_pyramid: Sequence[ttnn.Tensor]) -> ttnn.Tensor:
         # Torch fallback when fusion was run on host.
@@ -366,12 +517,56 @@ class FusionHead:
         self.conv3_w = to_tt(self.conv3_w)
         self.conv3_b = to_tt(self.conv3_b)
 
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+
         if self.projection_w is not None:
-            x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+            if self.proj_w_prepared is None or self.proj_w_prepared.device() != device:
+                self.proj_w_prepared = ttnn.prepare_conv_weights(
+                    weight_tensor=ttnn.to_layout(self.projection_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.projection_w.shape[1],
+                    out_channels=self.projection_w.shape[0],
+                    batch_size=x.shape[0],
+                    input_height=x.shape[1],
+                    input_width=x.shape[2],
+                    kernel_size=(self.projection_w.shape[2], self.projection_w.shape[3]),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    has_bias=self.projection_b is not None,
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
+                if self.projection_b is not None:
+                    self.proj_b_prepared = ttnn.prepare_conv_bias(
+                        bias_tensor=ttnn.to_layout(self.projection_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                        input_memory_config=self.memory_config,
+                        input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                        weights_format="OIHW",
+                        in_channels=self.projection_w.shape[1],
+                        out_channels=self.projection_w.shape[0],
+                        batch_size=x.shape[0],
+                        input_height=x.shape[1],
+                        input_width=x.shape[2],
+                        kernel_size=(self.projection_w.shape[2], self.projection_w.shape[3]),
+                        stride=(1, 1),
+                        padding=(1, 1),
+                        dilation=(1, 1),
+                        groups=1,
+                        device=device,
+                        input_dtype=self.cfg.dtype,
+                        output_dtype=self.cfg.dtype,
+                        conv_config=self.conv_config,
+                    )
             x = ttnn.conv2d(
                 input_tensor=x,
-                weight_tensor=self.projection_w,
-                bias_tensor=None,
+                weight_tensor=self.proj_w_prepared,
+                bias_tensor=self.proj_b_prepared,
                 device=device,
                 in_channels=self.projection_w.shape[1],
                 out_channels=self.projection_w.shape[0],
@@ -384,26 +579,61 @@ class FusionHead:
                 dilation=(1, 1),
                 groups=1,
                 dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+                memory_config=self.memory_config,
             )
-            if self.projection_b is not None:
-                pb = self.projection_b if isinstance(self.projection_b, ttnn.Tensor) else ttnn.from_torch(
-                    torch.from_numpy(self.projection_b).contiguous(),
-                    dtype=self.cfg.dtype,
-                    layout=ttnn.ROW_MAJOR_LAYOUT,
-                    device=device,
-                )
-                pb = ttnn.reshape(pb, (1, 1, 1, pb.shape[0]))
-                x = ttnn.add(x, pb)
             x_tile = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
             x = ttnn.relu(x_tile)
             x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
 
-        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
-
+        # Conv1
+        if self.conv1_w_prepared is None or self.conv1_w_prepared.device() != device:
+            self.conv1_w_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.conv1_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.conv1_w.shape[1],
+                out_channels=self.conv1_w.shape[0],
+                batch_size=x.shape[0],
+                input_height=x.shape[1],
+                input_width=x.shape[2],
+                kernel_size=(self.conv1_w.shape[2], self.conv1_w.shape[3]),
+                stride=(1, 1),
+                padding=(1, 1),
+                dilation=(1, 1),
+                has_bias=self.conv1_b is not None,
+                groups=1,
+                device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+            )
+            if self.conv1_b is not None:
+                self.conv1_b_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.conv1_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.conv1_w.shape[1],
+                    out_channels=self.conv1_w.shape[0],
+                    batch_size=x.shape[0],
+                    input_height=x.shape[1],
+                    input_width=x.shape[2],
+                    kernel_size=(self.conv1_w.shape[2], self.conv1_w.shape[3]),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         y = ttnn.conv2d(
             input_tensor=x,
-            weight_tensor=self.conv1_w,
-            bias_tensor=None,
+            weight_tensor=self.conv1_w_prepared,
+            bias_tensor=self.conv1_b_prepared,
             device=device,
             in_channels=self.conv1_w.shape[1],
             out_channels=self.conv1_w.shape[0],
@@ -416,21 +646,60 @@ class FusionHead:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.conv1_b is not None:
-            b = self.conv1_b if isinstance(self.conv1_b, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.conv1_b).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=device,
-            )
-            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
-            y = ttnn.add(y, b)
+
         y = ttnn.upsample(y, scale_factor=(2.0, 2.0))
+
+        # Conv2
+        if self.conv2_w_prepared is None or self.conv2_w_prepared.device() != device:
+            self.conv2_w_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.conv2_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.conv2_w.shape[1],
+                out_channels=self.conv2_w.shape[0],
+                batch_size=y.shape[0],
+                input_height=y.shape[1],
+                input_width=y.shape[2],
+                kernel_size=(self.conv2_w.shape[2], self.conv2_w.shape[3]),
+                stride=(1, 1),
+                padding=(1, 1),
+                dilation=(1, 1),
+                has_bias=self.conv2_b is not None,
+                groups=1,
+                device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
+            )
+            if self.conv2_b is not None:
+                self.conv2_b_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.conv2_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.conv2_w.shape[1],
+                    out_channels=self.conv2_w.shape[0],
+                    batch_size=y.shape[0],
+                    input_height=y.shape[1],
+                    input_width=y.shape[2],
+                    kernel_size=(self.conv2_w.shape[2], self.conv2_w.shape[3]),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         y = ttnn.conv2d(
             input_tensor=y,
-            weight_tensor=self.conv2_w,
-            bias_tensor=None,
+            weight_tensor=self.conv2_w_prepared,
+            bias_tensor=self.conv2_b_prepared,
             device=device,
             in_channels=self.conv2_w.shape[1],
             out_channels=self.conv2_w.shape[0],
@@ -443,23 +712,59 @@ class FusionHead:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.conv2_b is not None:
-            b = self.conv2_b if isinstance(self.conv2_b, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.conv2_b).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
+        y = ttnn.relu(y)
+
+        # Conv3
+        if self.conv3_w_prepared is None or self.conv3_w_prepared.device() != device:
+            self.conv3_w_prepared = ttnn.prepare_conv_weights(
+                weight_tensor=ttnn.to_layout(self.conv3_w, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                input_memory_config=self.memory_config,
+                input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                weights_format="OIHW",
+                in_channels=self.conv3_w.shape[1],
+                out_channels=self.conv3_w.shape[0],
+                batch_size=y.shape[0],
+                input_height=y.shape[1],
+                input_width=y.shape[2],
+                kernel_size=(self.conv3_w.shape[2], self.conv3_w.shape[3]),
+                stride=(1, 1),
+                padding=(0, 0),
+                dilation=(1, 1),
+                has_bias=self.conv3_b is not None,
+                groups=1,
                 device=device,
+                input_dtype=self.cfg.dtype,
+                output_dtype=self.cfg.dtype,
+                conv_config=self.conv_config,
             )
-            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
-            y = ttnn.add(y, b)
-        y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
-        y = ttnn.relu(y_tile)
-        y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+            if self.conv3_b is not None:
+                self.conv3_b_prepared = ttnn.prepare_conv_bias(
+                    bias_tensor=ttnn.to_layout(self.conv3_b, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype),
+                    input_memory_config=self.memory_config,
+                    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                    weights_format="OIHW",
+                    in_channels=self.conv3_w.shape[1],
+                    out_channels=self.conv3_w.shape[0],
+                    batch_size=y.shape[0],
+                    input_height=y.shape[1],
+                    input_width=y.shape[2],
+                    kernel_size=(self.conv3_w.shape[2], self.conv3_w.shape[3]),
+                    stride=(1, 1),
+                    padding=(0, 0),
+                    dilation=(1, 1),
+                    groups=1,
+                    device=device,
+                    input_dtype=self.cfg.dtype,
+                    output_dtype=self.cfg.dtype,
+                    conv_config=self.conv_config,
+                )
         y = ttnn.conv2d(
             input_tensor=y,
-            weight_tensor=self.conv3_w,
-            bias_tensor=None,
+            weight_tensor=self.conv3_w_prepared,
+            bias_tensor=self.conv3_b_prepared,
             device=device,
             in_channels=self.conv3_w.shape[1],
             out_channels=self.conv3_w.shape[0],
@@ -472,17 +777,9 @@ class FusionHead:
             dilation=(1, 1),
             groups=1,
             dtype=self.cfg.dtype,
+            conv_config=self.conv_config,
+            memory_config=self.memory_config,
         )
-        if self.conv3_b is not None:
-            b = self.conv3_b if isinstance(self.conv3_b, ttnn.Tensor) else ttnn.from_torch(
-                torch.from_numpy(self.conv3_b).contiguous(),
-                dtype=self.cfg.dtype,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=device,
-            )
-            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
-            y = ttnn.add(y, b)
-        y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
-        y = ttnn.relu(y_tile)  # non-negative depth
+        y = ttnn.relu(ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype))  # non-negative depth
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         return y
