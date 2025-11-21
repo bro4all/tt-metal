@@ -121,7 +121,8 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                     hf_hidden = np.load(hidden_file)
                     tap_pccs = []
                     for i, tap in enumerate(model.debug_taps):
-                        tap_np = ttnn.to_torch(tap).cpu().numpy().ravel()
+                        # to_torch returns bfloat16; cast to float32 before NumPy to avoid unsupported dtype
+                        tap_np = ttnn.to_torch(tap).float().cpu().numpy().ravel()
                         hf = hf_hidden.get(f"tap{i}")
                         if hf is None:
                             continue
