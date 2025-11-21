@@ -226,11 +226,13 @@ class FeatureFusionStage:
                 return y.permute(0, 2, 3, 1).contiguous()
 
             def rcu(x, w1, b1, w2, b2):
+                # Pre-activation residual block: ReLU -> conv -> ReLU -> conv -> add input
+                residual = x
                 x = torch.nn.functional.relu(x)
                 x = conv_nhwc(x, w1, b1, padding=1)
                 x = torch.nn.functional.relu(x)
                 x = conv_nhwc(x, w2, b2, padding=1)
-                return x
+                return x + residual
 
             fused_outputs_t = []
             fused_t = None
