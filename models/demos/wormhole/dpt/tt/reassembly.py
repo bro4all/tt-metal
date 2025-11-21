@@ -3,6 +3,7 @@ DPT neck reassembly and fusion building blocks.
 Mirror the HuggingFace DPTReassembleStage + conv stem.
 """
 from dataclasses import dataclass
+import os
 from typing import Any, Sequence
 from typing import Sequence
 import torch
@@ -41,6 +42,7 @@ class ReassembleLayer:
         self.resize_w_prepared = None
         self.resize_b_prepared = None
         self.resize_conv_config = ttnn.Conv2dConfig(config_tensors_in_dram=True)
+        self.use_torch_resize = os.getenv("DPT_FORCE_TORCH_DECONV", "1") == "1"
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
         device = x_2d.device()
@@ -106,8 +108,36 @@ class ReassembleLayer:
 
         # learned resize (conv / deconv) if available, otherwise fallback to scale factor
         if self.resize_w is not None:
+            # helper so we can bail out of device deconv when L1_SMALL is unavailable
+            def torch_deconv(input_y):
+                y_torch = ttnn.to_torch(input_y).permute(0, 3, 1, 2)  # NHWC -> NCHW
+                if isinstance(self.resize_w_src, ttnn.Tensor):
+                    w_torch = ttnn.to_torch(self.resize_w_src)
+                else:
+                    w_torch = torch.from_numpy(self.resize_w_src)
+                b_torch = None
+                if self.resize_b_src is not None:
+                    if isinstance(self.resize_b_src, ttnn.Tensor):
+                        b_torch = ttnn.to_torch(self.resize_b_src)
+                    else:
+                        b_torch = torch.from_numpy(self.resize_b_src)
+                out_torch = F.conv_transpose2d(
+                    y_torch,
+                    w_torch,
+                    bias=b_torch,
+                    stride=int(self.factor),
+                    padding=0,
+                    output_padding=0,
+                    dilation=1,
+                )
+                out_torch = out_torch.permute(0, 2, 3, 1).contiguous()
+                return ttnn.from_torch(out_torch, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
+
             kH, kW = self.resize_w.shape[2], self.resize_w.shape[3]
             if self.factor > 1:
+                if self.use_torch_resize:
+                    y = torch_deconv(y)
+                    return y
                 if self.resize_w_prepared is None or self.resize_w_prepared.device() != device:
                     w_src = self.resize_w_src
                     if isinstance(w_src, ttnn.Tensor):
@@ -172,28 +202,7 @@ class ReassembleLayer:
                     # Some N300 builds have zero-sized L1_SMALL; fall back to torch conv_transpose2d on host.
                     if "L1_SMALL" not in str(e) and "Out of Memory" not in str(e):
                         raise
-                    y_torch = ttnn.to_torch(y).permute(0, 3, 1, 2)  # NHWC -> NCHW
-                    if isinstance(self.resize_w_src, ttnn.Tensor):
-                        w_torch = ttnn.to_torch(self.resize_w_src)
-                    else:
-                        w_torch = torch.from_numpy(self.resize_w_src)
-                    b_torch = None
-                    if self.resize_b_src is not None:
-                        if isinstance(self.resize_b_src, ttnn.Tensor):
-                            b_torch = ttnn.to_torch(self.resize_b_src)
-                        else:
-                            b_torch = torch.from_numpy(self.resize_b_src)
-                    out_torch = F.conv_transpose2d(
-                        y_torch,
-                        w_torch,
-                        bias=b_torch,
-                        stride=int(self.factor),
-                        padding=0,
-                        output_padding=0,
-                        dilation=1,
-                    )
-                    out_torch = out_torch.permute(0, 2, 3, 1).contiguous()
-                    y = ttnn.from_torch(out_torch, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
+                    y = torch_deconv(y)
             else:
                 stride = int(1 / self.factor)
                 y = ttnn.conv2d(
