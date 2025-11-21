@@ -31,10 +31,14 @@ class ReassembleLayer:
         self.proj_b_src = proj_b
         self.proj_w = proj_w
         self.proj_b = proj_b
+        self.resize_w_src = resize_w
+        self.resize_b_src = resize_b
         self.resize_w = resize_w
         self.resize_b = resize_b
         self.dtype = dtype
         self.proj_w_linear = None
+        self.resize_w_prepared = None
+        self.resize_b_prepared = None
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
         device = x_2d.device()
@@ -102,10 +106,40 @@ class ReassembleLayer:
         if self.resize_w is not None:
             kH, kW = self.resize_w.shape[2], self.resize_w.shape[3]
             if self.factor > 1:
+                if self.resize_w_prepared is None or self.resize_w_prepared.device() != device:
+                    w_src = self.resize_w_src
+                    if isinstance(w_src, ttnn.Tensor):
+                        w_host = w_src
+                    else:
+                        w_host = ttnn.from_torch(
+                            torch.from_numpy(w_src).contiguous(),
+                            dtype=self.dtype,
+                            layout=ttnn.ROW_MAJOR_LAYOUT,
+                        )
+                    self.resize_w_prepared = ttnn.prepare_conv_transpose2d_weights(
+                        weight_tensor=w_host,
+                        input_memory_config=ttnn.L1_MEMORY_CONFIG,
+                        input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                        in_channels=self.resize_w_src.shape[0],
+                        out_channels=self.resize_w_src.shape[1],
+                        batch_size=y.shape[0],
+                        input_height=y.shape[1],
+                        input_width=y.shape[2],
+                        kernel_size=(kH, kW),
+                        stride=(int(self.factor), int(self.factor)),
+                        padding=(0, 0),
+                        output_padding=(0, 0),
+                        dilation=(1, 1),
+                        has_bias=self.resize_b_src is not None,
+                        groups=1,
+                        device=device,
+                        input_dtype=self.dtype,
+                        output_dtype=self.dtype,
+                    )
                 # use conv_transpose for upsample
                 res = ttnn.conv_transpose2d(
                     input_tensor=y,
-                    weight_tensor=self.resize_w,
+                    weight_tensor=self.resize_w_prepared,
                     bias_tensor=None,
                     device=device,
                     in_channels=self.resize_w.shape[0],
@@ -121,7 +155,6 @@ class ReassembleLayer:
                     groups=1,
                     mirror_kernel=True,
                     return_output_dim=True,
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
                     dtype=self.dtype,
                 )
                 y = res[0]
