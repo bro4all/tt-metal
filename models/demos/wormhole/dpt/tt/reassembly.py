@@ -43,6 +43,7 @@ class ReassembleLayer:
         self.resize_b_prepared = None
         self.resize_conv_config = ttnn.Conv2dConfig(config_tensors_in_dram=True)
         self.use_torch_resize = os.getenv("DPT_FORCE_TORCH_DECONV", "1") == "1"
+        self.force_torch_neck = os.getenv("DPT_FORCE_TORCH_NECK", "0") == "1"
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
         device = x_2d.device()
@@ -53,6 +54,57 @@ class ReassembleLayer:
             return ttnn.from_torch(
                 torch.from_numpy(tensor).contiguous(), dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
             )
+
+        if self.force_torch_neck:
+            # Run projection + resize on host for debugging/compat.
+            xt = ttnn.to_torch(x_2d).float()  # NHWC
+            xt = xt.permute(0, 3, 1, 2).contiguous()  # NCHW
+
+            def w_to_torch(w_src):
+                if w_src is None:
+                    return None
+                if isinstance(w_src, ttnn.Tensor):
+                    return ttnn.to_torch(w_src).float()
+                return torch.from_numpy(w_src).float()
+
+            proj_w_t = w_to_torch(self.proj_w_src)
+            proj_b_t = w_to_torch(self.proj_b_src)
+            kH, kW = proj_w_t.shape[2], proj_w_t.shape[3]
+            y = torch.nn.functional.conv2d(
+                xt, proj_w_t, bias=proj_b_t, stride=1, padding=0, dilation=1, groups=1
+            )
+
+            # Resize branch
+            if self.resize_w_src is not None:
+                kH, kW = self.resize_w_src.shape[2], self.resize_w_src.shape[3]
+                if self.factor > 1:
+                    y = torch.nn.functional.conv_transpose2d(
+                        y,
+                        w_to_torch(self.resize_w_src),
+                        bias=w_to_torch(self.resize_b_src),
+                        stride=int(self.factor),
+                        padding=0,
+                        output_padding=0,
+                        dilation=1,
+                    )
+                else:
+                    stride = int(1 / self.factor)
+                    y = torch.nn.functional.conv2d(
+                        y,
+                        w_to_torch(self.resize_w_src),
+                        bias=w_to_torch(self.resize_b_src),
+                        stride=stride,
+                        padding=1,
+                        dilation=1,
+                    )
+            else:
+                # simple scale when no learned resize
+                if self.factor != 1:
+                    y = torch.nn.functional.interpolate(
+                        y, scale_factor=self.factor, mode="bilinear", align_corners=False
+                    )
+            y = y.permute(0, 2, 3, 1).contiguous()  # back to NHWC
+            return ttnn.from_torch(y, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
 
         # lazily materialize weights on device
         self.proj_w = to_tt(self.proj_w)
@@ -336,6 +388,7 @@ class ReassemblyStage:
         """
         outputs = []
         h = w = patch_hw
+        force_torch_neck = os.getenv("DPT_FORCE_TORCH_NECK", "0") == "1"
         for i, tokens in enumerate(tapped_tokens):
             patches = self._apply_readout(tokens, i)  # (B, seq, hidden)
             # Ensure row-major layout before reshaping sequence back to spatial grid.
@@ -347,50 +400,68 @@ class ReassemblyStage:
             # fuse conv to common hidden size
             conv_w, conv_b = self.convs[i]
             device = feat.device()
-            if not isinstance(conv_w, ttnn.Tensor):
-                conv_w = ttnn.from_torch(
-                    torch.from_numpy(conv_w).contiguous(),
+            if force_torch_neck:
+                # host fusion conv for debugging
+                if not isinstance(conv_w, ttnn.Tensor):
+                    conv_w_t = torch.from_numpy(conv_w).float()
+                else:
+                    conv_w_t = ttnn.to_torch(conv_w).float()
+                bias_t = torch.from_numpy(conv_b).float() if (conv_b is not None and not isinstance(conv_b, ttnn.Tensor)) else (ttnn.to_torch(conv_b).float() if isinstance(conv_b, ttnn.Tensor) else None)
+                feat_t = ttnn.to_torch(feat).float().permute(0, 3, 1, 2)  # NCHW
+                fused_t = torch.nn.functional.conv2d(
+                    feat_t, conv_w_t, bias=bias_t, stride=1, padding=1, dilation=1, groups=1
+                )
+                fused = ttnn.from_torch(
+                    fused_t.permute(0, 2, 3, 1).contiguous(),
                     dtype=self.cfg.dtype,
                     layout=ttnn.ROW_MAJOR_LAYOUT,
                     device=device,
                 )
-                self.convs[i] = (conv_w, conv_b)
-            if conv_b is not None and not isinstance(conv_b, ttnn.Tensor):
-                conv_b = ttnn.from_torch(
-                    torch.from_numpy(conv_b).contiguous(),
-                    dtype=self.cfg.dtype,
-                    layout=ttnn.ROW_MAJOR_LAYOUT,
+            else:
+                if not isinstance(conv_w, ttnn.Tensor):
+                    conv_w = ttnn.from_torch(
+                        torch.from_numpy(conv_w).contiguous(),
+                        dtype=self.cfg.dtype,
+                        layout=ttnn.ROW_MAJOR_LAYOUT,
+                        device=device,
+                    )
+                    self.convs[i] = (conv_w, conv_b)
+                if conv_b is not None and not isinstance(conv_b, ttnn.Tensor):
+                    conv_b = ttnn.from_torch(
+                        torch.from_numpy(conv_b).contiguous(),
+                        dtype=self.cfg.dtype,
+                        layout=ttnn.ROW_MAJOR_LAYOUT,
+                        device=device,
+                    )
+                    self.convs[i] = (conv_w, conv_b)
+                kH, kW = conv_w.shape[2], conv_w.shape[3]
+                fused = ttnn.conv2d(
+                    input_tensor=feat,
+                    weight_tensor=conv_w,
+                    bias_tensor=None,
                     device=device,
-                )
-                self.convs[i] = (conv_w, conv_b)
-            kH, kW = conv_w.shape[2], conv_w.shape[3]
-            fused = ttnn.conv2d(
-                input_tensor=feat,
-                weight_tensor=conv_w,
-                bias_tensor=None,
-                device=device,
-                in_channels=conv_w.shape[1],
-                out_channels=conv_w.shape[0],
-                batch_size=feat.shape[0],
-                input_height=feat.shape[1],
-                input_width=feat.shape[2],
-                kernel_size=(kH, kW),
-                stride=(1, 1),
-                padding=(1, 1),
-                dilation=(1, 1),
-                groups=1,
-                memory_config=self.fuse_memory_config,
-                conv_config=self.fuse_conv_config,
-                dtype=self.cfg.dtype,
-            )
-            if conv_b is not None:
-                bias = conv_b if isinstance(conv_b, ttnn.Tensor) else ttnn.from_torch(
-                    torch.from_numpy(conv_b).contiguous(),
+                    in_channels=conv_w.shape[1],
+                    out_channels=conv_w.shape[0],
+                    batch_size=feat.shape[0],
+                    input_height=feat.shape[1],
+                    input_width=feat.shape[2],
+                    kernel_size=(kH, kW),
+                    stride=(1, 1),
+                    padding=(1, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    memory_config=self.fuse_memory_config,
+                    conv_config=self.fuse_conv_config,
                     dtype=self.cfg.dtype,
-                    layout=ttnn.ROW_MAJOR_LAYOUT,
-                    device=device,
                 )
-                bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
-                fused = ttnn.add(fused, bias)
+                if conv_b is not None:
+                    bias = conv_b if isinstance(conv_b, ttnn.Tensor) else ttnn.from_torch(
+                        torch.from_numpy(conv_b).contiguous(),
+                        dtype=self.cfg.dtype,
+                        layout=ttnn.ROW_MAJOR_LAYOUT,
+                        device=device,
+                    )
+                    bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                    fused = ttnn.add(fused, bias)
             outputs.append(fused)
         return outputs
