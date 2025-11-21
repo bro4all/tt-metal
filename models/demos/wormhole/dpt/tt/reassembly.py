@@ -120,6 +120,7 @@ class ReassembleLayer:
                         weight_tensor=w_host,
                         input_memory_config=ttnn.L1_MEMORY_CONFIG,
                         input_layout=ttnn.ROW_MAJOR_LAYOUT,
+                        weights_format="IOHW",
                         in_channels=self.resize_w_src.shape[0],
                         out_channels=self.resize_w_src.shape[1],
                         batch_size=y.shape[0],
