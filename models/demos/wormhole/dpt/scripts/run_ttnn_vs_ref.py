@@ -90,7 +90,8 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                 device=device,
             )
             tt_depth = model(tt_input)
-            depth_np = upsample_to_original(ttnn.to_torch(tt_depth), orig_hw)
+            depth_torch = tt_depth if isinstance(tt_depth, torch.Tensor) else ttnn.to_torch(tt_depth)
+            depth_np = upsample_to_original(depth_torch, orig_hw)
 
             stem = img_path.stem
             if save_dir:
