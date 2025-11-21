@@ -338,6 +338,8 @@ class ReassemblyStage:
         h = w = patch_hw
         for i, tokens in enumerate(tapped_tokens):
             patches = self._apply_readout(tokens, i)  # (B, seq, hidden)
+            # Ensure row-major layout before reshaping sequence back to spatial grid.
+            patches = ttnn.to_layout(patches, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
             # reshape sequence to spatial grid
             feat = ttnn.reshape(patches, (patches.shape[0], h, w, self.cfg.hidden_size))
             # project + resize
