@@ -248,6 +248,9 @@ class ReassemblyStage:
         self.readout_b = []
         self.layers = []
         self.convs = []
+        # Avoid L1_SMALL usage on N300 by keeping conv config tensors/output in DRAM.
+        self.fuse_conv_config = ttnn.Conv2dConfig(config_tensors_in_dram=True)
+        self.fuse_memory_config = ttnn.DRAM_MEMORY_CONFIG
 
         # build per-stage modules
         for i, (chan, factor) in enumerate(zip(cfg.neck_hidden_sizes, cfg.reassemble_factors)):
@@ -353,6 +356,8 @@ class ReassemblyStage:
                 padding=(1, 1),
                 dilation=(1, 1),
                 groups=1,
+                memory_config=self.fuse_memory_config,
+                conv_config=self.fuse_conv_config,
                 dtype=self.cfg.dtype,
             )
             if conv_b is not None:
