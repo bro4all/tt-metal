@@ -52,8 +52,11 @@ class ResidualConvUnit:
                 layout=ttnn.ROW_MAJOR_LAYOUT,
                 device=device,
             )
-        x = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
-        y = ttnn.relu(x)
+        # relu expects TILE layout; conv prefers ROW_MAJOR. Hop to TILE for relu, then back.
+        x_rm = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+        x_tile = ttnn.to_layout(x_rm, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+        y = ttnn.relu(x_tile)
+        y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.w1,
@@ -71,7 +74,9 @@ class ResidualConvUnit:
             groups=1,
             dtype=self.cfg.dtype,
         )
-        y = ttnn.relu(y)
+        y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+        y = ttnn.relu(y_tile)
+        y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.w2,
@@ -89,7 +94,7 @@ class ResidualConvUnit:
             groups=1,
             dtype=self.cfg.dtype,
         )
-        return ttnn.add(y, x)
+        return ttnn.add(y, x_rm)
 
 
 class FeatureFusionBlock:
@@ -121,7 +126,8 @@ class FeatureFusionBlock:
                 layout=ttnn.ROW_MAJOR_LAYOUT,
                 device=device,
             )
-        x = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+        # Keep fusion activations in ROW_MAJOR; RCUs handle relu layout hops internally.
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         if residual is not None:
             # align spatial shapes if needed
             if hasattr(residual, "shape") and hasattr(x, "shape"):
@@ -129,7 +135,7 @@ class FeatureFusionBlock:
                 xh, xw = x.shape[1], x.shape[2]
                 if (rh != xh) or (rw != xw):
                     residual = ttnn.upsample(residual, scale_factor=(xh / rh, xw / rw))
-            residual = ttnn.to_layout(residual, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+            residual = ttnn.to_layout(residual, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
             x = ttnn.add(x, self.rcu1(residual))
 
         x = self.rcu2(x)
@@ -244,19 +250,18 @@ class FusionHead:
         self.conv3_w = to_tt(self.conv3_w)
         self.conv3_b = to_tt(self.conv3_b)
 
-        x = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
-
         if self.projection_w is not None:
+            x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
             x = ttnn.conv2d(
-            input_tensor=x,
-            weight_tensor=self.projection_w,
-            bias_tensor=self.projection_b,
-            device=device,
-            in_channels=self.projection_w.shape[1],
-            out_channels=self.projection_w.shape[0],
-            batch_size=x.shape[0],
-            input_height=x.shape[1],
-            input_width=x.shape[2],
+                input_tensor=x,
+                weight_tensor=self.projection_w,
+                bias_tensor=self.projection_b,
+                device=device,
+                in_channels=self.projection_w.shape[1],
+                out_channels=self.projection_w.shape[0],
+                batch_size=x.shape[0],
+                input_height=x.shape[1],
+                input_width=x.shape[2],
                 kernel_size=(self.projection_w.shape[2], self.projection_w.shape[3]),
                 stride=(1, 1),
                 padding=(1, 1),
@@ -264,7 +269,11 @@ class FusionHead:
                 groups=1,
                 dtype=self.cfg.dtype,
             )
-            x = ttnn.relu(x)
+            x_tile = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+            x = ttnn.relu(x_tile)
+            x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
+
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
 
         y = ttnn.conv2d(
             input_tensor=x,
@@ -301,7 +310,9 @@ class FusionHead:
             groups=1,
             dtype=self.cfg.dtype,
         )
-        y = ttnn.relu(y)
+        y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+        y = ttnn.relu(y_tile)
+        y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.conv3_w,
@@ -319,5 +330,7 @@ class FusionHead:
             groups=1,
             dtype=self.cfg.dtype,
         )
-        y = ttnn.relu(y)  # non-negative depth
+        y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
+        y = ttnn.relu(y_tile)  # non-negative depth
+        y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         return y
