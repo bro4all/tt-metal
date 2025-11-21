@@ -26,11 +26,15 @@ class ReassembleLayer:
     def __init__(self, out_channels, factor, proj_w, proj_b, resize_w=None, resize_b=None, dtype=ttnn.bfloat16):
         self.out_channels = out_channels
         self.factor = factor
+        # Keep original numpy references so we can build linear weights for 1x1 convs.
+        self.proj_w_src = proj_w
+        self.proj_b_src = proj_b
         self.proj_w = proj_w
         self.proj_b = proj_b
         self.resize_w = resize_w
         self.resize_b = resize_b
         self.dtype = dtype
+        self.proj_w_linear = None
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
         device = x_2d.device()
@@ -50,26 +54,49 @@ class ReassembleLayer:
         # projection 1x1
         B, H, W, _ = x_2d.shape
         kH, kW = self.proj_w.shape[2], self.proj_w.shape[3]
-        y = ttnn.conv2d(
-            input_tensor=x_2d,
-            weight_tensor=self.proj_w,
-            device=device,
-            in_channels=self.proj_w.shape[1],
-            out_channels=self.proj_w.shape[0],
-            batch_size=B,
-            input_height=H,
-            input_width=W,
-            kernel_size=(kH, kW),
-            stride=(1, 1),
-            padding=(0, 0),
-            dilation=(1, 1),
-            groups=1,
-            dtype=self.dtype,
-        )
-        if self.proj_b is not None:
-            bias = self.proj_b if isinstance(self.proj_b, ttnn.Tensor) else to_tt(self.proj_b)
-            bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
-            y = ttnn.add(y, bias)
+        if kH == 1 and kW == 1:
+            # 1x1 projection is equivalent to a linear op; use linear to avoid conv matmul shape issues.
+            flat = ttnn.reshape(x_2d, (B * H * W, self.proj_w.shape[1]))
+            flat = ttnn.to_layout(flat, layout=ttnn.TILE_LAYOUT, dtype=self.dtype)
+
+            if self.proj_w_linear is None or self.proj_w_linear.device() != device:
+                w_src = self.proj_w_src
+                if isinstance(w_src, ttnn.Tensor):
+                    w_np = ttnn.to_torch(w_src).cpu().numpy()
+                else:
+                    w_np = w_src
+                w_mat = w_np.reshape(w_np.shape[0], -1).transpose()  # (Cin, Cout)
+                self.proj_w_linear = ttnn.from_torch(
+                    torch.from_numpy(w_mat).contiguous(),
+                    dtype=self.dtype,
+                    layout=ttnn.TILE_LAYOUT,
+                    device=device,
+                )
+
+            y = ttnn.linear(flat, self.proj_w_linear, bias=self.proj_b, dtype=self.dtype)
+            y = ttnn.reshape(y, (B, H, W, self.proj_w.shape[0]))
+            y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.dtype)
+        else:
+            y = ttnn.conv2d(
+                input_tensor=x_2d,
+                weight_tensor=self.proj_w,
+                device=device,
+                in_channels=self.proj_w.shape[1],
+                out_channels=self.proj_w.shape[0],
+                batch_size=B,
+                input_height=H,
+                input_width=W,
+                kernel_size=(kH, kW),
+                stride=(1, 1),
+                padding=(0, 0),
+                dilation=(1, 1),
+                groups=1,
+                dtype=self.dtype,
+            )
+            if self.proj_b is not None:
+                bias = self.proj_b if isinstance(self.proj_b, ttnn.Tensor) else to_tt(self.proj_b)
+                bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                y = ttnn.add(y, bias)
 
         # learned resize (conv / deconv) if available, otherwise fallback to scale factor
         if self.resize_w is not None:
