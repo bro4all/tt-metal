@@ -2,10 +2,12 @@
 Patch embedding for DPT (ViT-L/16).
 Takes NHWC input normalized to [-1,1], folds into patches, applies linear proj, and adds pos embeddings.
 """
+import os
 from dataclasses import dataclass
 from typing import Tuple, Any
 import numpy as np
 import torch
+import torch.nn.functional as F
 import ttnn  # type: ignore
 
 
@@ -24,14 +26,29 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
     - prepend CLS token
     - add positional embeddings (includes CLS position)
     """
-    # x: NHWC
+    # Optional torch fallback for correctness (avoids ambiguity in ttnn.fold ordering).
+    use_torch = os.getenv("DPT_FORCE_TORCH_PATCH", "1") == "1"
+    device = x.device()
+    if use_torch:
+        # x comes in NHWC; convert to NCHW for torch conv2d
+        x_t = ttnn.to_torch(x).permute(0, 3, 1, 2).float()
+        w_t = proj_w if isinstance(proj_w, torch.Tensor) else torch.from_numpy(proj_w)
+        b_t = proj_b if isinstance(proj_b, torch.Tensor) else torch.from_numpy(proj_b)
+        # conv stride == patch size replicates ViT patch projection
+        feat = F.conv2d(x_t, w_t, bias=b_t, stride=cfg.patch_size, padding=0)
+        tokens_t = feat.flatten(2).transpose(1, 2)  # (B, seq, hidden)
+        cls_t = torch.from_numpy(cls_token).repeat(tokens_t.shape[0], 1, 1).to(tokens_t)
+        tokens_t = torch.cat([cls_t, tokens_t], dim=1)
+        pos_t = torch.from_numpy(pos_embed).to(tokens_t)
+        tokens_t = tokens_t + pos_t
+        return ttnn.from_torch(tokens_t.contiguous(), dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=device)
+
+    # Default TTNN path (uses fold + linear)
     patch_size = cfg.patch_size
     # fold spatial into sequence of flattened patches
     folded = ttnn.fold(x, stride_h=patch_size, stride_w=patch_size)
     folded = ttnn.to_layout(folded, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
 
-    # Ensure weights live on device as TTNN tensors
-    device = x.device()
     if not isinstance(proj_b, ttnn.Tensor):
         proj_b = ttnn.from_torch(
             torch.from_numpy(proj_b).contiguous(),
