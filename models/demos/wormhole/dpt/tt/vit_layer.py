@@ -111,6 +111,10 @@ class ViTLayerTTNN:
         q = ttnn.transpose(q, 1, 2)  # B, heads, seq, head_dim
         k = ttnn.transpose(k, 1, 2)
         v = ttnn.transpose(v, 1, 2)
+        # Ensure tile layout for attention matmuls
+        q = ttnn.to_layout(q, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
+        k = ttnn.to_layout(k, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
+        v = ttnn.to_layout(v, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
 
         # scaled dot-product attention over sequence dimension
         attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, heads, seq, seq]
