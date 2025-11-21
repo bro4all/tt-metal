@@ -251,7 +251,7 @@ class FeatureFusionStage:
                 x = rcu(x, block.rcu2.w1, block.rcu2.b1, block.rcu2.w2, block.rcu2.b2)
                 # upsample by factor 2
                 x = torch.nn.functional.interpolate(
-                    x.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=False
+                    x.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=True
                 ).permute(0, 2, 3, 1)
                 x = conv_nhwc(x, block.proj_w, block.proj_b, padding=0)
                 fused_t = x
@@ -324,7 +324,7 @@ class FusionHead:
                 padding=1,
             ).permute(0, 2, 3, 1)
             y = torch.nn.functional.interpolate(
-                y.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=False
+                y.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=True
             ).permute(0, 2, 3, 1)
             y = torch.nn.functional.conv2d(
                 y.permute(0, 3, 1, 2),
