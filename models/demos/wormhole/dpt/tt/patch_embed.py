@@ -20,22 +20,18 @@ class PatchEmbedConfig:
 def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: PatchEmbedConfig) -> ttnn.Tensor:
     """
     Match the DPT embedding stack:
-    - conv-style patch projection
+    - conv-style patch projection (implemented via fold + linear)
     - prepend CLS token
     - add positional embeddings (includes CLS position)
     """
     # x: NHWC
     patch_size = cfg.patch_size
+    # fold spatial into sequence of flattened patches
+    folded = ttnn.fold(x, stride_h=patch_size, stride_w=patch_size)
+    folded = ttnn.to_layout(folded, layout=ttnn.TILE_LAYOUT, dtype=cfg.dtype)
 
     # Ensure weights live on device as TTNN tensors
     device = x.device()
-    if not isinstance(proj_w, ttnn.Tensor):
-        proj_w = ttnn.from_torch(
-            torch.from_numpy(proj_w).contiguous(),
-            dtype=cfg.dtype,
-            layout=ttnn.ROW_MAJOR_LAYOUT,
-            device=device,
-        )
     if not isinstance(proj_b, ttnn.Tensor):
         proj_b = ttnn.from_torch(
             torch.from_numpy(proj_b).contiguous(),
@@ -44,28 +40,15 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
             device=device,
         )
 
-    x_rm = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=cfg.dtype)
-    tokens = ttnn.conv2d(
-        input_tensor=x_rm,
-        weight_tensor=proj_w,
-        bias_tensor=None,
-        device=device,
-        in_channels=proj_w.shape[1],
-        out_channels=proj_w.shape[0],
-        batch_size=x_rm.shape[0],
-        input_height=x_rm.shape[1],
-        input_width=x_rm.shape[2],
-        kernel_size=(patch_size, patch_size),
-        stride=(patch_size, patch_size),
-        padding=(0, 0),
-        dilation=(1, 1),
-        groups=1,
-        dtype=cfg.dtype,
-    )
-    # add bias manually to avoid matmul+bias batched limitation
-    if proj_b is not None:
-        proj_b_broadcast = ttnn.reshape(proj_b, (1, 1, 1, proj_b.shape[0]))
-        tokens = ttnn.add(tokens, proj_b_broadcast)
+    # linear projection expects weight [in=3*patch*patch, out=hidden]
+    if isinstance(proj_w, ttnn.Tensor):
+        proj_w_tt = proj_w
+    else:
+        proj_w_flat = torch.from_numpy(proj_w).reshape(cfg.hidden_size, -1).t().contiguous()
+        proj_w_tt = ttnn.from_torch(
+            proj_w_flat, dtype=cfg.dtype, layout=ttnn.TILE_LAYOUT, device=device
+        )
+    tokens = ttnn.linear(folded, proj_w_tt, bias=proj_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
 
     # flatten spatial (H/ps, W/ps) -> sequence
     patch_grid = cfg.image_size // patch_size
