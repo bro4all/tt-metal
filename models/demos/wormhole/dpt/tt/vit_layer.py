@@ -104,17 +104,22 @@ class ViTLayerTTNN:
         v = ttnn.slice(
             qkv, (0, 0, 2, 0), (qkv.shape[0], seq_len, 3, cfg.hidden_size), memory_config=ttnn.DRAM_MEMORY_CONFIG
         )
+        # reshape to B, heads, seq, head_dim for proper attention computation
         q = ttnn.reshape(q, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
         k = ttnn.reshape(k, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
         v = ttnn.reshape(v, (qkv.shape[0], seq_len, cfg.num_heads, head_dim))
+        q = ttnn.transpose(q, 1, 2)  # B, heads, seq, head_dim
+        k = ttnn.transpose(k, 1, 2)
+        v = ttnn.transpose(v, 1, 2)
 
-        # scaled dot-product attention
-        attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, seq, heads, seq]
+        # scaled dot-product attention over sequence dimension
+        attn_scores = ttnn.matmul(q, ttnn.transpose(k, -1, -2))  # shape [B, heads, seq, seq]
         attn_scores = ttnn.multiply(attn_scores, 1.0 / (head_dim**0.5))
         attn_probs = ttnn.softmax(attn_scores, dim=-1)
-        context = ttnn.matmul(attn_probs, v)  # [B, seq, heads, head_dim]
+        context = ttnn.matmul(attn_probs, v)  # [B, heads, seq, head_dim]
 
-        # merge heads
+        # merge heads back to [B, seq, hidden]
+        context = ttnn.transpose(context, 1, 2)  # B, seq, heads, head_dim
         context = ttnn.reshape(context, (-1, seq_len, cfg.hidden_size))
         attn_out = ttnn.linear(context, self.out_w, bias=self.out_b, dtype=cfg.dtype, memory_config=ttnn.L1_MEMORY_CONFIG)
 
