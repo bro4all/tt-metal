@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 from typing import Sequence
 import torch
+import torch.nn.functional as F
 import ttnn  # type: ignore
 
 
@@ -139,33 +140,60 @@ class ReassembleLayer:
                         conv_config=self.resize_conv_config,
                     )
                 # use conv_transpose for upsample
-                res = ttnn.conv_transpose2d(
-                    input_tensor=y,
-                    weight_tensor=self.resize_w_prepared,
-                    bias_tensor=None,
-                    device=device,
-                    in_channels=self.resize_w.shape[0],
-                    out_channels=self.resize_w.shape[1],
-                    batch_size=y.shape[0],
-                    input_height=y.shape[1],
-                    input_width=y.shape[2],
-                    kernel_size=(kH, kW),
-                    stride=(int(self.factor), int(self.factor)),
-                    padding=(0, 0),
-                    output_padding=(0, 0),
-                    dilation=(1, 1),
-                    groups=1,
-                    mirror_kernel=True,
-                    return_output_dim=True,
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    conv_config=self.resize_conv_config,
-                    dtype=self.dtype,
-                )
-                y = res[0]
-                if self.resize_b is not None:
-                    bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
-                    bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
-                    y = ttnn.add(y, bias)
+                try:
+                    res = ttnn.conv_transpose2d(
+                        input_tensor=y,
+                        weight_tensor=self.resize_w_prepared,
+                        bias_tensor=None,
+                        device=device,
+                        in_channels=self.resize_w.shape[0],
+                        out_channels=self.resize_w.shape[1],
+                        batch_size=y.shape[0],
+                        input_height=y.shape[1],
+                        input_width=y.shape[2],
+                        kernel_size=(kH, kW),
+                        stride=(int(self.factor), int(self.factor)),
+                        padding=(0, 0),
+                        output_padding=(0, 0),
+                        dilation=(1, 1),
+                        groups=1,
+                        mirror_kernel=True,
+                        return_output_dim=True,
+                        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                        conv_config=self.resize_conv_config,
+                        dtype=self.dtype,
+                    )
+                    y = res[0]
+                    if self.resize_b is not None:
+                        bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
+                        bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                        y = ttnn.add(y, bias)
+                except RuntimeError as e:
+                    # Some N300 builds have zero-sized L1_SMALL; fall back to torch conv_transpose2d on host.
+                    if "L1_SMALL" not in str(e) and "Out of Memory" not in str(e):
+                        raise
+                    y_torch = ttnn.to_torch(y).permute(0, 3, 1, 2)  # NHWC -> NCHW
+                    if isinstance(self.resize_w_src, ttnn.Tensor):
+                        w_torch = ttnn.to_torch(self.resize_w_src)
+                    else:
+                        w_torch = torch.from_numpy(self.resize_w_src)
+                    b_torch = None
+                    if self.resize_b_src is not None:
+                        if isinstance(self.resize_b_src, ttnn.Tensor):
+                            b_torch = ttnn.to_torch(self.resize_b_src)
+                        else:
+                            b_torch = torch.from_numpy(self.resize_b_src)
+                    out_torch = F.conv_transpose2d(
+                        y_torch,
+                        w_torch,
+                        bias=b_torch,
+                        stride=int(self.factor),
+                        padding=0,
+                        output_padding=0,
+                        dilation=1,
+                    )
+                    out_torch = out_torch.permute(0, 2, 3, 1).contiguous()
+                    y = ttnn.from_torch(out_torch, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
             else:
                 stride = int(1 / self.factor)
                 y = ttnn.conv2d(
