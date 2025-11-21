@@ -60,7 +60,7 @@ class ResidualConvUnit:
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.w1,
-            bias_tensor=self.b1,
+            bias_tensor=None,
             device=device,
             in_channels=self.w1.shape[1],
             out_channels=self.w1.shape[0],
@@ -74,13 +74,22 @@ class ResidualConvUnit:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.b1 is not None:
+            b1 = self.b1 if isinstance(self.b1, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.b1).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            b1 = ttnn.reshape(b1, (1, 1, 1, b1.shape[0]))
+            y = ttnn.add(y, b1)
         y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(y_tile)
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.w2,
-            bias_tensor=self.b2,
+            bias_tensor=None,
             device=device,
             in_channels=self.w2.shape[1],
             out_channels=self.w2.shape[0],
@@ -94,6 +103,15 @@ class ResidualConvUnit:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.b2 is not None:
+            b2 = self.b2 if isinstance(self.b2, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.b2).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            b2 = ttnn.reshape(b2, (1, 1, 1, b2.shape[0]))
+            y = ttnn.add(y, b2)
         return ttnn.add(y, x_rm)
 
 
@@ -143,7 +161,7 @@ class FeatureFusionBlock:
         x = ttnn.conv2d(
             input_tensor=x,
             weight_tensor=self.proj_w,
-            bias_tensor=self.proj_b,
+            bias_tensor=None,
             device=device,
             in_channels=self.proj_w.shape[1],
             out_channels=self.proj_w.shape[0],
@@ -157,6 +175,15 @@ class FeatureFusionBlock:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.proj_b is not None:
+            pb = self.proj_b if isinstance(self.proj_b, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.proj_b).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            pb = ttnn.reshape(pb, (1, 1, 1, pb.shape[0]))
+            x = ttnn.add(x, pb)
         return x
 
 
@@ -255,7 +282,7 @@ class FusionHead:
             x = ttnn.conv2d(
                 input_tensor=x,
                 weight_tensor=self.projection_w,
-                bias_tensor=self.projection_b,
+                bias_tensor=None,
                 device=device,
                 in_channels=self.projection_w.shape[1],
                 out_channels=self.projection_w.shape[0],
@@ -269,6 +296,15 @@ class FusionHead:
                 groups=1,
                 dtype=self.cfg.dtype,
             )
+            if self.projection_b is not None:
+                pb = self.projection_b if isinstance(self.projection_b, ttnn.Tensor) else ttnn.from_torch(
+                    torch.from_numpy(self.projection_b).contiguous(),
+                    dtype=self.cfg.dtype,
+                    layout=ttnn.ROW_MAJOR_LAYOUT,
+                    device=device,
+                )
+                pb = ttnn.reshape(pb, (1, 1, 1, pb.shape[0]))
+                x = ttnn.add(x, pb)
             x_tile = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
             x = ttnn.relu(x_tile)
             x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
@@ -278,7 +314,7 @@ class FusionHead:
         y = ttnn.conv2d(
             input_tensor=x,
             weight_tensor=self.conv1_w,
-            bias_tensor=self.conv1_b,
+            bias_tensor=None,
             device=device,
             in_channels=self.conv1_w.shape[1],
             out_channels=self.conv1_w.shape[0],
@@ -292,11 +328,20 @@ class FusionHead:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.conv1_b is not None:
+            b = self.conv1_b if isinstance(self.conv1_b, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.conv1_b).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
+            y = ttnn.add(y, b)
         y = ttnn.upsample(y, scale_factor=(2.0, 2.0))
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.conv2_w,
-            bias_tensor=self.conv2_b,
+            bias_tensor=None,
             device=device,
             in_channels=self.conv2_w.shape[1],
             out_channels=self.conv2_w.shape[0],
@@ -310,13 +355,22 @@ class FusionHead:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.conv2_b is not None:
+            b = self.conv2_b if isinstance(self.conv2_b, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.conv2_b).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
+            y = ttnn.add(y, b)
         y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(y_tile)
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.conv2d(
             input_tensor=y,
             weight_tensor=self.conv3_w,
-            bias_tensor=self.conv3_b,
+            bias_tensor=None,
             device=device,
             in_channels=self.conv3_w.shape[1],
             out_channels=self.conv3_w.shape[0],
@@ -330,6 +384,15 @@ class FusionHead:
             groups=1,
             dtype=self.cfg.dtype,
         )
+        if self.conv3_b is not None:
+            b = self.conv3_b if isinstance(self.conv3_b, ttnn.Tensor) else ttnn.from_torch(
+                torch.from_numpy(self.conv3_b).contiguous(),
+                dtype=self.cfg.dtype,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+            )
+            b = ttnn.reshape(b, (1, 1, 1, b.shape[0]))
+            y = ttnn.add(y, b)
         y_tile = ttnn.to_layout(y, layout=ttnn.TILE_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(y_tile)  # non-negative depth
         y = ttnn.to_layout(y, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
