@@ -141,7 +141,8 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                     if feats_tt and feats_th:
                         neck_pccs = []
                         for tt, th in zip(feats_tt, feats_th):
-                            tt_np = ttnn.to_torch(tt).float().cpu().numpy().ravel()
+                            tt_t = tt if isinstance(tt, torch.Tensor) else ttnn.to_torch(tt)
+                            tt_np = tt_t.float().cpu().numpy().ravel()
                             th_np = th.cpu().numpy().ravel()
                             neck_pccs.append(pcc(tt_np, th_np))
                         stats["pcc_neck_mean"] = float(np.mean(neck_pccs))
@@ -150,7 +151,8 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                     if fused_tt and fused_th:
                         fused_pccs = []
                         for tt, th in zip(fused_tt, fused_th):
-                            tt_np = ttnn.to_torch(tt).float().cpu().numpy().ravel()
+                            tt_t = tt if isinstance(tt, torch.Tensor) else ttnn.to_torch(tt)
+                            tt_np = tt_t.float().cpu().numpy().ravel()
                             th_np = th.cpu().numpy().ravel()
                             fused_pccs.append(pcc(tt_np, th_np))
                         stats["pcc_fused_mean"] = float(np.mean(fused_pccs))
