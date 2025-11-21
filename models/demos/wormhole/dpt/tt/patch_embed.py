@@ -48,7 +48,7 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
     tokens = ttnn.conv2d(
         input_tensor=x_rm,
         weight_tensor=proj_w,
-        bias_tensor=proj_b,
+        bias_tensor=None,
         device=device,
         in_channels=proj_w.shape[1],
         out_channels=proj_w.shape[0],
@@ -62,6 +62,10 @@ def patch_embed(x: ttnn.Tensor, proj_w, proj_b, pos_embed, cls_token, cfg: Patch
         groups=1,
         dtype=cfg.dtype,
     )
+    # add bias manually to avoid matmul+bias batched limitation
+    if proj_b is not None:
+        proj_b_broadcast = ttnn.reshape(proj_b, (1, 1, 1, proj_b.shape[0]))
+        tokens = ttnn.add(tokens, proj_b_broadcast)
 
     # flatten spatial (H/ps, W/ps) -> sequence
     patch_grid = cfg.image_size // patch_size
