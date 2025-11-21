@@ -118,7 +118,7 @@ class ReassembleLayer:
                         )
                     self.resize_w_prepared = ttnn.prepare_conv_transpose2d_weights(
                         weight_tensor=w_host,
-                        input_memory_config=ttnn.L1_MEMORY_CONFIG,
+                        input_memory_config=ttnn.DRAM_MEMORY_CONFIG,
                         input_layout=ttnn.ROW_MAJOR_LAYOUT,
                         weights_format="IOHW",
                         in_channels=self.resize_w_src.shape[0],
