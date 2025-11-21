@@ -39,6 +39,7 @@ class ReassembleLayer:
         self.proj_w_linear = None
         self.resize_w_prepared = None
         self.resize_b_prepared = None
+        self.resize_conv_config = ttnn.Conv2dConfig(config_tensors_in_dram=True)
 
     def __call__(self, x_2d: ttnn.Tensor) -> ttnn.Tensor:
         device = x_2d.device()
@@ -118,7 +119,7 @@ class ReassembleLayer:
                         )
                     self.resize_w_prepared = ttnn.prepare_conv_transpose2d_weights(
                         weight_tensor=w_host,
-                        input_memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                        input_memory_config=ttnn.L1_MEMORY_CONFIG,
                         input_layout=ttnn.ROW_MAJOR_LAYOUT,
                         weights_format="IOHW",
                         in_channels=self.resize_w_src.shape[0],
@@ -135,6 +136,7 @@ class ReassembleLayer:
                         device=device,
                         input_dtype=self.dtype,
                         output_dtype=self.dtype,
+                        conv_config=self.resize_conv_config,
                     )
                 # use conv_transpose for upsample
                 res = ttnn.conv_transpose2d(
@@ -156,6 +158,7 @@ class ReassembleLayer:
                     mirror_kernel=True,
                     return_output_dim=True,
                     memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                    conv_config=self.resize_conv_config,
                     dtype=self.dtype,
                 )
                 y = res[0]
