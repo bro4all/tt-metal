@@ -111,16 +111,19 @@ class ReassembleLayer:
             # helper so we can bail out of device deconv when L1_SMALL is unavailable
             def torch_deconv(input_y):
                 y_torch = ttnn.to_torch(input_y).permute(0, 3, 1, 2)  # NHWC -> NCHW
+                # Torch conv_transpose2d requires input/weights dtypes to match; our weights are float32.
+                # Upcast activations to float32 to avoid bfloat16/float32 mismatch on CPU fallback.
+                y_torch = y_torch.float()
                 if isinstance(self.resize_w_src, ttnn.Tensor):
-                    w_torch = ttnn.to_torch(self.resize_w_src)
+                    w_torch = ttnn.to_torch(self.resize_w_src).float()
                 else:
-                    w_torch = torch.from_numpy(self.resize_w_src)
+                    w_torch = torch.from_numpy(self.resize_w_src).float()
                 b_torch = None
                 if self.resize_b_src is not None:
                     if isinstance(self.resize_b_src, ttnn.Tensor):
-                        b_torch = ttnn.to_torch(self.resize_b_src)
+                        b_torch = ttnn.to_torch(self.resize_b_src).float()
                     else:
-                        b_torch = torch.from_numpy(self.resize_b_src)
+                        b_torch = torch.from_numpy(self.resize_b_src).float()
                 out_torch = F.conv_transpose2d(
                     y_torch,
                     w_torch,
