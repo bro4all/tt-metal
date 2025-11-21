@@ -121,6 +121,7 @@ class ReassembleLayer:
                     groups=1,
                     mirror_kernel=True,
                     return_output_dim=True,
+                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
                     dtype=self.dtype,
                 )
                 y = res[0]
