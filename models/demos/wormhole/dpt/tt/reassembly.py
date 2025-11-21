@@ -136,6 +136,22 @@ class ReassembleLayer:
                 out_torch = out_torch.permute(0, 2, 3, 1).contiguous()
                 return ttnn.from_torch(out_torch, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
 
+            def torch_conv_down(input_y, stride: int):
+                y_torch = ttnn.to_torch(input_y).permute(0, 3, 1, 2).float()  # NHWC -> NCHW
+                if isinstance(self.resize_w_src, ttnn.Tensor):
+                    w_torch = ttnn.to_torch(self.resize_w_src).float()
+                else:
+                    w_torch = torch.from_numpy(self.resize_w_src).float()
+                b_torch = None
+                if self.resize_b_src is not None:
+                    if isinstance(self.resize_b_src, ttnn.Tensor):
+                        b_torch = ttnn.to_torch(self.resize_b_src).float()
+                    else:
+                        b_torch = torch.from_numpy(self.resize_b_src).float()
+                out_torch = F.conv2d(y_torch, w_torch, bias=b_torch, stride=stride, padding=1, dilation=1)
+                out_torch = out_torch.permute(0, 2, 3, 1).contiguous()
+                return ttnn.from_torch(out_torch, dtype=self.dtype, layout=ttnn.ROW_MAJOR_LAYOUT, device=device)
+
             kH, kW = self.resize_w.shape[2], self.resize_w.shape[3]
             if self.factor > 1:
                 if self.use_torch_resize:
@@ -208,27 +224,32 @@ class ReassembleLayer:
                     y = torch_deconv(y)
             else:
                 stride = int(1 / self.factor)
-                y = ttnn.conv2d(
-                    input_tensor=y,
-                    weight_tensor=self.resize_w,
-                    bias_tensor=None,
-                    device=device,
-                    in_channels=self.resize_w.shape[1],
-                    out_channels=self.resize_w.shape[0],
-                    batch_size=y.shape[0],
-                    input_height=y.shape[1],
-                    input_width=y.shape[2],
-                    kernel_size=(kH, kW),
-                    stride=(stride, stride),
-                    padding=(1, 1),
-                    dilation=(1, 1),
-                    groups=1,
-                    dtype=self.dtype,
-                )
-                if self.resize_b is not None:
-                    bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
-                    bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
-                    y = ttnn.add(y, bias)
+                if self.use_torch_resize:
+                    y = torch_conv_down(y, stride)
+                else:
+                    y = ttnn.conv2d(
+                        input_tensor=y,
+                        weight_tensor=self.resize_w,
+                        bias_tensor=None,
+                        device=device,
+                        in_channels=self.resize_w.shape[1],
+                        out_channels=self.resize_w.shape[0],
+                        batch_size=y.shape[0],
+                        input_height=y.shape[1],
+                        input_width=y.shape[2],
+                        kernel_size=(kH, kW),
+                        stride=(stride, stride),
+                        padding=(1, 1),
+                        dilation=(1, 1),
+                        groups=1,
+                        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                        conv_config=self.resize_conv_config,
+                        dtype=self.dtype,
+                    )
+                    if self.resize_b is not None:
+                        bias = self.resize_b if isinstance(self.resize_b, ttnn.Tensor) else to_tt(self.resize_b)
+                        bias = ttnn.reshape(bias, (1, 1, 1, bias.shape[0]))
+                        y = ttnn.add(y, bias)
 
         if self.factor != 1 and self.resize_w is None:
             # ttnn.upsample handles both >1 (upsample) and <1 (downsample when factor<1 treated as stride>1)
