@@ -2,6 +2,7 @@
 TTNN implementation scaffold for DPT-Large.
 Fill in: patch embedding, 24-layer ViT-L/16 encoder, reassembly blocks, fusion head, and run() helper.
 """
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
