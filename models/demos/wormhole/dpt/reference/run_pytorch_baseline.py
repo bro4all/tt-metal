@@ -38,6 +38,7 @@ def run(
     output_dir: Path,
     compare_dir: Optional[Path],
     device: str,
+    dump_hidden: bool = False,
 ) -> Dict[str, Dict[str, float]]:
     # Manual load so we can patch missing fusion weights deterministically.
     torch.manual_seed(0)
@@ -73,8 +74,9 @@ def run(
         inputs = processor(images=Image.open(img_path), return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = model(**inputs, output_hidden_states=dump_hidden, return_dict=True)
             depth = outputs.predicted_depth.squeeze(0).cpu().numpy()
+            hidden_states = outputs.hidden_states if dump_hidden else None
 
         stem = img_path.stem
         npz_path = output_dir / f"{stem}.npz"
@@ -82,6 +84,11 @@ def run(
 
         np.savez_compressed(npz_path, depth=depth)
         save_depth_png(depth, png_path)
+
+        if dump_hidden and hidden_states is not None:
+            # Save the backbone taps used by DPT (backbone_out_indices) for later TT comparison.
+            taps = [hidden_states[idx + 1].cpu().numpy() for idx in model.config.backbone_out_indices]
+            np.savez_compressed(output_dir / f"{stem}_hidden.npz", **{f"tap{i}": t for i, t in enumerate(taps)})
 
         stats = {
             "min": float(depth.min()),
@@ -135,6 +142,7 @@ def parse_args() -> argparse.Namespace:
         default="cpu",
         help="cuda or cpu",
     )
+    p.add_argument("--dump-hidden", action="store_true", help="Dump hidden states for debug comparisons")
     return p.parse_args()
 
 
@@ -145,7 +153,7 @@ def main() -> None:
     if args.device != "cpu" and not torch.cuda.is_available():
         raise SystemExit("cuda requested but not available")
 
-    metrics = run(args.images, args.output, args.compare, args.device)
+    metrics = run(args.images, args.output, args.compare, args.device, dump_hidden=args.dump_hidden)
     print(json.dumps(metrics, indent=2))
 
 

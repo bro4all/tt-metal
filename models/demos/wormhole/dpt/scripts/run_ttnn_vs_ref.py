@@ -114,9 +114,27 @@ def run(args: argparse.Namespace) -> Dict[str, Dict[str, float]]:
                         ref_depth, size=orig_hw, mode="bilinear", align_corners=False
                     ).squeeze().numpy()
                 stats["pcc_vs_ref"] = pcc(depth_np, ref_depth)
+
+            if args.compare_hidden:
+                hidden_file = ref_dir / f"{stem}_hidden.npz"
+                if hidden_file.exists() and getattr(model, "debug_taps", None):
+                    hf_hidden = np.load(hidden_file)
+                    tap_pccs = []
+                    for i, tap in enumerate(model.debug_taps):
+                        tap_np = ttnn.to_torch(tap).cpu().numpy().ravel()
+                        hf = hf_hidden.get(f"tap{i}")
+                        if hf is None:
+                            continue
+                        tap_pccs.append(pcc(tap_np, hf.ravel()))
+                    if tap_pccs:
+                        stats["pcc_taps_mean"] = float(np.mean(tap_pccs))
+                        stats["pcc_taps_min"] = float(np.min(tap_pccs))
+                        stats["pcc_taps_max"] = float(np.max(tap_pccs))
             results[stem] = stats
 
             pcc_str = f"{stats.get('pcc_vs_ref', 'N/A')}"
+            if args.compare_hidden and "pcc_taps_mean" in stats:
+                pcc_str += f" taps_mean={stats['pcc_taps_mean']:.4f}"
             print(f"{stem}: pcc={pcc_str} shape={depth_np.shape} range=({stats['min']:.2f},{stats['max']:.2f})")
 
         if args.metrics:
@@ -151,6 +169,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--save-dir", type=Path, default=None, help="Optional folder to dump TTNN depth npz files")
     p.add_argument("--metrics", type=Path, default=None, help="Optional path to write JSON metrics")
+    p.add_argument("--compare-hidden", action="store_true", help="Compare encoder taps against saved HF hidden taps")
     return p.parse_args()
 
 

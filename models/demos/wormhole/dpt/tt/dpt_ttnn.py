@@ -36,6 +36,7 @@ class DPTTTNN:
         self.weights_dir = weights_dir
         # load converted weights, set up sharding and fused ops (later)
         self.weights = load_weights(weights_dir)
+        self.debug_taps: list[ttnn.Tensor] | None = None
         # stash common tensors
         self.patch_w = self.weights["dpt.embeddings.patch_embeddings.projection.weight"]
         self.patch_b = self.weights["dpt.embeddings.patch_embeddings.projection.bias"]
@@ -104,6 +105,8 @@ class DPTTTNN:
         feats = self.reassembly(taps, patch_hw)
         fused_pyramid = self.fusion_stage(feats)
         depth = self.fusion_head(fused_pyramid)
+        if os.getenv("DPT_DEBUG_TAPS", "0") == "1":
+            self.debug_taps = taps
         return depth
 
 

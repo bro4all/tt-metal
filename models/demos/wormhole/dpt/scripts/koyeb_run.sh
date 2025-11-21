@@ -41,6 +41,8 @@ export TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE:-/tmp/hf_cache}
 
 # Convert weights, run deterministic PyTorch baseline, then TTNN correctness + perf.
 python3 models/demos/wormhole/dpt/scripts/convert_weights.py --model Intel/dpt-large --outdir models/demos/wormhole/dpt/weights
-python3 models/demos/wormhole/dpt/reference/run_pytorch_baseline.py --images models/demos/wormhole/dpt/assets --output models/demos/wormhole/dpt/out_reference
-python3 models/demos/wormhole/dpt/scripts/run_ttnn_vs_ref.py --device-id ${DEVICE_ID:-0}
+python3 models/demos/wormhole/dpt/reference/run_pytorch_baseline.py --images models/demos/wormhole/dpt/assets --output models/demos/wormhole/dpt/out_reference --dump-hidden
+# capture encoder taps for debugging
+export DPT_DEBUG_TAPS=1
+python3 models/demos/wormhole/dpt/scripts/run_ttnn_vs_ref.py --device-id ${DEVICE_ID:-0} --compare-hidden
 python3 models/demos/wormhole/dpt/scripts/bench_dpt_ttnn.py --device-id ${DEVICE_ID:-0} --size 384 --iters 50
