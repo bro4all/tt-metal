@@ -1,9 +1,10 @@
 """
 Fusion/refinement blocks for DPT neck + depth head.
 """
+import os
 from dataclasses import dataclass
 from typing import Any, Sequence
-from typing import Sequence
+
 import torch
 import ttnn  # type: ignore
 
@@ -194,6 +195,7 @@ class FeatureFusionStage:
 
     def __init__(self, cfg: FusionBlockConfig, weights) -> None:
         self.blocks: list[FeatureFusionBlock] = []
+        self.use_torch_fusion = os.getenv("DPT_FORCE_TORCH_FUSION", "1") == "1"
         for i in range(4):
             p_w = weights[f"neck.fusion_stage.layers.{i}.projection.weight"]
             p_b = weights[f"neck.fusion_stage.layers.{i}.projection.bias"]
@@ -211,6 +213,53 @@ class FeatureFusionStage:
             self.blocks.append(FeatureFusionBlock(cfg, p_w, p_b, r1_w1, r1_b1, r1_w2, r1_b2, r2_w1, r2_b1, r2_w2, r2_b2))
 
     def __call__(self, features: Sequence[ttnn.Tensor]) -> list[ttnn.Tensor]:
+        if self.use_torch_fusion:
+            # Fallback fusion on host to avoid L1_SMALL conv failures.
+            device0 = features[0].device()
+            feats_t = [ttnn.to_torch(f).float() for f in features]  # NHWC
+
+            def conv_nhwc(x, w_np, b_np=None, stride=1, padding=1):
+                x_chw = x.permute(0, 3, 1, 2).contiguous()
+                w_t = torch.from_numpy(w_np).float()
+                b_t = torch.from_numpy(b_np).float() if b_np is not None else None
+                y = torch.nn.functional.conv2d(x_chw, w_t, bias=b_t, stride=stride, padding=padding)
+                return y.permute(0, 2, 3, 1).contiguous()
+
+            def rcu(x, w1, b1, w2, b2):
+                x = torch.nn.functional.relu(x)
+                x = conv_nhwc(x, w1, b1, padding=1)
+                x = torch.nn.functional.relu(x)
+                x = conv_nhwc(x, w2, b2, padding=1)
+                return x
+
+            fused_outputs_t = []
+            fused_t = None
+            for feat_t, block in zip(feats_t[::-1], self.blocks):
+                if fused_t is None:
+                    x = feat_t
+                else:
+                    # align residual spatial to fused
+                    res = feat_t
+                    if res.shape[1] != fused_t.shape[1] or res.shape[2] != fused_t.shape[2]:
+                        res = torch.nn.functional.interpolate(
+                            res.permute(0, 3, 1, 2),
+                            size=(fused_t.shape[1], fused_t.shape[2]),
+                            mode="bilinear",
+                            align_corners=False,
+                        ).permute(0, 2, 3, 1)
+                    x = fused_t + rcu(res, block.rcu1.w1, block.rcu1.b1, block.rcu1.w2, block.rcu1.b2)
+                x = rcu(x, block.rcu2.w1, block.rcu2.b1, block.rcu2.w2, block.rcu2.b2)
+                # upsample by factor 2
+                x = torch.nn.functional.interpolate(
+                    x.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=False
+                ).permute(0, 2, 3, 1)
+                x = conv_nhwc(x, block.proj_w, block.proj_b, padding=0)
+                fused_t = x
+                fused_outputs_t.append(fused_t)
+
+            # Return as torch NHWC tensors (fusion head will handle).
+            return fused_outputs_t
+
         fused_outputs = []
         fused = None
         for feat, block in zip(features[::-1], self.blocks):
@@ -255,6 +304,44 @@ class FusionHead:
         self.projection_b = projection_b
 
     def __call__(self, fused_pyramid: Sequence[ttnn.Tensor]) -> ttnn.Tensor:
+        # Torch fallback when fusion was run on host.
+        if isinstance(fused_pyramid[0], torch.Tensor):
+            x = fused_pyramid[self.cfg.head_in_index]  # NHWC torch
+            # optional projection
+            if self.projection_w is not None:
+                x = torch.nn.functional.conv2d(
+                    x.permute(0, 3, 1, 2),
+                    torch.from_numpy(self.projection_w).float(),
+                    bias=torch.from_numpy(self.projection_b) if self.projection_b is not None else None,
+                    padding=1,
+                ).permute(0, 2, 3, 1)
+                x = torch.nn.functional.relu(x)
+
+            y = torch.nn.functional.conv2d(
+                x.permute(0, 3, 1, 2),
+                torch.from_numpy(self.conv1_w).float(),
+                bias=torch.from_numpy(self.conv1_b) if self.conv1_b is not None else None,
+                padding=1,
+            ).permute(0, 2, 3, 1)
+            y = torch.nn.functional.interpolate(
+                y.permute(0, 3, 1, 2), scale_factor=2.0, mode="bilinear", align_corners=False
+            ).permute(0, 2, 3, 1)
+            y = torch.nn.functional.conv2d(
+                y.permute(0, 3, 1, 2),
+                torch.from_numpy(self.conv2_w).float(),
+                bias=torch.from_numpy(self.conv2_b) if self.conv2_b is not None else None,
+                padding=1,
+            ).permute(0, 2, 3, 1)
+            y = torch.nn.functional.relu(y)
+            y = torch.nn.functional.conv2d(
+                y.permute(0, 3, 1, 2),
+                torch.from_numpy(self.conv3_w).float(),
+                bias=torch.from_numpy(self.conv3_b) if self.conv3_b is not None else None,
+                padding=0,
+            ).permute(0, 2, 3, 1)
+            y = torch.nn.functional.relu(y)
+            return y  # torch NHWC
+
         x = fused_pyramid[self.cfg.head_in_index]
         device = x.device()
 
