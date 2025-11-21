@@ -52,6 +52,7 @@ class ResidualConvUnit:
                 layout=ttnn.ROW_MAJOR_LAYOUT,
                 device=device,
             )
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         y = ttnn.relu(x)
         y = ttnn.conv2d(
             input_tensor=y,
@@ -120,6 +121,7 @@ class FeatureFusionBlock:
                 layout=ttnn.ROW_MAJOR_LAYOUT,
                 device=device,
             )
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
         if residual is not None:
             # align spatial shapes if needed
             if hasattr(residual, "shape") and hasattr(x, "shape"):
@@ -127,6 +129,7 @@ class FeatureFusionBlock:
                 xh, xw = x.shape[1], x.shape[2]
                 if (rh != xh) or (rw != xw):
                     residual = ttnn.upsample(residual, scale_factor=(xh / rh, xw / rw))
+            residual = ttnn.to_layout(residual, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
             x = ttnn.add(x, self.rcu1(residual))
 
         x = self.rcu2(x)
@@ -240,6 +243,8 @@ class FusionHead:
         self.conv2_b = to_tt(self.conv2_b)
         self.conv3_w = to_tt(self.conv3_w)
         self.conv3_b = to_tt(self.conv3_b)
+
+        x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT, dtype=self.cfg.dtype)
 
         if self.projection_w is not None:
             x = ttnn.conv2d(
