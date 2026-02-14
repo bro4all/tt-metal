@@ -274,13 +274,22 @@ def main():
             # non-blocking to allow device-side overlap without Python threading.
             dp_executor = SubmeshTraceDPExecutor(tt_pipelines=tt_pipelines, execution_mode=requested_exec_mode)
             warmup_tt_inputs = [iter_tt_inputs[i % len(iter_tt_inputs)] for i in range(effective_dp)]
+            print(
+                f"[dp-trace] preparing traces: dp={effective_dp} mode={requested_exec_mode} batch={effective_batch_size}",
+                flush=True,
+            )
+            t_prepare0 = time.perf_counter()
             dp_executor.prepare(warmup_tt_inputs)
+            t_prepare1 = time.perf_counter()
+            print(f"[dp-trace] prepare done in {(t_prepare1 - t_prepare0):.3f}s", flush=True)
 
+            print(f"[dp-trace] warmup iters={max(0, int(args.warmup))}", flush=True)
             for _ in range(max(0, int(args.warmup))):
                 _ = dp_executor.run(iter_tt_inputs, normalize=True)
 
             reset_perf_counters()
 
+            print(f"[dp-trace] timed iters={max(1, int(args.repeat))}", flush=True)
             for _ in range(max(1, int(args.repeat))):
                 start = time.perf_counter()
                 outs = dp_executor.run(iter_tt_inputs, normalize=True)
@@ -301,6 +310,8 @@ def main():
                 if use_tt:
                     assert len(tt_pipelines) == 1
                     if iter_tt_inputs is not None:
+                        if str(args.tt_execution_mode).lower() in ("trace", "trace_2cq"):
+                            print("[trace] warmup forward_tt_host_tensor", flush=True)
                         _ = tt_pipelines[0].forward_tt_host_tensor(iter_tt_inputs[0], normalize=True)
                     else:
                         _ = tt_pipelines[0].forward_pixel_values(iter_pixel_values[0], normalize=True)
@@ -318,6 +329,8 @@ def main():
                     if use_tt:
                         assert len(tt_pipelines) == 1
                         if iter_tt_inputs is not None:
+                            if str(args.tt_execution_mode).lower() in ("trace", "trace_2cq"):
+                                print("[trace] timed forward_tt_host_tensor", flush=True)
                             depth = tt_pipelines[0].forward_tt_host_tensor(iter_tt_inputs[i], normalize=True)
                             try:
                                 lp = getattr(tt_pipelines[0], "last_perf", None) or {}
