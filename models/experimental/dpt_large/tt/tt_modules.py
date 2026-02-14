@@ -1229,7 +1229,15 @@ class TTMLP:
 
             # If FF1 output is forced interleaved (e.g., DRAM) as a pressure-relief workaround,
             # reshard it back to the MLP grid before FF2 so we can keep the rest of the encoder sharded.
-            if incoming_sharded and did_reshard_for_mlp and ff1_out_memcfg is not None and not _ttnn_is_sharded(y1):
+            # Only reshard y1 back for FC2 if FC2 is intended to run sharded. When ff2_out_memcfg is set
+            # (DRAM pressure-relief mode), keep FC2 fully interleaved and reshard only the final output.
+            if (
+                incoming_sharded
+                and did_reshard_for_mlp
+                and ff1_out_memcfg is not None
+                and ff2_out_memcfg is None
+                and not _ttnn_is_sharded(y1)
+            ):
                 try:
                     if mlp_shard_mc is not None:
                         try:
