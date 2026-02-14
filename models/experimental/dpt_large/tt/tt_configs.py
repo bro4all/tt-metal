@@ -47,6 +47,10 @@ class TTLayerConfig:
     qkv_memcfg: Optional[ttnn.MemoryConfig] = None
     proj_memcfg: Optional[ttnn.MemoryConfig] = None
     mlp_memcfg: Optional[ttnn.MemoryConfig] = None
+    # Optional: override FC1 output memory config to relieve L1 pressure during trace capture.
+    ff1_out_memcfg: Optional[ttnn.MemoryConfig] = None
+    # Optional: override FC2 output memory config to relieve L1 pressure during trace capture.
+    ff2_out_memcfg: Optional[ttnn.MemoryConfig] = None
     split_heads_memcfg: Optional[ttnn.MemoryConfig] = None
     # Stage-2 hybrid attention: SDPA currently rejects sharded operands. We keep
     # tokens sharded across blocks, but explicitly interleave around the SDPA
@@ -65,6 +69,9 @@ class TTLayerConfig:
     # Optional override core grid for the MLP path. Useful when tokens are
     # interleaved but we want to reshard only for the MLP matmuls.
     mlp_core_grid: Optional[Tuple[int, int]] = None
+    # Optional override core grid for sharded LayerNorm. Useful when the encoder-wide
+    # token sharding grid is too small and layer_norm kernels hit static-CB/L1 clashes.
+    ln_core_grid: Optional[Tuple[int, int]] = None
 
     def memcfg(self):
         """Preferred activation memory config.
@@ -196,21 +203,21 @@ def _build_perf_program_configs(config: DPTLargeConfig, core_grid: Tuple[int, in
         # keeping out_subblock_w/subblock_w <= 8 avoids register pressure limits.
         qk_out_subblock_w = seqL_t if seqL_t <= 8 else 1
         softmax_subblock_w = seqL_t if seqL_t <= 8 else 1
-        # MLP matmuls can exceed static CB limits on small grids; keep subblocks narrow.
-        ff1_out_subblock_w = (dim_t__x * 4) // 2
-        if ff1_out_subblock_w > 4:
-            ff1_out_subblock_w = 4
-        ff2_out_subblock_w = dim_t__x
-        if ff2_out_subblock_w > 2:
-            ff2_out_subblock_w = 2
+        # MLP matmuls can exceed static CB limits on small grids; keep subblocks reasonable.
+        # For correctness, some kernels require out_subblock_w == per_core_N when out_subblock_h != 1.
+        ff1_out_subblock_w = min((dim_t__x * 4) // 2, 8)
         ff1_fused_activation = (ttnn.UnaryOpType.GELU, True)
-        # On N300 (8x1), fused activation can increase static CB pressure enough to clash with L1.
+        # On N300, fused activation can increase static CB pressure enough to clash with L1.
         # Run GELU as a separate op in perf mode to keep the sharded path stable.
         try:
-            if config.device.endswith("n300") and int(core_grid_y) == 1:
+            if config.device.endswith("n300"):
                 ff1_fused_activation = None
         except Exception:
             pass
+        # For 2D block sharding, each tensix row sees seqL_t/core_grid_y tiles in height.
+        seqL_t__y = seqL_t
+        if core_grid_y > 1 and (seqL_t % core_grid_y) == 0:
+            seqL_t__y = seqL_t // core_grid_y
         # LayerNorm runs on block-sharded tokens across the same grid. When seqL
         # tiles divide cleanly along grid_y, each core sees seqL_t/grid_y tiles.
         ln_block_h = seqL_t
@@ -233,8 +240,9 @@ def _build_perf_program_configs(config: DPTLargeConfig, core_grid: Tuple[int, in
                 compute_with_storage_grid_size=core_grid,
                 in0_block_w=dim_t__x,
                 out_subblock_h=1,
-                out_subblock_w=dim_t__x,
-                per_core_M=seqL_t,
+                # vit.md: out_subblock_w/per_core_N cover the full per-core output width (3*dim/core_grid_x).
+                out_subblock_w=3 * dim_t__x,
+                per_core_M=seqL_t__y,
                 per_core_N=3 * dim_t__x,
                 transpose_mcast=False,
                 fused_activation=None,
@@ -264,9 +272,11 @@ def _build_perf_program_configs(config: DPTLargeConfig, core_grid: Tuple[int, in
             "self_output_matmul_program_config": ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=core_grid,
                 in0_block_w=dim_t__x,
+                # DPT has a larger padded seq length (e.g., 640 -> 20 tiles). Keep subblocks small
+                # so (out_subblock_w*out_subblock_h) stays within the HW register budget.
                 out_subblock_h=1,
                 out_subblock_w=dim_t__x,
-                per_core_M=seqL_t,
+                per_core_M=seqL_t__y,
                 per_core_N=dim_t__x,
                 transpose_mcast=False,
                 fused_activation=None,
@@ -283,7 +293,7 @@ def _build_perf_program_configs(config: DPTLargeConfig, core_grid: Tuple[int, in
                 in0_block_w=dim_t__x,
                 out_subblock_h=1,
                 out_subblock_w=ff1_out_subblock_w,
-                per_core_M=seqL_t,
+                per_core_M=seqL_t__y,
                 per_core_N=dim_t__x * 4,
                 transpose_mcast=False,
                 fused_activation=ff1_fused_activation,
@@ -291,9 +301,10 @@ def _build_perf_program_configs(config: DPTLargeConfig, core_grid: Tuple[int, in
             "ff2_matmul_program_config": ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=core_grid,
                 in0_block_w=dim_t__x * 4,
+                # Keep subblocks small to satisfy HW register constraints for larger seq lengths.
                 out_subblock_h=1,
-                out_subblock_w=ff2_out_subblock_w,
-                per_core_M=seqL_t,
+                out_subblock_w=dim_t__x,
+                per_core_M=seqL_t__y,
                 per_core_N=dim_t__x,
                 transpose_mcast=False,
                 fused_activation=None,
@@ -335,45 +346,14 @@ def vit_block_config_perf(config: DPTLargeConfig = DEFAULT_CONFIG) -> TTLayerCon
 
     prog_cfgs = _build_perf_program_configs(config, grid)
     attn_prog_cfgs = prog_cfgs if attn_grid == grid else _build_perf_program_configs(config, attn_grid)
-    # MLP dominates ViT-Large runtime. Keep MLP on the same grid as the encoder
-    # so residual adds and norms can stay sharded without reshards.
+    # On N300, MLP matmuls can exceed static CB limits when run on the 8x1 encoder
+    # grid (especially under trace). Run MLP on the expanded grid (same as attention)
+    # and reshard activations in TTMLP to reduce per-core L1 pressure.
     mlp_grid = None
     mlp_prog_cfgs = {}
     if config.device.endswith("n300"):
-        mlp_grid = grid
+        mlp_grid = attn_grid
         mlp_prog_cfgs = _build_perf_program_configs(config, mlp_grid)
-        # `_build_perf_program_configs` defaults `per_core_M` to the full padded
-        # sequence tile count. For block-sharded MLP activations across (x,y),
-        # each core sees only seqL_t / grid_y tiles along M.
-        try:
-            seqL_t = int(mlp_prog_cfgs.get("_seqL_t"))
-            dim_t__x = int(mlp_prog_cfgs.get("_dim_t__x"))
-            grid_x, grid_y = int(mlp_grid[0]), int(mlp_grid[1])
-            if grid_y > 1 and seqL_t % grid_y == 0:
-                per_core_M = seqL_t // grid_y
-                mlp_prog_cfgs["ff1_matmul_program_config"] = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
-                    compute_with_storage_grid_size=mlp_grid,
-                    in0_block_w=dim_t__x,
-                    out_subblock_h=1,
-                    out_subblock_w=dim_t__x,
-                    per_core_M=per_core_M,
-                    per_core_N=dim_t__x * 4,
-                    transpose_mcast=False,
-                    fused_activation=(ttnn.UnaryOpType.GELU, True),
-                )
-                mlp_prog_cfgs["ff2_matmul_program_config"] = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
-                    compute_with_storage_grid_size=mlp_grid,
-                    in0_block_w=dim_t__x * 4,
-                    out_subblock_h=1,
-                    out_subblock_w=dim_t__x,
-                    per_core_M=per_core_M,
-                    per_core_N=dim_t__x,
-                    transpose_mcast=False,
-                    fused_activation=None,
-                )
-        except Exception:
-            # Keep the default configs if the runtime doesn't expose these types/attrs.
-            pass
     # Disable custom attention configs only when explicitly forced. Attention
     # ops height-shard across x*y cores, so grid_x-only heuristics are incorrect
     # for DPT-Large (seq=640 padded).
@@ -443,6 +423,13 @@ def vit_block_config_perf(config: DPTLargeConfig = DEFAULT_CONFIG) -> TTLayerCon
             if mlp_grid is not None
             else getattr(ttnn, "L1_MEMORY_CONFIG", None)
         ),
+        # Temporary Stage-2 unblocker: MLP FF1 output in DRAM reduces L1 pressure and avoids
+        # static-CB/L1 clashes during trace capture on N300. FF2 output is still restored
+        # to the block-sharded token spec for residual adds.
+        ff1_out_memcfg=(getattr(ttnn, "DRAM_MEMORY_CONFIG", None) if config.device.endswith("n300") else None),
+        # Similarly, route FF2 output interleaved to reduce L1 pressure. The output is reshared
+        # back to the encoder token spec before residual adds.
+        ff2_out_memcfg=(getattr(ttnn, "DRAM_MEMORY_CONFIG", None) if config.device.endswith("n300") else None),
         split_heads_memcfg=split_mem,
         attn_island_memcfg=getattr(ttnn, "DRAM_MEMORY_CONFIG", None),
         qkv_program_config=qkv_pc,
@@ -452,13 +439,15 @@ def vit_block_config_perf(config: DPTLargeConfig = DEFAULT_CONFIG) -> TTLayerCon
         proj_program_config=proj_pc,
         ff1_program_config=(mlp_prog_cfgs.get("ff1_matmul_program_config") or prog_cfgs.get("ff1_matmul_program_config")),
         ff2_program_config=(mlp_prog_cfgs.get("ff2_matmul_program_config") or prog_cfgs.get("ff2_matmul_program_config")),
-        ln_program_config=prog_cfgs.get("layernorm_before_program_config"),
+        # N300 trace stability: sharded LayerNorm program configs can over-allocate static CBs for
+        # DPT's larger seq padding. Prefer the default layer_norm kernel (still sharded) here.
+        ln_program_config=(None if config.device.endswith("n300") else prog_cfgs.get("layernorm_before_program_config")),
         ln_compute_config=prog_cfgs.get("ln_compute_config"),
         # Stage-2/3 want explicit sharded attention (QK matmul + fused softmax + AV matmul).
         # Keep a switch so we can force defaults if a runtime regresses.
         use_default_attention_programs=bool(disable_attn_pc),
-        # MLP runs on the encoder grid for now; do not force a separate reshard grid in TTMLP.
-        mlp_core_grid=None,
+        mlp_core_grid=mlp_grid,
+        ln_core_grid=(attn_grid if config.device.endswith("n300") else None),
     )
 
 

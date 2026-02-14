@@ -454,6 +454,35 @@ class TTLayerNorm:
             cc = getattr(pc, "ln_compute_config", None) if pc is not None else None
             if cc is not None:
                 kwargs["compute_kernel_config"] = cc
+
+            # N300 trace stability: if sharded layer_norm on the encoder grid hits static-CB/L1 clashes,
+            # reshard to a larger core grid for the layer_norm compute, then reshard back. This stays
+            # fully sharded (no interleaved "islands") and keeps residual/add ops on the encoder grid.
+            if x_is_sharded and pc is not None and hasattr(ttnn, "reshard") and hasattr(ttnn, "create_sharded_memory_config"):
+                ln_grid = getattr(pc, "ln_core_grid", None)
+                if ln_grid is not None:
+                    try:
+                        mc_in = ttnn.get_memory_config(x)
+                    except Exception:
+                        mc_in = None
+                    try:
+                        grid_x, grid_y = int(ln_grid[0]), int(ln_grid[1])
+                        core_grid = ttnn.CoreGrid(y=grid_y, x=grid_x)
+                        shape_for_shard = getattr(x, "padded_shape", None) or getattr(x, "shape", None)
+                        ln_shard_mc = ttnn.create_sharded_memory_config(
+                            shape_for_shard,
+                            core_grid=core_grid,
+                            strategy=ttnn.ShardStrategy.BLOCK,
+                            orientation=ttnn.ShardOrientation.ROW_MAJOR,
+                        )
+                        x_ln = ttnn.reshard(x, ln_shard_mc)
+                        y_ln = ttnn.layer_norm(x_ln, **kwargs)
+                        if mc_in is not None:
+                            return ttnn.reshard(y_ln, mc_in)
+                        return y_ln
+                    except Exception:
+                        # Fall through to the standard layer_norm path below.
+                        pass
             try:
                 return ttnn.layer_norm(x, **kwargs)
             except TypeError:
@@ -1059,12 +1088,14 @@ class TTMLP:
             w1_t = torch.transpose(fc1_w.detach(), -1, -2).contiguous()
             w2_t = torch.transpose(fc2_w.detach(), -1, -2).contiguous()
             self.w1_tt = ttnn.from_torch(w1_t, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+            # Keep biases TILE so linear's bias add stays in the fast tilized path even when
+            # the output is routed interleaved (e.g., DRAM pressure-relief workaround).
             self.b1_tt = ttnn.from_torch(
-                fc1_b.detach(), dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+                fc1_b.detach().reshape(1, 1, -1), dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device
             )
             self.w2_tt = ttnn.from_torch(w2_t, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
             self.b2_tt = ttnn.from_torch(
-                fc2_b.detach(), dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=device
+                fc2_b.detach().reshape(1, 1, -1), dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device
             )
         except Exception:
             self.w1_tt = self.b1_tt = self.w2_tt = self.b2_tt = None
@@ -1101,9 +1132,18 @@ class TTMLP:
                 memcfg = getattr(ttnn, "L1_BLOCK_SHARDED_MEMORY_CONFIG", None) or memcfg
             if memcfg is None:
                 memcfg = getattr(self, "output_mem", None) or ttnn.DRAM_MEMORY_CONFIG
+            ff1_out_memcfg = getattr(cfg, "ff1_out_memcfg", None) if cfg is not None else None
+            ff2_out_memcfg = getattr(cfg, "ff2_out_memcfg", None) if cfg is not None else None
 
             ff1_pc = getattr(cfg, "ff1_program_config", None) if cfg is not None else None
             ff2_pc = getattr(cfg, "ff2_program_config", None) if cfg is not None else None
+            # When routing FF1 output to an interleaved buffer (e.g., DRAM) as a pressure-relief
+            # workaround, prefer the runtime-chosen kernel for FC1 rather than a heavy sharded
+            # program_config that can over-allocate static CBs under trace.
+            if incoming_sharded and ff1_out_memcfg is not None:
+                ff1_pc = None
+            if incoming_sharded and ff2_out_memcfg is not None:
+                ff2_pc = None
             if ff1_pc is not None and not _ttnn_is_sharded(x3):
                 ff1_pc = None
             if ff2_pc is not None and not _ttnn_is_sharded(x3):
@@ -1118,6 +1158,7 @@ class TTMLP:
             # and avoid static circular-buffer clashes on N300.
             mlp_grid = getattr(cfg, "mlp_core_grid", None) if cfg is not None else None
             did_reshard_for_mlp = False
+            mlp_shard_mc = None
             if incoming_sharded and mlp_grid is not None and hasattr(ttnn, "create_sharded_memory_config"):
                 try:
                     grid_x, grid_y = int(mlp_grid[0]), int(mlp_grid[1])
@@ -1132,11 +1173,26 @@ class TTMLP:
                             orientation=ttnn.ShardOrientation.ROW_MAJOR,
                         )
                         self._mlp_block_shard_mc_cache[cache_key] = mlp_shard_mc
+                    # `to_memory_config` is implemented as a move op for many sharded tensors. The runtime
+                    # expects the input buffer to have no other live views/aliases after the move.
+                    # In perf/trace runs CPU fallback is disabled, so it is safe to drop the original input.
+                    if not self.allow_cpu_fallback:
+                        x = None
+                    # Reduce move-op aliasing/fragmentation issues during trace capture.
                     try:
-                        x3 = ttnn.to_memory_config(x3, memory_config=mlp_shard_mc, dtype=mlp_dtype)
-                    except TypeError:
-                        x3 = ttnn.to_memory_config(x3, memory_config=mlp_shard_mc)
-                    memcfg = mlp_shard_mc
+                        if hasattr(ttnn, "reallocate"):
+                            x3 = ttnn.reallocate(x3)
+                    except Exception:
+                        pass
+                    # Prefer `reshard` for sharded->sharded conversions. `to_memory_config` can be a move op
+                    # and may assert if the input has any remaining views/aliases.
+                    if hasattr(ttnn, "reshard"):
+                        x3 = ttnn.reshard(x3, mlp_shard_mc)
+                    else:
+                        try:
+                            x3 = ttnn.to_memory_config(x3, memory_config=mlp_shard_mc, dtype=mlp_dtype)
+                        except TypeError:
+                            x3 = ttnn.to_memory_config(x3, memory_config=mlp_shard_mc)
                     did_reshard_for_mlp = True
                 except Exception:
                     did_reshard_for_mlp = False
@@ -1145,34 +1201,68 @@ class TTMLP:
                 ff1_pc = None
                 ff2_pc = None
 
+            ff1_memcfg = ff1_out_memcfg or memcfg
             y1 = _ttnn_linear_with_optional_program_config(
                 x=x3,
                 w=self.w1_tt,
                 bias=self.b1_tt,
                 dtype=mlp_dtype,
-                memory_config=memcfg,
+                memory_config=ff1_memcfg,
                 program_config=ff1_pc,
                 op_name="mlp_ff1",
             )
+            # Trace capture can keep allocations alive longer; proactively release the input activation
+            # once FC1 has consumed it to reduce L1/CB pressure (Stage-2 MLP crash unblocker).
+            try:
+                if incoming_sharded and hasattr(ttnn, "deallocate"):
+                    ttnn.deallocate(x3)
+            except Exception:
+                pass
             if not _program_config_fuses_activation(ff1_pc):
-                y1 = ttnn.gelu(y1)
+                y1_gelu = ttnn.gelu(y1)
+                try:
+                    if incoming_sharded and hasattr(ttnn, "deallocate"):
+                        ttnn.deallocate(y1)
+                except Exception:
+                    pass
+                y1 = y1_gelu
+
+            # If FF1 output is forced interleaved (e.g., DRAM) as a pressure-relief workaround,
+            # reshard it back to the MLP grid before FF2 so we can keep the rest of the encoder sharded.
+            if incoming_sharded and did_reshard_for_mlp and ff1_out_memcfg is not None and not _ttnn_is_sharded(y1):
+                try:
+                    if mlp_shard_mc is not None:
+                        try:
+                            y1 = ttnn.to_memory_config(y1, memory_config=mlp_shard_mc, dtype=mlp_dtype)
+                        except TypeError:
+                            y1 = ttnn.to_memory_config(y1, memory_config=mlp_shard_mc)
+                except Exception:
+                    pass
 
             y2 = _ttnn_linear_with_optional_program_config(
                 x=y1,
                 w=self.w2_tt,
                 bias=self.b2_tt,
                 dtype=mlp_dtype,
-                memory_config=memcfg,
+                memory_config=(ff2_out_memcfg or memcfg),
                 program_config=ff2_pc,
                 op_name="mlp_ff2",
             )
+            try:
+                if incoming_sharded and hasattr(ttnn, "deallocate"):
+                    ttnn.deallocate(y1)
+            except Exception:
+                pass
 
             if incoming_sharded and tokens_shard_mc is not None and did_reshard_for_mlp:
                 # Restore the encoder-wide token sharding spec for residual adds.
-                try:
-                    y2 = ttnn.to_memory_config(y2, memory_config=tokens_shard_mc, dtype=ttnn.bfloat16)
-                except TypeError:
-                    y2 = ttnn.to_memory_config(y2, memory_config=tokens_shard_mc)
+                if hasattr(ttnn, "reshard") and _ttnn_is_sharded(y2):
+                    y2 = ttnn.reshard(y2, tokens_shard_mc)
+                else:
+                    try:
+                        y2 = ttnn.to_memory_config(y2, memory_config=tokens_shard_mc, dtype=ttnn.bfloat16)
+                    except TypeError:
+                        y2 = ttnn.to_memory_config(y2, memory_config=tokens_shard_mc)
 
             if wants_4d:
                 y2 = ttnn.reshape(y2, (int(B), 1, int(N), int(y2.shape[-1])))
@@ -1263,10 +1353,10 @@ class TTTransformerBlock:
 
     def __call__(self, x: ttnn.Tensor, **mm_opts) -> ttnn.Tensor:
         # Stage-2/3: perf path must remain fully on-device with no DRAM "islands".
-        h = self.ln1(x)
-        h = self.attn(h, **mm_opts)
+        # Pass LN outputs directly into the next op so sharding moves can "consume"
+        # temporaries without fighting Python-level aliases during trace capture.
+        h = self.attn(self.ln1(x), **mm_opts)
         x = ttnn.add(x, h)
-        h = self.ln2(x)
-        h = self.mlp(h, **mm_opts)
+        h = self.mlp(self.ln2(x), **mm_opts)
         x = ttnn.add(x, h)
         return x
