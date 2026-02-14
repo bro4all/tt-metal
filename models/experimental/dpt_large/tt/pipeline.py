@@ -197,33 +197,44 @@ class DPTTTPipeline:
         if self.backbone.tt_device is None:
             raise RuntimeError("TT device is not available for tracing")
 
+        # Progress prints help debug trace bring-up stalls on remote N300 hosts.
+        dev = self.backbone.tt_device
+        print(f"[full-trace] begin: execution_mode={execution_mode} dev_id={id(dev)}", flush=True)
+
         # Create a persistent device input buffer with a stable address.
-        tt_in_dev = tt_pixel_values_host.to(self.backbone.tt_device)
+        t0 = time.perf_counter()
+        tt_in_dev = tt_pixel_values_host.to(dev)
         self._full_trace_input = tt_in_dev
+        print(f"[full-trace] input to-device done in {(time.perf_counter() - t0):.3f}s", flush=True)
 
         # compile
+        t1 = time.perf_counter()
         _ = self._tt_forward_core(tt_in_dev)
+        print(f"[full-trace] compile warmup done in {(time.perf_counter() - t1):.3f}s", flush=True)
 
         # capture trace
-        trace_id = ttnn.begin_trace_capture(self.backbone.tt_device, cq_id=0)
+        t2 = time.perf_counter()
+        trace_id = ttnn.begin_trace_capture(dev, cq_id=0)
         try:
             try:
                 out = self._tt_forward_core(tt_in_dev)
             finally:
-                ttnn.end_trace_capture(self.backbone.tt_device, trace_id, cq_id=0)
+                ttnn.end_trace_capture(dev, trace_id, cq_id=0)
         except Exception:
             try:
-                ttnn.release_trace(self.backbone.tt_device, trace_id)
+                ttnn.release_trace(dev, trace_id)
             except Exception:
                 pass
             raise
+        print(f"[full-trace] trace capture done in {(time.perf_counter() - t2):.3f}s", flush=True)
 
         self._full_trace_id = trace_id
         self._full_trace_output = out
 
         # Initialize CQ sync primitive for trace_2cq.
         if execution_mode == "trace_2cq":
-            self._trace_op_event = ttnn.record_event(self.backbone.tt_device, 0)
+            self._trace_op_event = ttnn.record_event(dev, 0)
+        print(f"[full-trace] ready: trace_id={trace_id}", flush=True)
 
     def forward_tt_host_tensor(self, tt_pixel_values_host, normalize: bool = True):
         """
