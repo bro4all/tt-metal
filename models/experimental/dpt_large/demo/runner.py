@@ -86,7 +86,9 @@ def _open_dp_mesh_device(effective_dp: int, num_cq: int):
         )
         dispatch_core_config = getattr(ttnn, "DispatchCoreConfig", None)
         if dispatch_core_type is not None and dispatch_core_config is not None and hasattr(dispatch_core_type, "WORKER"):
-            common_kwargs["dispatch_core_config"] = dispatch_core_config(type=dispatch_core_type.WORKER)
+            # N300 mesh dispatch typically uses ETH; explicitly request it to avoid default probing.
+            dispatch_type = dispatch_core_type.ETH if hasattr(dispatch_core_type, "ETH") else dispatch_core_type.WORKER
+            common_kwargs["dispatch_core_config"] = dispatch_core_config(type=dispatch_type)
     except Exception:
         pass
 
