@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import time
 from pathlib import Path
@@ -139,6 +140,18 @@ def _aggregate_stage_breakdown(stage_breakdowns: list[dict]) -> dict:
 
 
 def main():
+    # Optional: allow stack dumps for "hung" compile/trace-prepare via `kill -USR1 <pid>`.
+    # This is off by default and does not affect perf-path semantics.
+    if os.environ.get("DPT_FAULTHANDLER", "").strip() not in ("", "0", "false", "False"):
+        try:  # pragma: no cover
+            import faulthandler
+            import signal
+
+            faulthandler.register(signal.SIGUSR1, all_threads=True)
+            print("[debug] DPT_FAULTHANDLER enabled (SIGUSR1 prints Python stacks)", flush=True)
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser("DPT-Large TTNN runner")
     parser.add_argument("--image", type=str, default=None, help="Path to a single image.")
     parser.add_argument("--images-dir", type=str, default=None, help="Directory of images.")
