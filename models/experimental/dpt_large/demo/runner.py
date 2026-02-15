@@ -76,11 +76,15 @@ def _open_dp_mesh_device(effective_dp: int, num_cq: int):
         trace_region_size=8 * 1024 * 1024,
         num_command_queues=int(num_cq),
     )
-    # Keep N300 mesh dispatch aligned with standard wormhole demo fixtures.
+    # Avoid cluster-type probing inside TTNN defaults (can hang on some platforms) by
+    # explicitly selecting WORKER dispatch when available.
     try:
-        dispatch_core_type = getattr(getattr(ttnn, "device", None), "DispatchCoreType", None)
-        if dispatch_core_type is not None and hasattr(dispatch_core_type, "WORKER"):
-            common_kwargs["dispatch_core_type"] = dispatch_core_type.WORKER
+        dispatch_core_type = getattr(getattr(ttnn, "device", None), "DispatchCoreType", None) or getattr(
+            ttnn, "DispatchCoreType", None
+        )
+        dispatch_core_config = getattr(ttnn, "DispatchCoreConfig", None)
+        if dispatch_core_type is not None and dispatch_core_config is not None and hasattr(dispatch_core_type, "WORKER"):
+            common_kwargs["dispatch_core_config"] = dispatch_core_config(type=dispatch_core_type.WORKER)
     except Exception:
         pass
 
@@ -90,8 +94,8 @@ def _open_dp_mesh_device(effective_dp: int, num_cq: int):
             return open_fn(kwargs)
         except TypeError as exc:
             msg = str(exc)
-            if "dispatch_core_type" in msg and "dispatch_core_type" in kwargs:
-                kwargs.pop("dispatch_core_type", None)
+            if "dispatch_core_config" in msg and "dispatch_core_config" in kwargs:
+                kwargs.pop("dispatch_core_config", None)
                 return open_fn(kwargs)
             raise
 
