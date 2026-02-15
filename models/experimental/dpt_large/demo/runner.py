@@ -70,7 +70,9 @@ def _resolve_dp_and_batch_size(args, use_tt: bool) -> tuple[int, int]:
 def _open_dp_mesh_device(effective_dp: int, num_cq: int):
     import ttnn  # type: ignore
 
-    mesh_shape = ttnn.MeshShape(1, int(effective_dp))
+    # Let TTNN pick the system mesh shape by default. Explicit mesh shapes can
+    # hang on some platforms when the requested topology does not match.
+    mesh_shape = None
     common_kwargs = dict(
         l1_small_size=24576,
         trace_region_size=8 * 1024 * 1024,
