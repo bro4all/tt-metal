@@ -455,34 +455,36 @@ class TTLayerNorm:
             if cc is not None:
                 kwargs["compute_kernel_config"] = cc
 
-            # N300 trace stability: if sharded layer_norm on the encoder grid hits static-CB/L1 clashes,
-            # reshard to a larger core grid for the layer_norm compute, then reshard back. This stays
-            # fully sharded (no interleaved "islands") and keeps residual/add ops on the encoder grid.
-            if x_is_sharded and pc is not None and hasattr(ttnn, "reshard") and hasattr(ttnn, "create_sharded_memory_config"):
+            def _try_ln_reshard_workaround(x_in: ttnn.Tensor) -> Optional[ttnn.Tensor]:
+                # N300 trace stability: only attempt this if layer_norm on the current sharding fails.
+                if not x_is_sharded or pc is None:
+                    return None
+                if not (hasattr(ttnn, "reshard") and hasattr(ttnn, "create_sharded_memory_config")):
+                    return None
                 ln_grid = getattr(pc, "ln_core_grid", None)
-                if ln_grid is not None:
-                    try:
-                        mc_in = ttnn.get_memory_config(x)
-                    except Exception:
-                        mc_in = None
-                    try:
-                        grid_x, grid_y = int(ln_grid[0]), int(ln_grid[1])
-                        core_grid = ttnn.CoreGrid(y=grid_y, x=grid_x)
-                        shape_for_shard = getattr(x, "padded_shape", None) or getattr(x, "shape", None)
-                        ln_shard_mc = ttnn.create_sharded_memory_config(
-                            shape_for_shard,
-                            core_grid=core_grid,
-                            strategy=ttnn.ShardStrategy.BLOCK,
-                            orientation=ttnn.ShardOrientation.ROW_MAJOR,
-                        )
-                        x_ln = ttnn.reshard(x, ln_shard_mc)
-                        y_ln = ttnn.layer_norm(x_ln, **kwargs)
-                        if mc_in is not None:
-                            return ttnn.reshard(y_ln, mc_in)
-                        return y_ln
-                    except Exception:
-                        # Fall through to the standard layer_norm path below.
-                        pass
+                if ln_grid is None:
+                    return None
+                try:
+                    mc_in = ttnn.get_memory_config(x_in)
+                except Exception:
+                    mc_in = None
+                try:
+                    grid_x, grid_y = int(ln_grid[0]), int(ln_grid[1])
+                    core_grid = ttnn.CoreGrid(y=grid_y, x=grid_x)
+                    shape_for_shard = getattr(x_in, "padded_shape", None) or getattr(x_in, "shape", None)
+                    ln_shard_mc = ttnn.create_sharded_memory_config(
+                        shape_for_shard,
+                        core_grid=core_grid,
+                        strategy=ttnn.ShardStrategy.BLOCK,
+                        orientation=ttnn.ShardOrientation.ROW_MAJOR,
+                    )
+                    x_ln = ttnn.reshard(x_in, ln_shard_mc)
+                    y_ln = ttnn.layer_norm(x_ln, **kwargs)
+                    if mc_in is not None:
+                        return ttnn.reshard(y_ln, mc_in)
+                    return y_ln
+                except Exception:
+                    return None
             try:
                 return ttnn.layer_norm(x, **kwargs)
             except TypeError:
@@ -495,6 +497,9 @@ class TTLayerNorm:
                 kwargs.pop("compute_kernel_config", None)
                 return ttnn.layer_norm(x, **kwargs)
             except Exception:
+                y_alt = _try_ln_reshard_workaround(x)
+                if y_alt is not None:
+                    return y_alt
                 # Some runtimes accept these kwargs but can fail for particular inputs/configs.
                 # Retry once without the perf configs to avoid hard-failing the entire pipeline.
                 if ("program_config" in kwargs or "compute_kernel_config" in kwargs) and callable(inc_program_config_fallback):
@@ -506,6 +511,9 @@ class TTLayerNorm:
                 try:
                     return ttnn.layer_norm(x, **kwargs)
                 except Exception:
+                    y_alt = _try_ln_reshard_workaround(x)
+                    if y_alt is not None:
+                        return y_alt
                     # Sharded LayerNorm support is runtime-dependent. When it fails, explicitly
                     # run an interleaved "island" and reshard the output back, rather than
                     # forcing a CPU fallback in perf/trace runs.
