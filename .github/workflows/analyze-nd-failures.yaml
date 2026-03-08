@@ -52,7 +52,8 @@ jobs:
           echo "Using calculated start date: $START_DATE"
 
       - name: Run analyze nd failures
-        uses: tenstorrent-metal/tt-auto-triage/.github/actions/slack_output_analysis@main
+        # Pin third-party action by commit SHA to avoid executing unreviewed code from a moving ref.
+        uses: tenstorrent-metal/tt-auto-triage/.github/actions/slack_output_analysis@ce33a8d3750d65a5c4d68d10d06a23179844b8a9
         with:
           # TODO: Configure these secrets in repository settings -> Secrets and variables -> Actions
           # github_token: Personal Access Token for creating/updating GitHub issues
